@@ -116,3 +116,33 @@ export interface WsErrorMessage {
   message: string;
   requestId?: string;
 }
+
+export interface UserProfile {
+  userId: string;
+  displayName: string;
+  virtualPoints: number;
+  gamesPlayed: number;
+  gamesWon: number;
+  totalScore: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GameResultItem {
+  id: string;
+  gameId: string;
+  tableId: string;
+  playerId: string;
+  displayName: string;
+  finalScore: number;
+  won: boolean;
+  status: string;
+  createdAt: string;
+}
+
+export interface PlayerHistoryResponse {
+  playerId: string;
+  profile: UserProfile;
+  winRate: number;
+  results: GameResultItem[];
+}

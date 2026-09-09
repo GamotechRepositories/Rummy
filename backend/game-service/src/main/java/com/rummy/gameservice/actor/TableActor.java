@@ -35,6 +35,7 @@ public final class TableActor {
     private final RummyRules rules;
     private final ObjectMapper objectMapper;
     private final ScheduledExecutorService scheduler;
+    private final com.rummy.gameservice.persistence.GamePersistenceService persistenceService;
 
     private GameState state;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
@@ -46,13 +47,24 @@ public final class TableActor {
                       RummyRules rules,
                       GameEngine engine,
                       ObjectMapper objectMapper,
-                      ScheduledExecutorService scheduler) {
+                      ScheduledExecutorService scheduler,
+                      com.rummy.gameservice.persistence.GamePersistenceService persistenceService) {
         this.tableId = Objects.requireNonNull(tableId);
         this.state = Objects.requireNonNull(initialState);
         this.rules = Objects.requireNonNull(rules);
         this.engine = Objects.requireNonNull(engine);
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.scheduler = Objects.requireNonNull(scheduler);
+        this.persistenceService = persistenceService;
+    }
+
+    public TableActor(String tableId,
+                      GameState initialState,
+                      RummyRules rules,
+                      GameEngine engine,
+                      ObjectMapper objectMapper,
+                      ScheduledExecutorService scheduler) {
+        this(tableId, initialState, rules, engine, objectMapper, scheduler, null);
     }
 
     public synchronized void registerSession(String playerId, WebSocketSession session) {
@@ -92,9 +104,17 @@ public final class TableActor {
         // State successfully mutated
         this.state = result.state();
 
-        // 1. Broadcast individual game events
+        // 1. Broadcast individual game events and persist
         for (GameEvent event : result.events()) {
             broadcastMessage(WsServerMessage.of("GAME_EVENT", requestId, tableId, event.sequence(), event));
+            if (persistenceService != null) {
+                persistenceService.recordGameEventAsync(state.getGameId(), event);
+                if (event instanceof com.rummy.engine.event.GameStartedEvent) {
+                    persistenceService.recordGameStarted(state, tableId);
+                } else if (event instanceof com.rummy.engine.event.GameFinishedEvent) {
+                    persistenceService.recordGameFinished(state, tableId);
+                }
+            }
         }
 
         // 2. Broadcast private, sanitized PlayerGameViews to all connected human players

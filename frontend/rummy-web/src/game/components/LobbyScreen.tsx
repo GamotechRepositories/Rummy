@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
+import { HistoryModal } from './HistoryModal';
 import { ShieldCheck, Play, Sparkles, Trophy } from 'lucide-react';
 
 export const LobbyScreen: React.FC = () => {
-  const { tableId, displayName, setSession, connectionStatus } = useGameStore();
+  const { tableId, displayName, setSession, connectionStatus, playerId } = useGameStore();
   const [localName, setLocalName] = useState(displayName);
   const [localTable, setLocalTable] = useState(tableId);
   const [selectedSeat, setSelectedSeat] = useState(0);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,7 +200,29 @@ export const LobbyScreen: React.FC = () => {
             <Play size={18} />
             Enter Game Table
           </button>
+
+          <button
+            id="btn-lobby-history"
+            type="button"
+            onClick={() => setIsHistoryOpen(true)}
+            className="btn-secondary"
+            style={{
+              width: '100%',
+              padding: '12px',
+              fontSize: '14px',
+              justifyContent: 'center',
+              marginTop: '8px',
+            }}
+          >
+            📜 View Career Match History
+          </button>
         </form>
+
+        <HistoryModal
+          playerId={playerId}
+          isOpen={isHistoryOpen}
+          onClose={() => setIsHistoryOpen(false)}
+        />
 
         {/* Feature points */}
         <div

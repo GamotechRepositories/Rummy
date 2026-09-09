@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { OpponentSeat } from './OpponentSeat';
@@ -7,6 +7,7 @@ import { PlayerHand } from './PlayerHand';
 import { ActionControls } from './ActionControls';
 import { DeclareModal } from './DeclareModal';
 import { TurnTimerRing } from './TurnTimerRing';
+import { HistoryModal } from './HistoryModal';
 import { LogOut, Wifi, AlertCircle, Sparkles, User } from 'lucide-react';
 
 export const GameBoard: React.FC = () => {
@@ -17,7 +18,10 @@ export const GameBoard: React.FC = () => {
     errorMessage,
     lastEventMessage,
     setSession,
+    playerId,
   } = useGameStore();
+
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const handleLeaveTable = () => {
     socketClient.disconnect();
@@ -101,6 +105,15 @@ export const GameBoard: React.FC = () => {
             <Wifi size={12} />
             <span>{connectionStatus}</span>
           </div>
+
+          <button
+            id="btn-board-history"
+            onClick={() => setIsHistoryOpen(true)}
+            className="btn-secondary"
+            style={{ padding: '6px 12px', fontSize: '12px' }}
+          >
+            📜 History
+          </button>
 
           <button
             id="btn-leave-table"
@@ -267,6 +280,13 @@ export const GameBoard: React.FC = () => {
 
       {/* Declaration Confirmation Modal */}
       <DeclareModal />
+
+      {/* Career Match History Modal */}
+      <HistoryModal
+        playerId={playerId}
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+      />
     </div>
   );
 };

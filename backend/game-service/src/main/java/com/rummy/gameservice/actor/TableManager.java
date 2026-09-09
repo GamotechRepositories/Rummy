@@ -7,6 +7,7 @@ import com.rummy.engine.model.GameState;
 import com.rummy.engine.rules.PointsRummyRules;
 import com.rummy.engine.rules.RummyRules;
 import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -20,11 +21,19 @@ public class TableManager {
 
     private final GameEngine engine = new GameEngine();
     private final ObjectMapper objectMapper;
+    private final com.rummy.gameservice.persistence.GamePersistenceService persistenceService;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final Map<String, TableActor> tables = new ConcurrentHashMap<>();
 
-    public TableManager(ObjectMapper objectMapper) {
+    @Autowired
+    public TableManager(ObjectMapper objectMapper,
+                        com.rummy.gameservice.persistence.GamePersistenceService persistenceService) {
         this.objectMapper = Objects.requireNonNull(objectMapper);
+        this.persistenceService = persistenceService;
+    }
+
+    public TableManager(ObjectMapper objectMapper) {
+        this(objectMapper, null);
     }
 
     public TableActor getOrCreateTable(String tableId, RummyRules rules) {
@@ -35,7 +44,7 @@ public class TableManager {
             GameState initialState = new GameState(gameId, id, activeRules.getRulesetId(),
                     activeRules.getRulesetVersion(), List.of(), deck);
 
-            return new TableActor(id, initialState, activeRules, engine, objectMapper, scheduler);
+            return new TableActor(id, initialState, activeRules, engine, objectMapper, scheduler, persistenceService);
         });
     }
 
