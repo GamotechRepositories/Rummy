@@ -64,6 +64,11 @@ public final class GameState implements Serializable {
         return players.stream().filter(p -> p.getSeatIndex() == seatIndex).findFirst();
     }
 
+    public void addPlayer(PlayerState player) {
+        Objects.requireNonNull(player, "player must not be null");
+        this.players.add(player);
+    }
+
     public CardInstance topDiscard() {
         if (discardPile.isEmpty()) {
             return null;
