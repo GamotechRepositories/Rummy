@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rummy-game-service
+  namespace: rummy-platform
+  labels:
+    app: rummy-game-service
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: rummy-game-service
+  template:
+    metadata:
+      labels:
+        app: rummy-game-service
+    spec:
+      containers:
+        - name: game-service
+          image: rummy-platform/game-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8081
+              name: http-ws
+          envFrom:
+            - configMapRef:
+                name: rummy-config
+          env:
+            - name: SPRING_DATA_MONGODB_URI
+              value: "mongodb://rummy-mongo.rummy-platform.svc.cluster.local:27017/rummy_db"
+            - name: SPRING_DATA_REDIS_HOST
+              value: "rummy-redis.rummy-platform.svc.cluster.local"
+            - name: SERVER_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "3Gi"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8081
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                # Phase 43: Graceful Table Draining hook before SIGTERM
+                command: ["sh", "-c", "sleep 15"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rummy-game-service
+  namespace: rummy-platform
+spec:
+  type: ClusterIP
+  selector:
+    app: rummy-game-service
+  ports:
+    - name: http-ws
+      port: 8081
+      targetPort: 8081
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rummy-game-service-hpa
+  namespace: rummy-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rummy-game-service
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75

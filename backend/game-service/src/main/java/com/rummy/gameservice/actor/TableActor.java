@@ -36,6 +36,7 @@ public final class TableActor {
     private final ObjectMapper objectMapper;
     private final ScheduledExecutorService scheduler;
     private final com.rummy.gameservice.persistence.GamePersistenceService persistenceService;
+    private final com.rummy.gameservice.kafka.GameEventProducer eventProducer;
 
     private GameState state;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
@@ -48,14 +49,27 @@ public final class TableActor {
                       GameEngine engine,
                       ObjectMapper objectMapper,
                       ScheduledExecutorService scheduler,
-                      com.rummy.gameservice.persistence.GamePersistenceService persistenceService) {
+                      com.rummy.gameservice.persistence.GamePersistenceService persistenceService,
+                      com.rummy.gameservice.kafka.GameEventProducer eventProducer) {
         this.tableId = Objects.requireNonNull(tableId);
         this.state = Objects.requireNonNull(initialState);
         this.rules = Objects.requireNonNull(rules);
         this.engine = Objects.requireNonNull(engine);
         this.objectMapper = Objects.requireNonNull(objectMapper);
+        this.objectMapper.findAndRegisterModules();
         this.scheduler = Objects.requireNonNull(scheduler);
         this.persistenceService = persistenceService;
+        this.eventProducer = eventProducer;
+    }
+
+    public TableActor(String tableId,
+                      GameState initialState,
+                      RummyRules rules,
+                      GameEngine engine,
+                      ObjectMapper objectMapper,
+                      ScheduledExecutorService scheduler,
+                      com.rummy.gameservice.persistence.GamePersistenceService persistenceService) {
+        this(tableId, initialState, rules, engine, objectMapper, scheduler, persistenceService, null);
     }
 
     public TableActor(String tableId,
@@ -64,7 +78,7 @@ public final class TableActor {
                       GameEngine engine,
                       ObjectMapper objectMapper,
                       ScheduledExecutorService scheduler) {
-        this(tableId, initialState, rules, engine, objectMapper, scheduler, null);
+        this(tableId, initialState, rules, engine, objectMapper, scheduler, null, null);
     }
 
     public synchronized void registerSession(String playerId, WebSocketSession session) {
@@ -104,9 +118,12 @@ public final class TableActor {
         // State successfully mutated
         this.state = result.state();
 
-        // 1. Broadcast individual game events and persist
+        // 1. Broadcast individual game events, persist, and stream to Kafka
         for (GameEvent event : result.events()) {
             broadcastMessage(WsServerMessage.of("GAME_EVENT", requestId, tableId, event.sequence(), event));
+            if (eventProducer != null) {
+                eventProducer.publishGameEvent(state.getGameId(), event);
+            }
             if (persistenceService != null) {
                 persistenceService.recordGameEventAsync(state.getGameId(), event);
                 if (event instanceof com.rummy.engine.event.GameStartedEvent) {

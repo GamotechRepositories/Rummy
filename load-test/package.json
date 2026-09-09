@@ -1,0 +1,13 @@
+{
+  "name": "rummy-load-test",
+  "version": "1.0.0",
+  "description": "High-Performance WebSocket Load Simulator & Reconnection Storm Benchmark",
+  "type": "module",
+  "scripts": {
+    "start": "node websocket-load/load-simulator.js",
+    "reconnect-storm": "node scenarios/reconnect-storm.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: 'rummy-game-services'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['game-service-1:8081', 'game-service-2:8081']
+        labels:
+          application: 'rummy-game-service'
+          environment: 'production'

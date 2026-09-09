@@ -11,6 +11,7 @@ import com.rummy.gameservice.actor.TableManager;
 import com.rummy.gameservice.protocol.WsClientMessage;
 import com.rummy.gameservice.protocol.WsErrorMessage;
 import com.rummy.gameservice.protocol.WsServerMessage;
+import com.rummy.gameservice.security.RateLimitingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -31,15 +32,21 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
     private final TableManager tableManager;
     private final ObjectMapper objectMapper;
+    private final RateLimitingService rateLimitingService;
 
-    public GameWebSocketHandler(TableManager tableManager, ObjectMapper objectMapper) {
+    public GameWebSocketHandler(TableManager tableManager, ObjectMapper objectMapper, RateLimitingService rateLimitingService) {
         this.tableManager = Objects.requireNonNull(tableManager);
         this.objectMapper = Objects.requireNonNull(objectMapper);
+        this.rateLimitingService = Objects.requireNonNull(rateLimitingService);
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         log.info("[WS] New connection established: {}", session.getId());
+        String authPlayerId = (String) session.getAttributes().get("authenticatedPlayerId");
+        if (authPlayerId != null) {
+            session.getAttributes().put("playerId", authPlayerId);
+        }
         WsServerMessage connectedMsg = WsServerMessage.of("CONNECTED", UUID.randomUUID().toString(), null,
                 Map.of("sessionId", session.getId(), "serverTime", Instant.now().toString()));
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(connectedMsg)));
@@ -47,6 +54,12 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        if (!rateLimitingService.tryAcquire(session.getId())) {
+            log.warn("[WS:{}] Rate limit exceeded for session", session.getId());
+            sendError(session, "RATE_LIMIT_EXCEEDED", "Too many requests. Please slow down.", null);
+            return;
+        }
+
         String payload = message.getPayload();
         log.debug("[WS:{}] Inbound payload: {}", session.getId(), payload);
 

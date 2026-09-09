@@ -22,18 +22,26 @@ public class TableManager {
     private final GameEngine engine = new GameEngine();
     private final ObjectMapper objectMapper;
     private final com.rummy.gameservice.persistence.GamePersistenceService persistenceService;
+    private final com.rummy.gameservice.kafka.GameEventProducer eventProducer;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final Map<String, TableActor> tables = new ConcurrentHashMap<>();
 
     @Autowired
     public TableManager(ObjectMapper objectMapper,
-                        com.rummy.gameservice.persistence.GamePersistenceService persistenceService) {
+                        com.rummy.gameservice.persistence.GamePersistenceService persistenceService,
+                        @Autowired(required = false) com.rummy.gameservice.kafka.GameEventProducer eventProducer) {
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.persistenceService = persistenceService;
+        this.eventProducer = eventProducer;
+    }
+
+    public TableManager(ObjectMapper objectMapper,
+                        com.rummy.gameservice.persistence.GamePersistenceService persistenceService) {
+        this(objectMapper, persistenceService, null);
     }
 
     public TableManager(ObjectMapper objectMapper) {
-        this(objectMapper, null);
+        this(objectMapper, null, null);
     }
 
     public TableActor getOrCreateTable(String tableId, RummyRules rules) {
@@ -44,7 +52,7 @@ public class TableManager {
             GameState initialState = new GameState(gameId, id, activeRules.getRulesetId(),
                     activeRules.getRulesetVersion(), List.of(), deck);
 
-            return new TableActor(id, initialState, activeRules, engine, objectMapper, scheduler, persistenceService);
+            return new TableActor(id, initialState, activeRules, engine, objectMapper, scheduler, persistenceService, eventProducer);
         });
     }
 

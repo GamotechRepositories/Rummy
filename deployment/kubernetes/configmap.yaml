@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rummy-config
+  namespace: rummy-platform
+data:
+  SPRING_PROFILES_ACTIVE: "production"
+  SERVER_PORT: "8081"
+  RUMMY_KAFKA_ENABLED: "false"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
+  MATCHMAKING_AI_FALLBACK_TIMEOUT_MS: "4000"
+  MATCHMAKING_MAX_QUEUE_TIMEOUT_MS: "25000"

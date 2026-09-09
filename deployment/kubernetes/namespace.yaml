@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rummy-platform
+  labels:
+    app.kubernetes.io/name: rummy-platform
+    environment: production

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rummy.engine.command.ReadyCommand;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
+import com.rummy.gameservice.security.RateLimitingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,7 +36,8 @@ class GameWebSocketHandlerTest {
         objectMapper.registerModule(new JavaTimeModule());
 
         tableManager = new TableManager(objectMapper);
-        handler = new GameWebSocketHandler(tableManager, objectMapper);
+        RateLimitingService rateLimitingService = new RateLimitingService(100, 100.0);
+        handler = new GameWebSocketHandler(tableManager, objectMapper, rateLimitingService);
 
         session = mock(WebSocketSession.class);
         sessionAttributes = new HashMap<>();

@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { HistoryModal } from './HistoryModal';
-import { ShieldCheck, Play, Sparkles, Trophy } from 'lucide-react';
+import { WalletModal } from './WalletModal';
+import { AdminDashboardModal } from './AdminDashboardModal';
+import { ResponsibleGamblingModal } from './ResponsibleGamblingModal';
+import { ShieldCheck, Play, Sparkles, Trophy, Users, Zap, Loader2, X, Coins, Activity } from 'lucide-react';
 
 export const LobbyScreen: React.FC = () => {
   const { tableId, displayName, setSession, connectionStatus, playerId } = useGameStore();
@@ -10,6 +13,88 @@ export const LobbyScreen: React.FC = () => {
   const [localTable, setLocalTable] = useState(tableId);
   const [selectedSeat, setSelectedSeat] = useState(0);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isSafePlayOpen, setIsSafePlayOpen] = useState(false);
+
+  // Matchmaking State
+  const [isMatchmaking, setIsMatchmaking] = useState(false);
+  const [mmTicketId, setMmTicketId] = useState<string | null>(null);
+  const [mmQueueTime, setMmQueueTime] = useState(0);
+  const [mmVariant, setMmVariant] = useState('INDIAN_POINTS');
+  const [mmStake, setMmStake] = useState(100);
+  const [mmMaxPlayers, setMmMaxPlayers] = useState(2);
+  const pollIntervalRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let timer: number;
+    if (isMatchmaking) {
+      timer = window.setInterval(() => {
+        setMmQueueTime((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setMmQueueTime(0);
+    }
+    return () => clearInterval(timer);
+  }, [isMatchmaking]);
+
+  const handleStartMatchmaking = async () => {
+    if (!localName.trim()) return;
+    setIsMatchmaking(true);
+    setMmQueueTime(0);
+
+    try {
+      const res = await fetch('http://localhost:8081/api/matchmaking/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerId,
+          playerName: localName.trim(),
+          rulesetId: mmVariant,
+          stakeTier: mmStake,
+          maxPlayers: mmMaxPlayers,
+          allowAiFallback: true,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Matchmaking join failed');
+      const data = await res.json();
+      setMmTicketId(data.ticketId);
+
+      // Start polling
+      pollIntervalRef.current = window.setInterval(async () => {
+        try {
+          const pollRes = await fetch(`http://localhost:8081/api/matchmaking/ticket/${data.ticketId}`);
+          if (pollRes.ok) {
+            const ticketData = await pollRes.json();
+            if (ticketData.status === 'MATCHED' && ticketData.matchedTableId) {
+              if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+              setIsMatchmaking(false);
+              setSession(ticketData.matchedTableId, playerId, localName.trim());
+              socketClient.connect();
+            }
+          }
+        } catch {
+          // ignore network transient errors
+        }
+      }, 1000);
+    } catch {
+      setIsMatchmaking(false);
+    }
+  };
+
+  const handleCancelMatchmaking = async () => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    if (mmTicketId) {
+      try {
+        await fetch(`http://localhost:8081/api/matchmaking/cancel/${mmTicketId}`, { method: 'POST' });
+      } catch {
+        // ignore
+      }
+    }
+    setIsMatchmaking(false);
+    setMmTicketId(null);
+  };
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,6 +213,174 @@ export const LobbyScreen: React.FC = () => {
             />
           </div>
 
+          {/* Quick Matchmaking Section */}
+          <div
+            style={{
+              padding: '16px',
+              background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.15) 0%, rgba(30, 41, 59, 0.5) 100%)',
+              border: '1px solid rgba(212, 175, 55, 0.3)',
+              borderRadius: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '14px', color: 'var(--gold-light)' }}>
+                <Zap size={16} color="var(--gold-accent)" />
+                Quick Matchmaking (Phase 18)
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setMmMaxPlayers(2)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    border: mmMaxPlayers === 2 ? '1px solid var(--gold-accent)' : '1px solid rgba(255, 255, 255, 0.1)',
+                    background: mmMaxPlayers === 2 ? 'rgba(212, 175, 55, 0.25)' : 'transparent',
+                    color: mmMaxPlayers === 2 ? '#ffffff' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  2 Players
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMmMaxPlayers(6)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    border: mmMaxPlayers === 6 ? '1px solid var(--gold-accent)' : '1px solid rgba(255, 255, 255, 0.1)',
+                    background: mmMaxPlayers === 6 ? 'rgba(212, 175, 55, 0.25)' : 'transparent',
+                    color: mmMaxPlayers === 6 ? '#ffffff' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  6 Players
+                </button>
+              </div>
+            </div>
+
+            {/* Stake and Variant Selectors */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>Ruleset</label>
+                <select
+                  value={mmVariant}
+                  onChange={(e) => setMmVariant(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    borderRadius: '6px',
+                    background: '#0f172a',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="INDIAN_POINTS">Points Rummy</option>
+                  <option value="POOL_101">Pool 101</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>Stake Tier</label>
+                <select
+                  value={mmStake}
+                  onChange={(e) => setMmStake(Number(e.target.value))}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    borderRadius: '6px',
+                    background: '#0f172a',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value={100}>100 Free Tokens</option>
+                  <option value={500}>500 Free Tokens</option>
+                  <option value={1000}>1,000 Free Tokens</option>
+                </select>
+              </div>
+            </div>
+
+            {isMatchmaking ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 16px',
+                  background: 'rgba(0, 0, 0, 0.4)',
+                  borderRadius: '8px',
+                  border: '1px solid var(--gold-accent)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Loader2 size={20} className="spinner" color="var(--gold-accent)" />
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#ffffff' }}>Searching Opponents...</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Queue time: {mmQueueTime}s (AI fallback ready)</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCancelMatchmaking}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#f87171',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <X size={14} /> Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                id="btn-quick-match"
+                onClick={handleStartMatchmaking}
+                style={{
+                  padding: '12px',
+                  background: 'linear-gradient(135deg, #d4af37 0%, #b38728 100%)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#0f172a',
+                  fontWeight: 800,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)',
+                }}
+              >
+                <Users size={16} />
+                Find Match (Stake: {mmStake} Free Tokens)
+              </button>
+            )}
+          </div>
+
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', margin: '-4px 0' }}>
+            — or join a specific lounge room —
+          </div>
+
           <div>
             <label
               htmlFor="select-table"
@@ -201,27 +454,119 @@ export const LobbyScreen: React.FC = () => {
             Enter Game Table
           </button>
 
-          <button
-            id="btn-lobby-history"
-            type="button"
-            onClick={() => setIsHistoryOpen(true)}
-            className="btn-secondary"
-            style={{
-              width: '100%',
-              padding: '12px',
-              fontSize: '14px',
-              justifyContent: 'center',
-              marginTop: '8px',
-            }}
-          >
-            📜 View Career Match History
-          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
+            <button
+              id="btn-lobby-wallet"
+              type="button"
+              onClick={() => setIsWalletOpen(true)}
+              className="btn-secondary"
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '13px',
+                fontWeight: 700,
+                justifyContent: 'center',
+                background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.2), rgba(212, 175, 55, 0.05))',
+                border: '1px solid rgba(212, 175, 55, 0.4)',
+                color: '#f3e5ab',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <Coins size={16} color="#d4af37" />
+              Token Vault
+            </button>
+
+            <button
+              id="btn-lobby-history"
+              type="button"
+              onClick={() => setIsHistoryOpen(true)}
+              className="btn-secondary"
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '13px',
+                justifyContent: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              📜 Match History
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+            <button
+              id="btn-lobby-safe-play"
+              type="button"
+              onClick={() => setIsSafePlayOpen(true)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: 'rgba(16, 185, 129, 0.1)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: '8px',
+                color: '#34d399',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+              }}
+            >
+              <ShieldCheck size={14} />
+              🛡️ Safe Play
+            </button>
+
+            <button
+              id="btn-lobby-admin"
+              type="button"
+              onClick={() => setIsAdminOpen(true)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: 'rgba(59, 130, 246, 0.1)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                borderRadius: '8px',
+                color: '#93c5fd',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+              }}
+            >
+              <Activity size={14} />
+              Admin Console
+            </button>
+          </div>
         </form>
+
+        <WalletModal
+          isOpen={isWalletOpen}
+          onClose={() => setIsWalletOpen(false)}
+        />
 
         <HistoryModal
           playerId={playerId}
           isOpen={isHistoryOpen}
           onClose={() => setIsHistoryOpen(false)}
+        />
+
+        <AdminDashboardModal
+          isOpen={isAdminOpen}
+          onClose={() => setIsAdminOpen(false)}
+        />
+
+        <ResponsibleGamblingModal
+          isOpen={isSafePlayOpen}
+          onClose={() => setIsSafePlayOpen(false)}
         />
 
         {/* Feature points */}

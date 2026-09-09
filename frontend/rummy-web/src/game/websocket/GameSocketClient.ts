@@ -28,7 +28,10 @@ class GameSocketClient {
     );
 
     try {
-      this.ws = new WebSocket(this.url);
+      // Check for stored or query token
+      const token = localStorage.getItem('rummy_auth_token');
+      const wsUrlWithToken = token ? `${this.url}?token=${encodeURIComponent(token)}` : this.url;
+      this.ws = new WebSocket(wsUrlWithToken);
     } catch (e) {
       console.error('[WS] Connection creation failed:', e);
       this.scheduleReconnect();
@@ -41,7 +44,7 @@ class GameSocketClient {
       this.reconnectAttempts = 0;
       this.startHeartbeat();
 
-      // Automatically authenticate with stored player ID
+      // Automatically authenticate with stored player ID / token
       const { playerId } = useGameStore.getState();
       this.sendMessage({
         type: 'AUTH',

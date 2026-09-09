@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: game-service
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   main:
     banner-mode: off
   data:
@@ -11,7 +14,27 @@ spring:
       uri: mongodb://localhost:27017/rummy_db
       auto-index-creation: true
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  health:
+    redis:
+      enabled: false
+    redis-reactive:
+      enabled: false
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
 rummy:
+  kafka:
+    enabled: false
   websocket:
     endpoint: /ws/game
     allowed-origins: "*"
