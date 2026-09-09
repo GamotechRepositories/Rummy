@@ -1,0 +1,261 @@
+:root {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Outfit', var(--font-sans);
+
+  /* Color Palette: Luxury Casino Felt & Midnight Obsidian */
+  --bg-dark: #06090e;
+  --bg-card: rgba(15, 23, 42, 0.75);
+  --bg-surface: rgba(30, 41, 59, 0.6);
+  --border-gold: #d4af37;
+  --border-gold-glow: rgba(212, 175, 55, 0.4);
+  --gold-accent: #f59e0b;
+  --gold-light: #fef08a;
+
+  /* Table Felt */
+  --felt-green-center: #0d4a2d;
+  --felt-green-edge: #062315;
+  --felt-rim: #1f2937;
+  --felt-wood: #2b1810;
+
+  /* Status Colors */
+  --color-pure: #10b981;
+  --color-impure: #f59e0b;
+  --color-set: #3b82f6;
+  --color-invalid: #ef4444;
+
+  /* Text Colors */
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --text-gold: #fde047;
+
+  /* Card Colors */
+  --card-red: #dc2626;
+  --card-black: #1e293b;
+  --card-bg: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: radial-gradient(circle at 50% 20%, #111827 0%, var(--bg-dark) 100%);
+  color: var(--text-main);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-display);
+}
+
+/* Glassmorphic Panel */
+.glass-panel {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+}
+
+.gold-glow {
+  box-shadow: 0 0 20px var(--border-gold-glow);
+  border-color: var(--border-gold) !important;
+}
+
+/* Casino Felt Table */
+.casino-table {
+  position: relative;
+  width: 100%;
+  max-width: 1100px;
+  height: 460px;
+  margin: 10px auto;
+  border-radius: 230px;
+  background: radial-gradient(ellipse at center, var(--felt-green-center) 0%, var(--felt-green-edge) 85%);
+  border: 12px solid var(--felt-wood);
+  box-shadow:
+    inset 0 0 80px rgba(0, 0, 0, 0.8),
+    0 20px 50px rgba(0, 0, 0, 0.8),
+    0 0 0 2px var(--border-gold);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px 24px;
+}
+
+.table-felt-pattern {
+  position: absolute;
+  inset: 0;
+  opacity: 0.06;
+  background-image: radial-gradient(#ffffff 1px, transparent 1px);
+  background-size: 16px 16px;
+  pointer-events: none;
+}
+
+/* Playing Card */
+.rummy-card {
+  width: 72px;
+  height: 104px;
+  background: var(--card-bg);
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  user-select: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 6px;
+  position: relative;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+}
+
+.rummy-card:hover {
+  transform: translateY(-8px) scale(1.03);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
+  z-index: 20;
+}
+
+.rummy-card.selected {
+  transform: translateY(-16px) scale(1.05);
+  border: 2px solid var(--border-gold);
+  box-shadow: 0 16px 30px rgba(212, 175, 55, 0.5), 0 0 15px var(--border-gold);
+  z-index: 30;
+}
+
+.rummy-card-back {
+  width: 72px;
+  height: 104px;
+  border-radius: 8px;
+  background: repeating-linear-gradient(
+    45deg,
+    #7f1d1d,
+    #7f1d1d 8px,
+    #991b1b 8px,
+    #991b1b 16px
+  );
+  border: 2px solid #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.rummy-card-back::after {
+  content: '♦';
+  font-size: 24px;
+  color: #fca5a5;
+  opacity: 0.8;
+}
+
+/* Buttons */
+.btn-primary {
+  background: linear-gradient(135deg, #d4af37 0%, #b8860b 100%);
+  color: #0f172a;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.35);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(212, 175, 55, 0.5);
+  filter: brightness(1.1);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.8);
+}
+
+.btn-secondary {
+  background: rgba(30, 41, 59, 0.8);
+  color: var(--text-main);
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(51, 65, 85, 0.9);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+  color: white;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-danger:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4);
+}
+
+/* Animations */
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(239, 68, 68, 1);
+  }
+}
+
+.timer-critical {
+  animation: pulseGlow 1s infinite;
+}
+
+@keyframes dealSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-30px) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.card-dealt {
+  animation: dealSlideIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}

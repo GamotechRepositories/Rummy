@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rummy.engine.command.*;
 import com.rummy.engine.model.CardInstance;
+import com.rummy.engine.model.PlayerState;
 import com.rummy.engine.rules.CardGroup;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
@@ -105,8 +106,41 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 String name = data != null && data.has("displayName") ? data.get("displayName").asText() : playerId;
                 int seat = data != null && data.has("seatIndex") ? data.get("seatIndex").asInt() : 0;
                 boolean isBot = data != null && data.has("isBot") && data.get("isBot").asBoolean();
-                JoinCommand cmd = new JoinCommand(reqId, gameId, playerId, name, seat, isBot, now);
+                String targetPlayerId = (isBot && data != null && data.has("playerId"))
+                        ? data.get("playerId").asText()
+                        : playerId;
+
+                // Reconnection: If player already seated, re-register session and view
+                if (tableActor.getState().getPlayer(targetPlayerId).isPresent()) {
+                    tableActor.registerSession(targetPlayerId, session);
+                    return;
+                }
+
+                // If requested seat is occupied, assign first unoccupied seat
+                Set<Integer> occupiedSeats = new HashSet<>();
+                for (PlayerState p : tableActor.getState().getPlayers()) {
+                    occupiedSeats.add(p.getSeatIndex());
+                }
+                int finalSeat = seat;
+                if (occupiedSeats.contains(finalSeat)) {
+                    for (int s = 0; s < 6; s++) {
+                        if (!occupiedSeats.contains(s)) {
+                            finalSeat = s;
+                            break;
+                        }
+                    }
+                }
+
+                if (isBot) {
+                    tableActor.registerBot(targetPlayerId, name, com.rummy.engine.bot.BotDifficulty.MEDIUM);
+                }
+
+                JoinCommand cmd = new JoinCommand(reqId, gameId, targetPlayerId, name, finalSeat, isBot, now);
                 tableActor.processCommand(cmd, reqId);
+
+                if (isBot) {
+                    tableActor.processCommand(new ReadyCommand(UUID.randomUUID().toString(), gameId, targetPlayerId, now), "BOT_READY");
+                }
             }
             case "READY" -> {
                 ReadyCommand cmd = new ReadyCommand(reqId, gameId, playerId, now);
