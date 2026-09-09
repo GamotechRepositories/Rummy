@@ -1,0 +1,16 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: game-service
+  main:
+    banner-mode: off
+
+rummy:
+  websocket:
+    endpoint: /ws/game
+    allowed-origins: "*"
+  game:
+    turn-duration-seconds: 30
+    auto-drop-missed-turns: 3
