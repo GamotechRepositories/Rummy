@@ -7,6 +7,7 @@ interface GameStoreState {
   playerId: string;
   displayName: string;
   connectionStatus: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING';
+  hasJoinedTable: boolean;
   gameState: PlayerGameView | null;
   groups: VisualCardGroup[];
   selectedCardIds: string[];
@@ -17,6 +18,8 @@ interface GameStoreState {
   // Actions
   setConnectionStatus: (status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING') => void;
   setSession: (tableId: string, playerId: string, displayName: string) => void;
+  setHasJoinedTable: (joined: boolean) => void;
+  leaveTable: () => void;
   updateGameState: (view: PlayerGameView) => void;
   toggleSelectCard: (cardId: string) => void;
   clearSelection: () => void;
@@ -129,10 +132,11 @@ const getStoredPlayerId = (): string => {
 };
 
 export const useGameStore = create<GameStoreState>((set, get) => ({
-  tableId: 'TBL_SYDNEY_01',
+  tableId: 'TBL_ROYAL_01',
   playerId: getStoredPlayerId(),
-  displayName: 'AussieAce',
+  displayName: 'RoyalAce',
   connectionStatus: 'DISCONNECTED',
+  hasJoinedTable: false,
   gameState: null,
   groups: [],
   selectedCardIds: [],
@@ -144,6 +148,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   setSession: (tableId, playerId, displayName) =>
     set({ tableId, playerId, displayName }),
+
+  setHasJoinedTable: (joined) => set({ hasJoinedTable: joined }),
+
+  leaveTable: () =>
+    set({
+      hasJoinedTable: false,
+      gameState: null,
+      groups: [],
+      selectedCardIds: [],
+      isDeclareModalOpen: false,
+      errorMessage: null,
+      lastEventMessage: null,
+    }),
 
   updateGameState: (view) => {
     const { groups } = get();

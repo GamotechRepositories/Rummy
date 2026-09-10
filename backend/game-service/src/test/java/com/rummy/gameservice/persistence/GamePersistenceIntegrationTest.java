@@ -48,8 +48,8 @@ class GamePersistenceIntegrationTest {
     void testGamePersistenceLifecycle() {
         // 1. Prepare game state
         Deck deck = Deck.createStandard13CardDeck();
-        PlayerState p1 = new PlayerState(testPlayerId, "AussieAce", 0, false);
-        PlayerState bot = new PlayerState("BOT_1", "SydneySam", 1, true);
+        PlayerState p1 = new PlayerState(testPlayerId, "RoyalAce", 0, false);
+        PlayerState bot = new PlayerState("BOT_1", "RoyalBot", 1, true);
 
         GameState state = new GameState(testGameId, testTableId, "POINTS_13", "1.0.0", List.of(p1, bot), deck);
         state.setStatus(GameStatus.IN_PROGRESS);

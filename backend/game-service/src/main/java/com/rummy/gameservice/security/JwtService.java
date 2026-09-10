@@ -28,7 +28,7 @@ public class JwtService {
     private final Duration tokenTtl;
 
     public JwtService(
-            @Value("${rummy.security.jwt.secret:australian-rummy-master-secret-key-production-grade-32-chars!}") String secret,
+            @Value("${rummy.security.jwt.secret:royal-rummy-master-secret-key-production-grade-32-chars!}") String secret,
             @Value("${rummy.security.jwt.ttl-hours:24}") long ttlHours) {
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
         if (keyBytes.length < 32) {

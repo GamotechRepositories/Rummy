@@ -17,7 +17,7 @@ export const GameBoard: React.FC = () => {
     connectionStatus,
     errorMessage,
     lastEventMessage,
-    setSession,
+    leaveTable,
     playerId,
   } = useGameStore();
 
@@ -25,9 +25,7 @@ export const GameBoard: React.FC = () => {
 
   const handleLeaveTable = () => {
     socketClient.disconnect();
-    // Return to lobby
-    setSession(tableId, useGameStore.getState().playerId, useGameStore.getState().displayName);
-    useGameStore.setState({ gameState: null });
+    leaveTable();
   };
 
   const opponents = gameState?.opponents ?? [];
@@ -202,7 +200,7 @@ export const GameBoard: React.FC = () => {
                 borderRadius: '8px',
               }}
             >
-              Waiting for opponents to join... Click "Add AI Bot" below to practice solo!
+              Waiting for opponents to join table... Dealing cards!
             </div>
           )}
         </section>

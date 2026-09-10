@@ -39,12 +39,12 @@ public class AdminController {
     @GetMapping("/compliance/status")
     public ResponseEntity<Map<String, Object>> getComplianceStatus() {
         return ResponseEntity.ok(Map.of(
-                "jurisdiction", "Australia",
-                "applicableAct", "Interactive Gambling Act 2001 (IGA)",
+                "jurisdiction", "Global / Skill Gaming",
+                "applicableAct", "Fair Play & Skill Gaming Standards",
                 "operationalMode", "Free-Play Points Simulator",
                 "realMoneyWageringEnabled", false,
                 "virtualCurrencyOnly", true,
-                "status", "COMPLIANT_FOR_TESTING",
+                "status", "OPERATIONAL",
                 "timestamp", java.time.Instant.now().toString()
         ));
     }

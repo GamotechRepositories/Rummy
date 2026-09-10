@@ -12,7 +12,7 @@ interface DiagnosticsData {
   maxMemoryMb: number;
   availableProcessors: number;
   complianceMode: string;
-  interactiveGamblingAct2001Compliant: boolean;
+  fairPlayCompliant?: boolean;
 }
 
 interface FraudAlertItem {
@@ -225,10 +225,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({ isOpen
             <ShieldCheck size={24} color="#34d399" style={{ flexShrink: 0, marginTop: '2px' }} />
             <div>
               <div style={{ fontWeight: 700, color: '#6ee7b7', fontSize: '0.9rem' }}>
-                Australian Compliance Gate Status: ACTIVE
+                Fair Play & Platform Status: ACTIVE
               </div>
               <div style={{ fontSize: '0.75rem', color: '#d1fae5', marginTop: '0.25rem', lineHeight: 1.4 }}>
-                Under the Interactive Gambling Act 2001 (IGA), all real-money wagering is disabled. System is operating strictly in virtual Free-Play mode.
+                Platform is operating in virtual Free-Play mode with server-authoritative deck integrity and active player safeguards.
               </div>
             </div>
           </div>

@@ -11,8 +11,7 @@ import java.time.Instant;
 
 /**
  * MongoDB Wallet Account Document.
- * Supports Free-Play tokens and Real-Money balances with Australian compliance lock (IGA 2001)
- * and optimistic concurrency control (@Version).
+ * Supports Free-Play tokens and Real-Money balances with optimistic concurrency control (@Version).
  */
 @Document(collection = "wallet_accounts")
 public class WalletAccountDocument implements Serializable {
@@ -26,8 +25,8 @@ public class WalletAccountDocument implements Serializable {
     private BigDecimal freePlayBalance;
     private BigDecimal realMoneyBalance; // Locked in free-play mode
     private BigDecimal reservedBalance;
-    private String currency; // "AUD" or "TOKENS"
-    private boolean isRealMoneyEnabled; // Must be false under IGA 2001 compliance gate
+    private String currency; // "TOKENS"
+    private boolean isRealMoneyEnabled;
     private Instant lastDailyClaimAt;
     private Instant createdAt;
     private Instant updatedAt;
@@ -39,7 +38,7 @@ public class WalletAccountDocument implements Serializable {
         this.freePlayBalance = BigDecimal.valueOf(1000); // 1,000 complimentary free-play tokens
         this.realMoneyBalance = BigDecimal.ZERO;
         this.reservedBalance = BigDecimal.ZERO;
-        this.currency = "AUD_FREE_PLAY";
+        this.currency = "TOKENS";
         this.isRealMoneyEnabled = false;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();

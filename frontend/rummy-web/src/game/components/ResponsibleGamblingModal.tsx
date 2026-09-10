@@ -151,7 +151,7 @@ export const ResponsibleGamblingModal: React.FC<ResponsibleGamblingModalProps> =
                 Safe Play & Player Protection
               </h2>
               <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#94a3b8' }}>
-                Interactive Gambling Act 2001 (IGA) Australian Safeguards
+                Player Protection & Responsible Gaming Controls
               </p>
             </div>
           </div>
@@ -398,7 +398,7 @@ export const ResponsibleGamblingModal: React.FC<ResponsibleGamblingModalProps> =
             </div>
           </div>
 
-          {/* Section 3: Australian Support Resources */}
+          {/* Section 3: Player Support Resources */}
           <div style={{
             backgroundColor: 'rgba(16, 185, 129, 0.05)',
             border: '1px solid rgba(16, 185, 129, 0.2)',
@@ -421,10 +421,10 @@ export const ResponsibleGamblingModal: React.FC<ResponsibleGamblingModalProps> =
             </div>
             <div>
               <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
-                Australian Gambling Help Online (24/7 Free & Confidential)
+                Player Support & Responsible Play (24/7 Helpline)
               </div>
               <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
-                Call <strong>1800 858 858</strong> or visit <span style={{ color: '#38bdf8' }}>gamblinghelponline.org.au</span> / <span style={{ color: '#38bdf8' }}>betstop.gov.au</span>
+                Access confidential support, gameplay time management, and account safety tools.
               </div>
             </div>
           </div>

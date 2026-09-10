@@ -259,3 +259,39 @@ h1, h2, h3, h4, .font-display {
 .card-dealt {
   animation: dealSlideIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+
+@keyframes radarWave {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.radar-wave-1 {
+  animation: radarWave 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+}
+
+.radar-wave-2 {
+  animation: radarWave 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.7s infinite;
+}
+
+.radar-wave-3 {
+  animation: radarWave 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) 1.4s infinite;
+}
+
+@keyframes goldShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.gold-shimmer {
+  background: linear-gradient(90deg, #d4af37 0%, #fef08a 50%, #d4af37 100%);
+  background-size: 200% auto;
+  animation: goldShimmer 3s linear infinite;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}

@@ -139,7 +139,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
                 Player Token Vault
               </h3>
               <p style={{ margin: 0, fontSize: '0.8rem', color: '#88ab8e' }}>
-                AUD Free-Play Virtual Balance
+                Player Token Balance
               </p>
             </div>
           </div>
@@ -266,7 +266,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
           }}>
             <ShieldAlert size={20} color="#ffc107" style={{ flexShrink: 0, marginTop: '2px' }} />
             <div style={{ fontSize: '0.75rem', color: '#e6c875', lineHeight: 1.4 }}>
-              <strong>Australian Compliance Notice (IGA 2001):</strong> Real-money wagering is disabled. This platform operates strictly in Free-Play Mode using non-redeemable virtual game tokens.
+              <strong style={{ color: '#ffc107' }}>Platform Notice:</strong> This platform operates strictly in Free-Play Mode using non-redeemable virtual game tokens.
             </div>
           </div>
 

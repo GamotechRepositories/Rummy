@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rummy.engine.command.*;
 import com.rummy.engine.model.CardInstance;
+import com.rummy.engine.model.GameStatus;
 import com.rummy.engine.model.PlayerState;
+import com.rummy.engine.model.PlayerStatus;
 import com.rummy.engine.rules.CardGroup;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
@@ -151,13 +153,25 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 JoinCommand cmd = new JoinCommand(reqId, gameId, targetPlayerId, name, finalSeat, isBot, now);
                 tableActor.processCommand(cmd, reqId);
 
-                if (isBot) {
-                    tableActor.processCommand(new ReadyCommand(UUID.randomUUID().toString(), gameId, targetPlayerId, now), "BOT_READY");
+                // Auto-mark joined player as READY
+                tableActor.processCommand(new ReadyCommand(UUID.randomUUID().toString(), gameId, targetPlayerId, now), "AUTO_READY");
+
+                // If table has at least 2 players and all are ready, automatically deal cards and start game!
+                boolean allReady = tableActor.getState().getPlayers().stream().allMatch(p -> p.getStatus() == PlayerStatus.READY);
+                if (allReady && tableActor.getState().getPlayers().size() >= 2 && tableActor.getState().getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+                    tableActor.processCommand(new StartGameCommand(UUID.randomUUID().toString(), gameId, targetPlayerId, now), "AUTO_START");
+                    log.info("[GameWebSocketHandler] Auto-started table {} with {} players", tableId, tableActor.getState().getPlayers().size());
                 }
             }
             case "READY" -> {
                 ReadyCommand cmd = new ReadyCommand(reqId, gameId, playerId, now);
                 tableActor.processCommand(cmd, reqId);
+
+                boolean allReady = tableActor.getState().getPlayers().stream().allMatch(p -> p.getStatus() == PlayerStatus.READY);
+                if (allReady && tableActor.getState().getPlayers().size() >= 2 && tableActor.getState().getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+                    tableActor.processCommand(new StartGameCommand(UUID.randomUUID().toString(), gameId, playerId, now), "AUTO_START");
+                    log.info("[GameWebSocketHandler] Auto-started table {} on READY", tableId);
+                }
             }
             case "START_GAME" -> {
                 StartGameCommand cmd = new StartGameCommand(reqId, gameId, playerId, now);

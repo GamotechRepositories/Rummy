@@ -27,7 +27,7 @@ public class AuthController {
     public ResponseEntity<Map<String, Object>> createGuestToken(@RequestBody(required = false) Map<String, String> body) {
         String displayName = (body != null && body.containsKey("name") && !body.get("name").isBlank())
                 ? body.get("name").trim()
-                : "AussiePlayer_" + UUID.randomUUID().toString().substring(0, 4);
+                : "RoyalPlayer_" + UUID.randomUUID().toString().substring(0, 4);
 
         String playerId = (body != null && body.containsKey("playerId") && !body.get("playerId").isBlank())
                 ? body.get("playerId").trim()

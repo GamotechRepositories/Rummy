@@ -1,7 +1,7 @@
 # Technical Architecture & System Overview
 
 ## 1. High-Level Architecture
-The Australian Real-Money Rummy Platform is engineered for extreme concurrency (300,000–400,000 concurrent players) with low latency (<1ms p99 state updates) and strict server-authoritative game rule execution.
+The Royal Rummy Platform is engineered for extreme concurrency (300,000–400,000 concurrent players) with low latency (<1ms p99 state updates) and strict server-authoritative game rule execution.
 
 ```
 [React + TypeScript Web Client]

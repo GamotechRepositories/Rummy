@@ -50,7 +50,7 @@ async function runSmokeSuite() {
     assert(diagRes.ok, `Admin diagnostics status is ${diagRes.status}`);
     const diagData = await diagRes.json();
     assert(diagData.complianceMode === 'FREE_PLAY_ONLY', 'Compliance mode is FREE_PLAY_ONLY');
-    assert(diagData.interactiveGamblingAct2001Compliant === true, 'IGA 2001 compliance flag is active');
+    assert(diagData.fairPlayCompliant === true, 'Fair-play compliance flag is active');
 
     // 4. Wallet Ledger & Faucet
     console.log('\n4. Testing Wallet Ledger & Token Faucet...');

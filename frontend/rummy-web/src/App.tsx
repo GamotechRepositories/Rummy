@@ -5,7 +5,7 @@ import { LobbyScreen } from './game/components/LobbyScreen';
 import { GameBoard } from './game/components/GameBoard';
 
 export function App() {
-  const { gameState, connectionStatus } = useGameStore();
+  const { gameState, connectionStatus, hasJoinedTable } = useGameStore();
 
   useEffect(() => {
     // Automatically attempt connection on initial mount
@@ -16,7 +16,8 @@ export function App() {
     };
   }, []);
 
-  const inGame = gameState !== null && connectionStatus !== 'DISCONNECTED';
+  const inGame =
+    hasJoinedTable && gameState !== null && connectionStatus !== 'DISCONNECTED';
 
   return (
     <div style={{ minHeight: '100vh', width: '100%' }}>

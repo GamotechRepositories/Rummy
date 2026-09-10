@@ -41,3 +41,7 @@ rummy:
   game:
     turn-duration-seconds: 30
     auto-drop-missed-turns: 3
+
+matchmaking:
+  ai-fallback-timeout-ms: 15000
+  max-queue-timeout-ms: 45000

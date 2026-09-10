@@ -309,7 +309,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ playerId, isOpen, on
                     <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>🂠</div>
                     <div>No completed matches recorded yet.</div>
                     <div style={{ fontSize: '0.8rem', marginTop: '0.25rem', color: '#64748b' }}>
-                      Play a round against the Sydney Sam bot to record your first audited match!
+                      Play a round against an AI bot to record your first audited match!
                     </div>
                   </div>
                 ) : (

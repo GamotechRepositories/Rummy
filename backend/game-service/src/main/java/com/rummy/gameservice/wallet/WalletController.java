@@ -34,7 +34,7 @@ public class WalletController {
                 "realMoneyBalance", acc.getRealMoneyBalance(),
                 "currency", acc.getCurrency(),
                 "isRealMoneyEnabled", acc.isRealMoneyEnabled(),
-                "complianceNotice", "Australian Free-Play Mode active under Interactive Gambling Act 2001"
+                "complianceNotice", "Virtual Free-Play Mode active"
         ));
     }
 

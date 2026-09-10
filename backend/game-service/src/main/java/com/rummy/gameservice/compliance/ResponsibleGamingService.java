@@ -12,7 +12,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Phase 24: Responsible Gaming, Self-Exclusion & Player Protection Engine.
- * Enforces strict player protection boundaries under the Australian IGA 2001.
  */
 @Service
 public class ResponsibleGamingService {

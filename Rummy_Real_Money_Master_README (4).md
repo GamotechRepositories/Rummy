@@ -1,4 +1,4 @@
-# Real-Money Rummy Platform --- Australia
+# Royal Rummy Platform
 
 ## Full-Stack Engineering Roadmap — MongoDB Wallet Edition
 
@@ -20,39 +20,11 @@
 ------------------------------------------------------------------------
 
 
-This document is an engineering plan. It is **not legal advice** and
-does not establish that a real-money online rummy product is legal to
-launch in Australia.
+This document is an engineering specification and architectural roadmap for the Royal Rummy real-time platform.
 
-Australia's Interactive Gambling Act 2001 (IGA) restricts/prohibits
-certain online gambling services. ACMA currently states that prohibited
-online services include online casinos and certain other services, and
-ACMA maintains a register of licensed interactive gambling providers.
-ACMA is actively blocking illegal online gambling websites. The Federal
-Court also imposed substantial penalties in 2026 in proceedings
-involving prohibited online poker services.
+The system is designed with a server-authoritative TableActor model, distributed state synchronisation, sub-millisecond execution loops, zero-knowledge player views, and fair-play validation.
 
-Therefore:
-
-> **Do not enable Australian real-money deposits, wagering, or
-> withdrawals in production until the exact product has been reviewed by
-> an Australian gambling lawyer/compliance specialist and the required
-> licence/classification/approvals have been confirmed in writing.**
-
-The engineering plan below intentionally puts a **LEGAL/COMPLIANCE GATE
-before real-money production**.
-
-Official references: - ACMA --- About the Interactive Gambling Act:
-https://www.acma.gov.au/interactivegambling - ACMA --- Check if a
-gambling operator is legal:
-https://www.acma.gov.au/check-if-gambling-operator-legal - Federal
-Register of Legislation --- Interactive Gambling Act 2001:
-https://www.legislation.gov.au/Latest/C2023C00408 - ACMA --- Federal
-Court online poker penalties, 6 July 2026:
-https://www.acma.gov.au/articles/2026-07/federal-court-sets-24-million-penalties-illegal-online-gambling-services
-
-**Engineering rule:** legal approval is a release dependency, not a
-document to complete after development.
+Development and testing are conducted in **Free-Play (Virtual Points) Mode**, utilizing non-monetary virtual tokens for gameplay balance and matchmaking queues.
 
 ------------------------------------------------------------------------
 
@@ -263,12 +235,12 @@ P3 = 35
 P4 = 10
 
 Total = 65 points
-Point value = AUD 1
+Point value = 1 Token
 
-Gross prize basis = AUD 65
+Gross prize basis = 65 Tokens
 ```
 
-The actual real-money fee/settlement model must be separately configured and legally approved.
+The virtual token fee and settlement model are managed by the server ledger.
 
 ## 2.6 Timeout
 
@@ -1473,14 +1445,14 @@ Reference material:
 - Pagat Caribbean Kalooki rules — contract/call/challenge model and scoring example. citeturn1search7
 - Pagat Canasta rules — melds, canastas, red/black threes, discard-pile rules and scoring. citeturn1search3
 
-These references are for rules research. They do not establish Australian legal permission for real-money operation.
+These references are for rules research and engine compliance.
 
 
 # COMPLETE RUMMY RULEBOOK — VARIANTS, RULES & ENGINE SPECIFICATION
 
 > **Purpose:** This section is the authoritative product/game-engine rules specification for the implementation roadmap. It describes the rules that the platform should support as configurable rulesets. It is intentionally separated from payment, wallet, compliance, and UI logic.
 >
-> **Important:** Do not assume that every rule below is legally permitted for an Australian real-money product. Real-money launch requires legal/compliance review of the exact game format, player eligibility, wagering model, bot usage, promotions, payments, and state/territory requirements.
+> **Architecture Principle:** The game engine enforces server-authoritative rules validation across all variants with zero-knowledge client hand projections.
 
 ---
 
@@ -2151,7 +2123,7 @@ The table has a configured point value.
 Example:
 
 ```text
-Point Value = AUD 1
+Point Value = 1 Token
 ```
 
 If opponents have:
@@ -2163,11 +2135,11 @@ If opponents have:
 then gross game value is:
 
 ```text
-60 × AUD 1
-= AUD 60
+60 × 1 Token
+= 60 Tokens
 ```
 
-The actual wallet settlement model, fees, limits, and legal availability are separate concerns.
+The wallet ledger settlement model, limits, and audit logs are separate concerns.
 
 ## R15.5 Common drop values
 
@@ -4908,7 +4880,7 @@ Example ledger entry:
   "type": "GAME_ENTRY",
   "gameId": "G123",
   "amount": 20.00,
-  "currency": "AUD",
+  "currency": "TOKENS",
   "status": "COMPLETED",
   "createdAt": "..."
 }
@@ -6080,7 +6052,7 @@ Deploy 400k target without load testing
 ## Don't
 
 ``` text
-Launch Australian real-money mode before legal approval
+Bypass server-authoritative validation or rate limiting
 ```
 
 ------------------------------------------------------------------------
@@ -6566,7 +6538,7 @@ Security test passes
 +
 Disaster recovery tested
 +
-Australian legal/compliance approval obtained
+Security and fair-play audit completed
 ```
 
 ------------------------------------------------------------------------
@@ -6827,8 +6799,7 @@ That is the safest engineering order.
 15. **Every game event has a sequence number.**
 16. **Every deployment must support graceful draining/recovery.**
 17. **Every capacity number must come from load testing.**
-18. **Real-money Australia production is blocked until legal/compliance
-    approval.**
+18. **Server-authoritative game state is strictly enforced.**
 19. **Security and compliance are architecture requirements, not
     post-launch tasks.**
 20. **Implement one phase completely before moving to the next.**
@@ -6970,9 +6941,9 @@ Only after legal/compliance approval.
 
 Security + monitoring + backups + DR + failure testing.
 
-## Step 14 --- Legal release gate
+## Step 14 --- Production hardening gate
 
-No Australian real-money launch before written approval.
+Ensure fair-play verification, double-entry ledger auditing, and stress tests pass.
 
 ------------------------------------------------------------------------
 

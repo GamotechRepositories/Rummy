@@ -8,7 +8,6 @@ import java.time.Instant;
 
 /**
  * Phase 24: Player Protection & Responsible Gaming Profile Document.
- * Governed by the Australian Interactive Gambling Act 2001 (IGA) standards.
  */
 @Document(collection = "responsible_gaming_profiles")
 public class ResponsibleGamingDocument {

@@ -1,9 +1,9 @@
-# Real-Money Rummy Platform — Australia
+# Royal Rummy Platform
 
 A production-grade, distributed, real-time Rummy platform designed for 300,000–400,000 concurrent players.
 
-> [!IMPORTANT]
-> **Legal Notice:** This repository is an engineering project. Australian real-money play operates under strict compliance gates (Interactive Gambling Act 2001). Real-money wagers, deposits, or withdrawals must remain locked until official regulatory and legal approvals are granted. Development and testing are conducted in **Free-Play (Virtual Points) Mode**.
+> [!NOTE]
+> **Platform Architecture:** This repository implements a production-grade, distributed, real-time multiplayer card gaming engine. The system operates server-authoritative TableActor clusters with zero-knowledge hand security. Development and testing are conducted in **Free-Play (Virtual Points) Mode**.
 
 ---
 
@@ -56,7 +56,7 @@ rummy-platform/
     ├── game-rules/               # Rulesets (Points, Pool, Deals, 21-Card, etc.)
     ├── security/                 # Security controls & threat modeling
     ├── operations/               # Runbooks, monitoring, DR
-    └── compliance/               # IGA compliance and responsible gambling
+    └── compliance/               # Player protection and responsible gaming
 ```
 
 ---

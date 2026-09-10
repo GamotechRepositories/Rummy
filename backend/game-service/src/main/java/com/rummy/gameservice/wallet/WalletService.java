@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * MongoDB Wallet Edition & Double-Entry Financial Ledger Service.
- * Provides strict idempotency, optimistic locking, free-play token pools, and IGA 2001 compliance enforcement.
+ * Provides strict idempotency, optimistic locking, free-play token pools, and transaction audit trails.
  */
 @Service
 public class WalletService {

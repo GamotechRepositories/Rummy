@@ -5,6 +5,7 @@ import com.rummy.engine.command.JoinCommand;
 import com.rummy.engine.command.ReadyCommand;
 import com.rummy.engine.rules.PointsRummyRules;
 import com.rummy.engine.rules.RummyRules;
+import com.rummy.engine.rules.RulesetRegistry;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
 import com.rummy.gameservice.routing.PlayerPresenceService;
@@ -17,6 +18,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.rummy.gameservice.wallet.WalletService;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -33,6 +36,7 @@ public class MatchmakingService {
     private final TableManager tableManager;
     private final TableRoutingRegistry routingRegistry;
     private final PlayerPresenceService presenceService;
+    private final WalletService walletService;
 
     private final long aiFallbackTimeoutMs;
     private final long maxQueueTimeoutMs;
@@ -47,13 +51,24 @@ public class MatchmakingService {
             TableManager tableManager,
             TableRoutingRegistry routingRegistry,
             PlayerPresenceService presenceService,
-            @Value("${matchmaking.ai-fallback-timeout-ms:4000}") long aiFallbackTimeoutMs,
-            @Value("${matchmaking.max-queue-timeout-ms:25000}") long maxQueueTimeoutMs) {
+            @Autowired(required = false) WalletService walletService,
+            @Value("${matchmaking.ai-fallback-timeout-ms:15000}") long aiFallbackTimeoutMs,
+            @Value("${matchmaking.max-queue-timeout-ms:45000}") long maxQueueTimeoutMs) {
         this.tableManager = Objects.requireNonNull(tableManager);
         this.routingRegistry = Objects.requireNonNull(routingRegistry);
         this.presenceService = Objects.requireNonNull(presenceService);
+        this.walletService = walletService;
         this.aiFallbackTimeoutMs = aiFallbackTimeoutMs;
         this.maxQueueTimeoutMs = maxQueueTimeoutMs;
+    }
+
+    public MatchmakingService(
+            TableManager tableManager,
+            TableRoutingRegistry routingRegistry,
+            PlayerPresenceService presenceService,
+            long aiFallbackTimeoutMs,
+            long maxQueueTimeoutMs) {
+        this(tableManager, routingRegistry, presenceService, null, aiFallbackTimeoutMs, maxQueueTimeoutMs);
     }
 
     @PostConstruct
@@ -132,19 +147,27 @@ public class MatchmakingService {
                 }
             }
 
-            // For remaining players in queue, check for AI fallback or expiration
-            for (MatchmakingTicket leftover : matchedGroup) {
-                long elapsed = Duration.between(leftover.getCreatedAt(), Instant.now()).toMillis();
+            // For remaining players in queue (e.g. 2, 3, 4, or 5 players in a 6-player table):
+            if (!matchedGroup.isEmpty()) {
+                boolean anyTimedOut = matchedGroup.stream().anyMatch(t ->
+                        t.isAllowAiFallback() && Duration.between(t.getCreatedAt(), Instant.now()).toMillis() >= aiFallbackTimeoutMs
+                );
 
-                if (leftover.isAllowAiFallback() && elapsed >= aiFallbackTimeoutMs) {
-                    // Match immediately with AI opponents
-                    createAndAssignTable(List.of(leftover), true);
-                } else if (elapsed >= maxQueueTimeoutMs) {
-                    leftover.setStatus(MatchmakingTicket.Status.EXPIRED);
-                    log.info("[Matchmaking] Ticket {} expired after {}ms", leftover.getTicketId(), elapsed);
+                if (anyTimedOut) {
+                    // Group ALL waiting real players together into 1 shared table, and fill remaining seats with bots!
+                    // e.g. 3 real players + 3 bots = 6 players
+                    createAndAssignTable(new ArrayList<>(matchedGroup), true);
+                    matchedGroup.clear();
                 } else {
-                    // Re-enqueue for next cycle
-                    queue.add(leftover);
+                    for (MatchmakingTicket leftover : matchedGroup) {
+                        long elapsed = Duration.between(leftover.getCreatedAt(), Instant.now()).toMillis();
+                        if (elapsed >= maxQueueTimeoutMs) {
+                            leftover.setStatus(MatchmakingTicket.Status.EXPIRED);
+                            log.info("[Matchmaking] Ticket {} expired after {}ms", leftover.getTicketId(), elapsed);
+                        } else {
+                            queue.add(leftover);
+                        }
+                    }
                 }
             }
         }
@@ -154,16 +177,33 @@ public class MatchmakingService {
         String tableId = "TBL_MM_" + UUID.randomUUID().toString().substring(0, 8);
         MatchmakingTicket first = humanTickets.get(0);
 
-        RummyRules rules = new PointsRummyRules(); // default ruleset
+        RummyRules rules = RulesetRegistry.getRuleset(first.getRulesetId()).orElseGet(PointsRummyRules::new);
         TableActor actor = tableManager.getOrCreateTable(tableId, rules);
         routingRegistry.registerTableOwnership(tableId);
 
-        // Register all human players
+        // Register all human players and debit stake
         for (MatchmakingTicket ticket : humanTickets) {
             routingRegistry.registerPlayerTable(ticket.getPlayerId(), tableId);
             ticket.setMatchedTableId(tableId);
             ticket.setMatchedServerId(routingRegistry.getServerInstanceId());
             ticket.setStatus(MatchmakingTicket.Status.MATCHED);
+
+            if (walletService != null && ticket.getStakeTier() > 0) {
+                try {
+                    String txKey = "STAKE_" + tableId + "_" + ticket.getPlayerId();
+                    walletService.debit(
+                            ticket.getPlayerId(),
+                            BigDecimal.valueOf(ticket.getStakeTier()),
+                            "GAME_ENTRY_STAKE",
+                            txKey,
+                            tableId,
+                            "Table entry stake for " + ticket.getRulesetId(),
+                            Map.of("tableId", tableId, "stakeTier", ticket.getStakeTier())
+                    );
+                } catch (Exception e) {
+                    log.warn("[Matchmaking] Could not debit stake for {}: {}", ticket.getPlayerId(), e.getMessage());
+                }
+            }
 
             log.info("[Matchmaking] Matched human player {} into table {}", ticket.getPlayerId(), tableId);
         }
@@ -173,7 +213,7 @@ public class MatchmakingService {
             int neededBots = first.getMaxPlayers() - humanTickets.size();
             for (int i = 1; i <= neededBots; i++) {
                 String botId = "BOT_" + UUID.randomUUID().toString().substring(0, 4);
-                String botName = "AussieBot_" + i;
+                String botName = "RoyalBot_" + i;
                 int seatIndex = humanTickets.size() + (i - 1);
                 
                 actor.registerBot(botId, botName, BotDifficulty.MEDIUM);

@@ -58,6 +58,6 @@ class AdminMetricsServiceTest {
         assertThat(diag).containsKey("usedMemoryMb");
         assertThat(diag).containsKey("complianceMode");
         assertThat(diag.get("complianceMode")).isEqualTo("FREE_PLAY_ONLY");
-        assertThat(diag.get("interactiveGamblingAct2001Compliant")).isEqualTo(true);
+        assertThat(diag.get("fairPlayCompliant")).isEqualTo(true);
     }
 }

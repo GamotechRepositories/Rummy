@@ -96,7 +96,7 @@ public class AdminMetricsService {
         diag.put("maxMemoryMb", maxMemory / (1024 * 1024));
         diag.put("availableProcessors", runtime.availableProcessors());
         diag.put("complianceMode", "FREE_PLAY_ONLY");
-        diag.put("interactiveGamblingAct2001Compliant", true);
+        diag.put("fairPlayCompliant", true);
 
         return diag;
     }

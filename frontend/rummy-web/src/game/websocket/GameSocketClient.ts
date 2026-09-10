@@ -111,8 +111,10 @@ class GameSocketClient {
 
       case 'AUTH_SUCCESS':
         console.log('[WS] Authenticated successfully');
-        // If tableId is selected, join or resync table
-        this.joinTable();
+        // Rejoin only after the player left the lobby (or after an in-game reconnect)
+        if (useGameStore.getState().hasJoinedTable) {
+          this.joinTable();
+        }
         break;
 
       case 'GAME_VIEW':

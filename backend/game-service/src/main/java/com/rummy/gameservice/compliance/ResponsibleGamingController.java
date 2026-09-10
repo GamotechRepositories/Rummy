@@ -35,7 +35,7 @@ public class ResponsibleGamingController {
                 "selfExclusionExpiresAt", profile.getSelfExclusionExpiresAt() != null ? profile.getSelfExclusionExpiresAt().toString() : "PERMANENT_OR_NONE",
                 "coolOffExpiresAt", profile.getCoolOffExpiresAt() != null ? profile.getCoolOffExpiresAt().toString() : "NONE",
                 "eligibilityStatus", status,
-                "helplineNotice", "Free confidential support available 24/7 at Gambling Help Online: 1800 858 858 or BetStop.gov.au"
+                "helplineNotice", "Free confidential support and responsible gaming assistance available 24/7."
         ));
     }
 

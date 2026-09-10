@@ -1,7 +1,7 @@
 import React from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
-import { Play, UserCheck, Bot, Trash2, Award, Flag, ArrowDownToLine } from 'lucide-react';
+import { Play, Trash2, Award, Flag, ArrowDownToLine, Loader2 } from 'lucide-react';
 
 export const ActionControls: React.FC = () => {
   const {
@@ -15,7 +15,6 @@ export const ActionControls: React.FC = () => {
   const { gameStatus, isMyTurn, turnPhase, opponents, activePlayerId } = gameState;
   const isDrawPhase = isMyTurn && turnPhase === 'DRAW';
   const isDiscardPhase = isMyTurn && turnPhase === 'DISCARD';
-  const totalPlayersCount = 1 + (opponents?.length ?? 0);
 
   const handleDrawClosed = () => socketClient.draw('CLOSED_DECK');
   const handleDrawDiscard = () => socketClient.draw('DISCARD_PILE');
@@ -38,12 +37,16 @@ export const ActionControls: React.FC = () => {
     }
   };
 
-  const handleAddBot = () => {
-    const nextSeat = totalPlayersCount;
-    if (nextSeat < 6) {
-      socketClient.addBot('Bot_' + ['Boomer', 'Kangaroo', 'Sydney', 'Wombat', 'Outback'][nextSeat % 5], nextSeat);
+  // Automatically ready up and start game when entering pre-game state
+  React.useEffect(() => {
+    if (gameStatus === 'WAITING_FOR_PLAYERS') {
+      socketClient.sendReady();
+      const t = setTimeout(() => {
+        socketClient.startGame();
+      }, 500);
+      return () => clearTimeout(t);
     }
-  };
+  }, [gameStatus]);
 
   return (
     <div
@@ -61,38 +64,12 @@ export const ActionControls: React.FC = () => {
         margin: '8px auto 0',
       }}
     >
-      {/* Waiting / Dealing Controls */}
+      {/* Dealing Status Display */}
       {gameStatus === 'WAITING_FOR_PLAYERS' && (
-        <>
-          <button
-            id="btn-ready"
-            className="btn-secondary"
-            onClick={() => socketClient.sendReady()}
-          >
-            <UserCheck size={16} />
-            I am Ready
-          </button>
-
-          <button
-            id="btn-add-bot"
-            className="btn-secondary"
-            onClick={handleAddBot}
-            disabled={totalPlayersCount >= 6}
-          >
-            <Bot size={16} />
-            Add AI Bot ({totalPlayersCount}/6)
-          </button>
-
-          <button
-            id="btn-start-game"
-            className="btn-primary"
-            onClick={() => socketClient.startGame()}
-            disabled={totalPlayersCount < 2}
-          >
-            <Play size={16} />
-            Start Game ({totalPlayersCount} Players)
-          </button>
-        </>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#fef08a', fontSize: '14px', fontWeight: 700 }}>
+          <Loader2 size={18} className="spinner" color="#d4af37" />
+          <span>Shuffling Deck & Dealing Cards... Starting Game!</span>
+        </div>
       )}
 
       {/* In-Progress Turn Controls */}

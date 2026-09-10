@@ -5,7 +5,7 @@ const NUM_TABLES = parseInt(process.env.NUM_TABLES || '10', 10);
 const PLAYERS_PER_TABLE = 2;
 
 console.log(`\n===============================================================`);
-console.log(`🃏 AUSTRALIAN RUMMY PLATFORM - LOAD SIMULATION HARNESS`);
+console.log(`🃏 ROYAL RUMMY PLATFORM - LOAD SIMULATION HARNESS`);
 console.log(`===============================================================`);
 console.log(`Target WebSocket Gateway: ${WS_URL}`);
 console.log(`Simulating Tables:       ${NUM_TABLES}`);
