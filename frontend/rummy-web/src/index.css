@@ -344,18 +344,85 @@ h1, h2, h3, h4, .font-display {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.coach-banner {
-  animation: coachIn 0.3s ease-out;
+/* ========== MATCHMAKING RADAR ========== */
+@keyframes radarModalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 @keyframes radarWave {
-  0% { transform: scale(0.6); opacity: 0.9; }
-  100% { transform: scale(2.2); opacity: 0; }
+  0% {
+    transform: scale(0.75);
+    opacity: 0.85;
+    border-color: rgba(212, 175, 55, 0.7);
+  }
+  60% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(2.3);
+    opacity: 0;
+    border-color: rgba(16, 185, 129, 0.15);
+  }
 }
 
-.radar-wave-1 { animation: radarWave 2s ease-out infinite; }
-.radar-wave-2 { animation: radarWave 2s ease-out 0.7s infinite; }
-.radar-wave-3 { animation: radarWave 2s ease-out 1.4s infinite; }
+@keyframes radarPulseCore {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 25px rgba(212, 175, 55, 0.5), inset 0 0 15px rgba(255, 255, 255, 0.25);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 42px rgba(212, 175, 55, 0.8), inset 0 0 20px rgba(255, 255, 255, 0.4);
+  }
+}
+
+.radar-card {
+  animation: radarModalIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.radar-wave-1 {
+  animation: radarWave 2.2s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+
+.radar-wave-2 {
+  animation: radarWave 2.2s cubic-bezier(0.25, 1, 0.5, 1) 0.7s infinite;
+}
+
+.radar-wave-3 {
+  animation: radarWave 2.2s cubic-bezier(0.25, 1, 0.5, 1) 1.4s infinite;
+}
+
+.radar-core {
+  animation: radarPulseCore 2s ease-in-out infinite;
+}
+
+
+/* ========== 4-CARD SINGLE HORIZONTAL ROW ON DESKTOP ========== */
+.variant-cards-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+@media (max-width: 1080px) {
+  .variant-cards-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 580px) {
+  .variant-cards-row {
+    grid-template-columns: 1fr;
+  }
+}
 
 /* ========== LOBBY SINGLE FRAME ========== */
 .lobby-frame {
@@ -374,10 +441,50 @@ h1, h2, h3, h4, .font-display {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: clamp(12px, 3vh, 28px) 16px;
   gap: clamp(12px, 2vh, 24px);
 }
+
+/* ========== REAL RUMMY SLIDER ========== */
+.rummy-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.rummy-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%);
+  border: 2px solid #d4af37;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.rummy-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+}
+
+.rummy-slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%);
+  border: 2px solid #d4af37;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
 
 /* ========== TUTORIAL ========== */
 .tut-overlay {

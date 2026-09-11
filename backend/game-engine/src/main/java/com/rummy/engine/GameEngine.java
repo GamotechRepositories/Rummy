@@ -263,8 +263,9 @@ public final class GameEngine {
         }
 
         PlayerState player = state.requirePlayer(cmd.playerId());
-        if (player.getHandSize() != 14) {
-            return EngineResult.failure(state, "Expected 14 cards (13 hand + 1 finish) to declare, but found " + player.getHandSize());
+        int expectedHand = rules.getCardsPerPlayer() + 1;
+        if (player.getHandSize() != expectedHand) {
+            return EngineResult.failure(state, "Expected " + expectedHand + " cards (" + rules.getCardsPerPlayer() + " hand + 1 finish) to declare, but found " + player.getHandSize());
         }
         if (!player.hasCard(cmd.finishCardInstanceId())) {
             return EngineResult.failure(state, "Finish card " + cmd.finishCardInstanceId() + " not found in hand");
