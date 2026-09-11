@@ -146,7 +146,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
 
     if (walletBalance < activeEntryFee) {
       setErrorMsg(
-        `Insufficient Balance: You need ₹ ${activeEntryFee} tokens to join this table. Open Vault to claim free tokens.`
+        `Insufficient Balance: You need ₹ ${activeEntryFee} to join this table. Click '+ Add Cash' to deposit.`
       );
       setIsWalletOpen(true);
       return;
@@ -347,14 +347,15 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                 background: '#10b981',
                 color: '#fff',
                 borderRadius: 12,
-                padding: '3px 6px',
+                padding: '3px 8px',
                 fontSize: 10,
+                fontWeight: 800,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 3,
               }}
             >
-              <PlusCircle size={11} /> Vault
+              <PlusCircle size={11} /> + Add Cash
             </span>
           </button>
         </div>

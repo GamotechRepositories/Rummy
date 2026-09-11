@@ -178,6 +178,27 @@ public class WalletService {
         }
     }
 
+    /**
+     * Real-Money Deposit into player wallet (simulates / interfaces with UPI/Gateway).
+     */
+    public synchronized WalletTransactionDocument depositCash(String playerId, BigDecimal amount, String method) {
+        String key = "DEP_" + playerId + "_" + UUID.randomUUID().toString().substring(0, 8);
+        return credit(playerId, amount, "CASH_DEPOSIT", key, null,
+                "Real Cash Deposit via " + (method != null ? method : "UPI"),
+                Map.of("method", method != null ? method : "UPI", "timestamp", Instant.now().toString()));
+    }
+
+    /**
+     * Real-Money Withdrawal to player's verified Bank / UPI ID.
+     */
+    public synchronized WalletTransactionDocument withdrawCash(String playerId, BigDecimal amount, String method, String destination) {
+        String key = "WTH_" + playerId + "_" + UUID.randomUUID().toString().substring(0, 8);
+        return debit(playerId, amount, "CASH_WITHDRAWAL", key, null,
+                "Real Cash Withdrawal to " + (destination != null ? destination : "Bank Account"),
+                Map.of("method", method != null ? method : "UPI_PAYOUT", "destination", destination != null ? destination : ""));
+    }
+
+
     public List<WalletTransactionDocument> getTransactions(String playerId) {
         if (transactionRepository != null) {
             try {

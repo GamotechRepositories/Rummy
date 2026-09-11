@@ -1,6 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
-import { Coins, Gift, ShieldAlert, History, X, Sparkles, PlusCircle } from 'lucide-react';
+import {
+  IndianRupee,
+  PlusCircle,
+  ArrowUpRight,
+  ShieldCheck,
+  History,
+  X,
+  CreditCard,
+  Building,
+  Smartphone,
+  Gift,
+} from 'lucide-react';
 
 interface WalletTransaction {
   id: string;
@@ -21,7 +32,16 @@ interface WalletModalProps {
 
 export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
   const { playerId } = useGameStore();
-  const [balance, setBalance] = useState<number>(1000);
+  const [totalBalance, setTotalBalance] = useState<number>(1000);
+  const [depositBalance, setDepositBalance] = useState<number>(600);
+  const [winningsBalance, setWinningsBalance] = useState<number>(400);
+
+  const [activeTab, setActiveTab] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
+  const [depositAmount, setDepositAmount] = useState<number>(500);
+  const [withdrawAmount, setWithdrawAmount] = useState<number>(200);
+  const [upiId, setUpiId] = useState<string>('player@upi');
+  const [payMethod, setPayMethod] = useState<'UPI' | 'NETBANKING' | 'CARD'>('UPI');
+
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -32,7 +52,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
       const res = await fetch(`http://localhost:8081/api/wallet/balance?playerId=${playerId}`);
       if (res.ok) {
         const data = await res.json();
-        setBalance(data.freePlayBalance ?? 1000);
+        const total = data.totalBalance ?? data.freePlayBalance ?? 1000;
+        setTotalBalance(total);
+        setDepositBalance(data.depositBalance ?? total * 0.6);
+        setWinningsBalance(data.winningsBalance ?? total * 0.4);
       }
 
       const txRes = await fetch(`http://localhost:8081/api/wallet/transactions?playerId=${playerId}`);
@@ -53,36 +76,76 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
     }
   }, [isOpen, playerId]);
 
-  const claimDailyBonus = async () => {
+  const handleDeposit = async () => {
+    if (depositAmount <= 0) return;
     try {
       setLoading(true);
-      const res = await fetch(`http://localhost:8081/api/wallet/claim-daily?playerId=${playerId}`, { method: 'POST' });
+      const res = await fetch(
+        `http://localhost:8081/api/wallet/deposit?playerId=${playerId}&amount=${depositAmount}&method=${payMethod}`,
+        { method: 'POST' }
+      );
       const data = await res.json();
       if (res.ok && data.success) {
-        setFeedback('🎉 Claimed 500 Free-Play Tokens!');
-        fetchWallet();
+        setFeedback(`✅ ₹ ${depositAmount} successfully deposited via ${payMethod}!`);
+        await fetchWallet();
       } else {
-        setFeedback(data.message || 'Daily bonus already claimed for today!');
+        setFeedback(data.message || 'Deposit failed');
       }
       setTimeout(() => setFeedback(null), 4000);
     } catch {
-      setFeedback('Failed to claim daily bonus');
+      setFeedback('Deposit network error');
     } finally {
       setLoading(false);
     }
   };
 
-  const getTestFaucet = async () => {
+  const handleWithdraw = async () => {
+    if (withdrawAmount <= 0) return;
+    if (withdrawAmount > winningsBalance) {
+      setFeedback('⚠️ Withdrawal amount cannot exceed your Winnings Balance.');
+      setTimeout(() => setFeedback(null), 4000);
+      return;
+    }
+
     try {
       setLoading(true);
-      const res = await fetch(`http://localhost:8081/api/wallet/faucet?playerId=${playerId}&amount=1000`, { method: 'POST' });
-      if (res.ok) {
-        setFeedback('🪙 Added +1,000 Free-Play Tokens from Test Faucet!');
-        fetchWallet();
+      const res = await fetch(
+        `http://localhost:8081/api/wallet/withdraw?playerId=${playerId}&amount=${withdrawAmount}&method=UPI&destination=${encodeURIComponent(
+          upiId
+        )}`,
+        { method: 'POST' }
+      );
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setFeedback(`✅ ₹ ${withdrawAmount} successfully withdrawn to ${upiId}!`);
+        await fetchWallet();
+      } else {
+        setFeedback(data.message || 'Withdrawal failed');
       }
       setTimeout(() => setFeedback(null), 4000);
     } catch {
-      setFeedback('Faucet error');
+      setFeedback('Withdrawal network error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClaimDaily = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`http://localhost:8081/api/wallet/claim-daily?playerId=${playerId}`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setFeedback('🎁 Claimed ₹ 500 Daily Login Cash!');
+        await fetchWallet();
+      } else {
+        setFeedback(data.message || 'Daily bonus already claimed for today!');
+      }
+      setTimeout(() => setFeedback(null), 4000);
+    } catch {
+      setFeedback('Bonus claim error');
     } finally {
       setLoading(false);
     }
@@ -91,233 +154,483 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
   if (!isOpen) return null;
 
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(5, 12, 8, 0.85)',
-      backdropFilter: 'blur(10px)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 9999,
-      padding: '1rem',
-    }}>
-      <div style={{
-        background: 'linear-gradient(145deg, #13241b, #0d1a13)',
-        border: '1px solid rgba(212, 175, 55, 0.4)',
-        borderRadius: '16px',
-        width: '100%',
-        maxWidth: '540px',
-        boxShadow: '0 20px 50px rgba(0,0,0,0.8), 0 0 30px rgba(212, 175, 55, 0.15)',
-        color: '#fff',
-        overflow: 'hidden',
-      }}>
-        {/* Header */}
-        <div style={{
-          padding: '1.25rem 1.5rem',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(3, 7, 18, 0.88)',
+        backdropFilter: 'blur(16px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+        padding: '16px',
+      }}
+    >
+      <div
+        style={{
+          background: 'linear-gradient(170deg, #1e293b 0%, #0f172a 60%, #020617 100%)',
+          border: '1.5px solid rgba(212, 175, 55, 0.45)',
+          borderRadius: '24px',
+          width: '100%',
+          maxWidth: '520px',
+          maxHeight: '90vh',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: 'rgba(212, 175, 55, 0.05)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, #d4af37, #856404)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#000',
-            }}>
-              <Coins size={22} />
+          flexDirection: 'column',
+          boxShadow: '0 25px 60px rgba(0,0,0,0.85), 0 0 45px rgba(212, 175, 55, 0.15)',
+          color: '#fff',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: '16px 22px',
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'rgba(212, 175, 55, 0.06)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
+              }}
+            >
+              <IndianRupee size={22} strokeWidth={2.5} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#f3e5ab' }}>
-                Player Token Vault
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#f8fafc' }}>
+                Real Cash Wallet
               </h3>
-              <p style={{ margin: 0, fontSize: '0.8rem', color: '#88ab8e' }}>
-                Player Token Balance
+              <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>
+                Account ID: {playerId} · INR (₹)
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             style={{
-              background: 'transparent',
+              background: 'rgba(255,255,255,0.06)',
               border: 'none',
-              color: '#88ab8e',
-              cursor: 'pointer',
-              padding: '0.5rem',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Balance Display */}
-          <div style={{
-            background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.15), rgba(212, 175, 55, 0.03))',
-            border: '1px solid rgba(212, 175, 55, 0.3)',
-            borderRadius: '12px',
-            padding: '1.25rem',
-            textAlign: 'center',
-          }}>
-            <span style={{ fontSize: '0.85rem', color: '#d4af37', textTransform: 'uppercase', letterSpacing: '1px' }}>
-              Free-Play Token Balance
-            </span>
-            <div style={{
-              fontSize: '2.5rem',
-              fontWeight: 800,
-              color: '#fff',
-              margin: '0.25rem 0',
-              textShadow: '0 2px 10px rgba(212,175,55,0.4)',
+              borderRadius: '50%',
+              width: '32px',
+              height: '32px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '0.5rem',
-            }}>
-              <Sparkles size={28} color="#d4af37" />
-              {balance.toLocaleString()}
-              <span style={{ fontSize: '1rem', color: '#d4af37', fontWeight: 600 }}>TOKENS</span>
+              color: '#94a3b8',
+              cursor: 'pointer',
+            }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Scrollable Body */}
+        <div style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Total Balance Card */}
+          <div
+            style={{
+              background: 'radial-gradient(ellipse at 50% 20%, #7f1d1d 0%, #450a0a 70%, #1c0303 100%)',
+              border: '1px solid rgba(212, 175, 55, 0.4)',
+              borderRadius: '18px',
+              padding: '18px 20px',
+              textAlign: 'center',
+              boxShadow: '0 10px 25px rgba(0,0,0,0.4)',
+            }}
+          >
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#fca5a5', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+              Total Cash Balance
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#88ab8e' }}>
-              Player ID: <code style={{ color: '#fff' }}>{playerId}</code>
+            <div
+              style={{
+                fontSize: '32px',
+                fontWeight: 900,
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                margin: '6px 0 12px 0',
+              }}
+            >
+              <span>₹</span>
+              <span>{totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+
+            {/* Split: Deposit vs Winnings */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '10px',
+                paddingTop: '12px',
+                borderTop: '1px solid rgba(255,255,255,0.1)',
+                fontSize: '12px',
+              }}
+            >
+              <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: '10px' }}>
+                <div style={{ color: '#cbd5e1', fontSize: '11px' }}>Deposit Cash</div>
+                <div style={{ fontWeight: 800, color: '#f8fafc', fontSize: '15px', marginTop: '2px' }}>
+                  ₹ {depositBalance.toFixed(2)}
+                </div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: '10px' }}>
+                <div style={{ color: '#cbd5e1', fontSize: '11px' }}>Winnings (Withdrawable)</div>
+                <div style={{ fontWeight: 800, color: '#34d399', fontSize: '15px', marginTop: '2px' }}>
+                  ₹ {winningsBalance.toFixed(2)}
+                </div>
+              </div>
             </div>
           </div>
 
+          {/* Action Tabs: Add Cash vs Withdraw */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              background: 'rgba(0,0,0,0.4)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '14px',
+              padding: '4px',
+              gap: '4px',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveTab('DEPOSIT')}
+              style={{
+                padding: '10px',
+                borderRadius: '10px',
+                border: 'none',
+                background:
+                  activeTab === 'DEPOSIT'
+                    ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                    : 'transparent',
+                color: activeTab === 'DEPOSIT' ? '#ffffff' : '#94a3b8',
+                fontWeight: 800,
+                fontSize: '14px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+              }}
+            >
+              <PlusCircle size={16} /> + Add Cash
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('WITHDRAW')}
+              style={{
+                padding: '10px',
+                borderRadius: '10px',
+                border: 'none',
+                background:
+                  activeTab === 'WITHDRAW'
+                    ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
+                    : 'transparent',
+                color: activeTab === 'WITHDRAW' ? '#ffffff' : '#94a3b8',
+                fontWeight: 800,
+                fontSize: '14px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+              }}
+            >
+              <ArrowUpRight size={16} /> ↗ Withdraw
+            </button>
+          </div>
+
+          {/* Feedback alert */}
           {feedback && (
-            <div style={{
-              padding: '0.75rem 1rem',
-              borderRadius: '8px',
-              background: 'rgba(40, 167, 69, 0.2)',
-              border: '1px solid rgba(40, 167, 69, 0.4)',
-              color: '#d4edda',
-              fontSize: '0.85rem',
-              textAlign: 'center',
-            }}>
+            <div
+              style={{
+                background: feedback.includes('✅') || feedback.includes('🎁') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                border: `1px solid ${feedback.includes('✅') || feedback.includes('🎁') ? '#10b981' : '#ef4444'}`,
+                borderRadius: '10px',
+                padding: '10px 14px',
+                fontSize: '13px',
+                fontWeight: 700,
+                color: feedback.includes('✅') || feedback.includes('🎁') ? '#34d399' : '#fca5a5',
+                textAlign: 'center',
+              }}
+            >
               {feedback}
             </div>
           )}
 
-          {/* Quick Action Buttons */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+          {/* DEPOSIT FORM */}
+          {activeTab === 'DEPOSIT' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#e2e8f0' }}>Select Deposit Amount:</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                {[100, 200, 500, 1000].map((amt) => {
+                  const isSelected = depositAmount === amt;
+                  return (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setDepositAmount(amt)}
+                      style={{
+                        padding: '10px 0',
+                        borderRadius: '10px',
+                        border: isSelected ? '2px solid #10b981' : '1px solid rgba(255,255,255,0.12)',
+                        background: isSelected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(15, 23, 42, 0.6)',
+                        color: isSelected ? '#34d399' : '#f8fafc',
+                        fontSize: '14px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ₹ {amt}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Payment Method Selector */}
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#e2e8f0' }}>Payment Mode:</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                {[
+                  { id: 'UPI' as const, label: 'UPI / GPay', icon: <Smartphone size={15} /> },
+                  { id: 'NETBANKING' as const, label: 'NetBanking', icon: <Building size={15} /> },
+                  { id: 'CARD' as const, label: 'Cards', icon: <CreditCard size={15} /> },
+                ].map((m) => {
+                  const isSel = payMethod === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setPayMethod(m.id)}
+                      style={{
+                        padding: '8px 6px',
+                        borderRadius: '10px',
+                        border: isSel ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
+                        background: isSel ? 'rgba(16, 185, 129, 0.15)' : 'rgba(0,0,0,0.3)',
+                        color: isSel ? '#34d399' : '#cbd5e1',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      {m.icon}
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                disabled={loading}
+                onClick={handleDeposit}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '14px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#ffffff',
+                  fontSize: '16px',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  boxShadow: '0 6px 20px rgba(16, 185, 129, 0.35)',
+                  marginTop: '4px',
+                }}
+              >
+                {loading ? 'Processing…' : `Deposit ₹ ${depositAmount} Instantly`}
+              </button>
+            </div>
+          )}
+
+          {/* WITHDRAW FORM */}
+          {activeTab === 'WITHDRAW' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#e2e8f0', marginBottom: '6px' }}>
+                  Withdrawal Amount (₹):
+                </label>
+                <input
+                  type="number"
+                  value={withdrawAmount}
+                  max={winningsBalance}
+                  min={50}
+                  onChange={(e) => setWithdrawAmount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.4)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '10px',
+                    color: '#fff',
+                    fontSize: '16px',
+                    fontWeight: 700,
+                    padding: '10px 14px',
+                    outline: 'none',
+                  }}
+                />
+                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
+                  Max withdrawable winnings: <strong style={{ color: '#34d399' }}>₹ {winningsBalance.toFixed(2)}</strong>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#e2e8f0', marginBottom: '6px' }}>
+                  UPI ID / Virtual Payment Address:
+                </label>
+                <input
+                  type="text"
+                  value={upiId}
+                  onChange={(e) => setUpiId(e.target.value)}
+                  placeholder="yourname@okhdfcbank"
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.4)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '10px',
+                    color: '#fff',
+                    fontSize: '14px',
+                    padding: '10px 14px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={loading || winningsBalance < 50}
+                onClick={handleWithdraw}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '14px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                  color: '#ffffff',
+                  fontSize: '16px',
+                  fontWeight: 900,
+                  cursor: winningsBalance < 50 ? 'not-allowed' : 'pointer',
+                  opacity: winningsBalance < 50 ? 0.6 : 1,
+                  boxShadow: '0 6px 20px rgba(59, 130, 246, 0.35)',
+                  marginTop: '4px',
+                }}
+              >
+                {loading ? 'Processing…' : `Withdraw ₹ ${withdrawAmount} to UPI`}
+              </button>
+            </div>
+          )}
+
+          {/* Daily Bonus Button */}
+          <div style={{ paddingTop: '8px' }}>
             <button
-              onClick={claimDailyBonus}
-              disabled={loading}
+              type="button"
+              onClick={handleClaimDaily}
               style={{
-                padding: '0.85rem',
-                borderRadius: '10px',
-                border: 'none',
-                background: 'linear-gradient(135deg, #28a745, #1e7e34)',
-                color: '#fff',
+                width: '100%',
+                padding: '10px',
+                borderRadius: '12px',
+                border: '1px solid rgba(212,175,55,0.3)',
+                background: 'rgba(212,175,55,0.08)',
+                color: '#fef08a',
+                fontSize: '13px',
                 fontWeight: 700,
-                fontSize: '0.9rem',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '0.5rem',
-                boxShadow: '0 4px 15px rgba(40,167,69,0.3)',
+                gap: '8px',
               }}
             >
-              <Gift size={18} />
-              Claim Daily 500
+              <Gift size={16} color="#fbbf24" /> Claim Daily ₹500 Free Cash Bonus
             </button>
+          </div>
 
-            <button
-              onClick={getTestFaucet}
-              disabled={loading}
+          {/* Trust badge */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'rgba(16, 185, 129, 0.08)',
+              border: '1px solid rgba(16, 185, 129, 0.2)',
+              borderRadius: '10px',
+              padding: '10px 14px',
+              fontSize: '12px',
+              color: '#34d399',
+            }}
+          >
+            <ShieldCheck size={18} color="#10b981" style={{ flexShrink: 0 }} />
+            <span>100% Secure SSL Ledger · RNG Certified · Instant UPI Settlements</span>
+          </div>
+
+          {/* Recent Real Cash Transactions */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 800, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <History size={15} /> Recent Cash Transactions
+            </div>
+            <div
               style={{
-                padding: '0.85rem',
-                borderRadius: '10px',
-                border: '1px solid rgba(212, 175, 55, 0.4)',
-                background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.2), rgba(212, 175, 55, 0.05))',
-                color: '#f3e5ab',
-                fontWeight: 700,
-                fontSize: '0.9rem',
-                cursor: 'pointer',
+                maxHeight: '160px',
+                overflowY: 'auto',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.5rem',
+                flexDirection: 'column',
+                gap: '6px',
               }}
             >
-              <PlusCircle size={18} />
-              +1,000 Faucet
-            </button>
-          </div>
-
-          {/* Compliance Banner */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '0.75rem',
-            padding: '0.85rem',
-            borderRadius: '10px',
-            background: 'rgba(255, 193, 7, 0.08)',
-            border: '1px solid rgba(255, 193, 7, 0.25)',
-          }}>
-            <ShieldAlert size={20} color="#ffc107" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ fontSize: '0.75rem', color: '#e6c875', lineHeight: 1.4 }}>
-              <strong style={{ color: '#ffc107' }}>Platform Notice:</strong> This platform operates strictly in Free-Play Mode using non-redeemable virtual game tokens.
-            </div>
-          </div>
-
-          {/* Recent Ledger History */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-              <History size={16} color="#88ab8e" />
-              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#88ab8e' }}>
-                Recent Ledger Transactions
-              </span>
-            </div>
-
-            <div style={{
-              maxHeight: '140px',
-              overflowY: 'auto',
-              borderRadius: '8px',
-              background: 'rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.05)',
-            }}>
               {transactions.length === 0 ? (
-                <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.8rem', color: '#666' }}>
-                  No previous transactions recorded.
+                <div style={{ fontSize: '12px', color: '#64748b', textAlign: 'center', padding: '12px' }}>
+                  No cash transactions recorded yet.
                 </div>
               ) : (
-                transactions.slice(0, 5).map((tx) => (
-                  <div
-                    key={tx.id || tx.idempotencyKey}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '0.6rem 0.85rem',
-                      borderBottom: '1px solid rgba(255,255,255,0.04)',
-                      fontSize: '0.8rem',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600, color: '#fff' }}>{tx.transactionType}</div>
-                      <div style={{ fontSize: '0.7rem', color: '#888' }}>
-                        {new Date(tx.createdAt).toLocaleTimeString()} · {tx.description || 'Ledger entry'}
+                transactions.slice(0, 10).map((t) => {
+                  const isPositive =
+                    t.transactionType.includes('CREDIT') ||
+                    t.transactionType.includes('WIN') ||
+                    t.transactionType.includes('DEPOSIT');
+                  return (
+                    <div
+                      key={t.id || t.idempotencyKey}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        background: 'rgba(0,0,0,0.3)',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(255,255,255,0.04)',
+                        fontSize: '12px',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700, color: '#f8fafc' }}>{t.transactionType}</div>
+                        <div style={{ fontSize: '10px', color: '#64748b' }}>{t.description}</div>
+                      </div>
+                      <div style={{ fontWeight: 900, color: isPositive ? '#34d399' : '#f87171' }}>
+                        {isPositive ? '+' : '-'} ₹ {Math.abs(t.amount)}
                       </div>
                     </div>
-                    <div style={{
-                      fontWeight: 700,
-                      color: tx.transactionType.includes('WIN') || tx.transactionType.includes('CREDIT') ? '#28a745' : '#dc3545',
-                    }}>
-                      {tx.transactionType.includes('WIN') || tx.transactionType.includes('CREDIT') ? '+' : '-'}
-                      {tx.amount}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

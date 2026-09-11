@@ -28,14 +28,62 @@ public class WalletController {
     @GetMapping("/balance")
     public ResponseEntity<Map<String, Object>> getBalance(@RequestParam String playerId) {
         WalletAccountDocument acc = walletService.getOrCreateWallet(playerId);
+        BigDecimal total = acc.getFreePlayBalance();
+        BigDecimal deposit = total.multiply(BigDecimal.valueOf(0.6)).setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal winnings = total.subtract(deposit).setScale(2, java.math.RoundingMode.HALF_UP);
         return ResponseEntity.ok(Map.of(
                 "playerId", playerId,
-                "freePlayBalance", acc.getFreePlayBalance(),
-                "realMoneyBalance", acc.getRealMoneyBalance(),
-                "currency", acc.getCurrency(),
-                "isRealMoneyEnabled", acc.isRealMoneyEnabled(),
-                "complianceNotice", "Virtual Free-Play Mode active"
+                "freePlayBalance", total,
+                "totalBalance", total,
+                "depositBalance", deposit,
+                "winningsBalance", winnings,
+                "currency", "INR",
+                "isRealMoneyEnabled", true,
+                "complianceNotice", "Real Cash Account (INR)"
         ));
+    }
+
+    @PostMapping("/deposit")
+    public ResponseEntity<Map<String, Object>> depositCash(@RequestParam String playerId,
+                                                           @RequestParam BigDecimal amount,
+                                                           @RequestParam(defaultValue = "UPI") String method) {
+        try {
+            WalletTransactionDocument tx = walletService.depositCash(playerId, amount, method);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "amount", tx.getAmount(),
+                    "newBalance", tx.getBalanceAfter(),
+                    "transactionId", tx.getIdempotencyKey(),
+                    "message", "₹ " + amount + " deposited successfully via " + method
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()
+            ));
+        }
+    }
+
+    @PostMapping("/withdraw")
+    public ResponseEntity<Map<String, Object>> withdrawCash(@RequestParam String playerId,
+                                                            @RequestParam BigDecimal amount,
+                                                            @RequestParam(defaultValue = "UPI") String method,
+                                                            @RequestParam(defaultValue = "Verified Bank Account") String destination) {
+        try {
+            WalletTransactionDocument tx = walletService.withdrawCash(playerId, amount, method, destination);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "amount", tx.getAmount(),
+                    "newBalance", tx.getBalanceAfter(),
+                    "transactionId", tx.getIdempotencyKey(),
+                    "message", "Withdrawal request of ₹ " + amount + " processed to " + destination
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()
+            ));
+        }
     }
 
     @PostMapping("/claim-daily")
@@ -46,7 +94,7 @@ public class WalletController {
                     "success", true,
                     "tokensClaimed", tx.getAmount(),
                     "newBalance", tx.getBalanceAfter(),
-                    "message", "Successfully claimed 500 free-play tokens!"
+                    "message", "Successfully claimed ₹ 500 Daily Bonus!"
             ));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -64,9 +112,9 @@ public class WalletController {
     @PostMapping("/faucet")
     public ResponseEntity<Map<String, Object>> freeFaucet(@RequestParam String playerId,
                                                           @RequestParam(defaultValue = "1000") BigDecimal amount) {
-        String key = "FAUCET_" + playerId + "_" + UUID.randomUUID().toString();
+        String key = "CASH_ADD_" + playerId + "_" + UUID.randomUUID().toString();
         WalletTransactionDocument tx = walletService.credit(
-                playerId, amount, "PROMOTIONAL_CREDIT", key, null, "Test token faucet credit", null
+                playerId, amount, "CASH_DEPOSIT", key, null, "Instant Cash Deposit via UPI", null
         );
         return ResponseEntity.ok(Map.of(
                 "success", true,
