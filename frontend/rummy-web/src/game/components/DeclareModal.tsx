@@ -5,6 +5,7 @@ import { CardView } from './CardView';
 import { checkOverallDeclaration } from '../rules/clientValidator';
 import confetti from 'canvas-confetti';
 import { Award, AlertTriangle, X } from 'lucide-react';
+import { soundEngine } from '../audio/soundEngine';
 
 export const DeclareModal: React.FC = () => {
   const {
@@ -18,15 +19,14 @@ export const DeclareModal: React.FC = () => {
   if (!isDeclareModalOpen || !gameState) return null;
 
   const finishCardId = selectedCardIds[0];
-  const finishCard = gameState.hand.find(c => c.instanceId === finishCardId);
+  const finishCard = gameState.hand.find((c) => c.instanceId === finishCardId);
 
-  // Remaining groups excluding the finish card
   const remainingGroups = groups
-    .map(g => ({
+    .map((g) => ({
       ...g,
-      cards: g.cards.filter(c => c.instanceId !== finishCardId),
+      cards: g.cards.filter((c) => c.instanceId !== finishCardId),
     }))
-    .filter(g => g.cards.length > 0);
+    .filter((g) => g.cards.length > 0);
 
   const evaluation = checkOverallDeclaration(remainingGroups, gameState.cutJoker);
 
@@ -34,12 +34,14 @@ export const DeclareModal: React.FC = () => {
     if (!finishCardId) return;
 
     if (evaluation.isValid) {
-      // Fire victory confetti
+      soundEngine.play('win');
       confetti({
         particleCount: 120,
         spread: 70,
         origin: { y: 0.6 },
       });
+    } else {
+      soundEngine.play('error');
     }
 
     socketClient.declare(finishCardId, remainingGroups);
@@ -72,13 +74,13 @@ export const DeclareModal: React.FC = () => {
           gap: '20px',
         }}
       >
-        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Award size={26} color="var(--gold-accent)" />
-            <h2 style={{ fontSize: '20px', fontWeight: 800 }}>Confirm Rummy Declaration</h2>
+            <h2 style={{ fontSize: '20px', fontWeight: 800 }}>Ready to declare a win?</h2>
           </div>
           <button
+            type="button"
             onClick={() => setDeclareModalOpen(false)}
             style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
           >
@@ -86,7 +88,6 @@ export const DeclareModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Finish Card Display */}
         {finishCard && (
           <div
             style={{
@@ -101,18 +102,17 @@ export const DeclareModal: React.FC = () => {
           >
             <CardView card={finishCard} wildJoker={gameState.cutJoker} size="small" />
             <div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Finish Card (14th Card):</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Card you are throwing to finish:</div>
               <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--gold-light)' }}>
                 {finishCard.rank} of {finishCard.suit}
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                This card will be discarded face-down to complete your show.
+                Your other 13 cards must all be in valid groups.
               </div>
             </div>
           </div>
         )}
 
-        {/* Validation Status Banner */}
         {evaluation.isValid ? (
           <div
             style={{
@@ -129,7 +129,7 @@ export const DeclareModal: React.FC = () => {
             }}
           >
             <span>✓</span>
-            <span>Valid Winning Declaration! Winner score: 0 penalty points.</span>
+            <span>Looks like a valid win! You get 0 penalty points.</span>
           </div>
         ) : (
           <div
@@ -148,24 +148,21 @@ export const DeclareModal: React.FC = () => {
           >
             <AlertTriangle size={18} color="var(--color-invalid)" />
             <div>
-              <div>Warning: Invalid Declaration ({evaluation.reason})</div>
+              <div>Not a valid win yet — {evaluation.reason}</div>
               <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
-                Submitting an invalid declaration will result in the maximum penalty of 80 points!
+                If you declare anyway and it is wrong, you get 80 penalty points.
               </div>
             </div>
           </div>
         )}
 
-        {/* Action Buttons */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '10px' }}>
-          <button
-            className="btn-secondary"
-            onClick={() => setDeclareModalOpen(false)}
-          >
-            Cancel & Re-arrange
+          <button type="button" className="btn-secondary" onClick={() => setDeclareModalOpen(false)}>
+            Go back
           </button>
 
           <button
+            type="button"
             id="btn-confirm-declare"
             className="btn-primary"
             onClick={handleConfirmDeclare}
@@ -176,7 +173,7 @@ export const DeclareModal: React.FC = () => {
               color: '#ffffff',
             }}
           >
-            {evaluation.isValid ? 'Submit Winning Declaration' : 'Declare Anyway (80 Pts Risk)'}
+            {evaluation.isValid ? 'Yes — Declare win' : 'Declare anyway (risky)'}
           </button>
         </div>
       </div>

@@ -81,6 +81,28 @@ public final class GameState implements Serializable {
         discardPile.add(card);
     }
 
+    public void clearDiscardPile() {
+        discardPile.clear();
+    }
+
+    /**
+     * Reset table for another deal while keeping seated players.
+     */
+    public void prepareForNewDeal(Deck freshDeck) {
+        Objects.requireNonNull(freshDeck, "freshDeck must not be null");
+        this.deck = freshDeck;
+        this.discardPile.clear();
+        this.cutJoker = null;
+        this.finishCard = null;
+        this.turnState = null;
+        this.winnerPlayerId = null;
+        this.finishedAt = null;
+        this.status = GameStatus.WAITING_FOR_PLAYERS;
+        for (PlayerState player : players) {
+            player.prepareForNewDeal();
+        }
+    }
+
     public CardInstance takeTopDiscard() {
         if (discardPile.isEmpty()) {
             throw new NoSuchElementException("Discard pile is empty");

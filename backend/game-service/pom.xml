@@ -24,6 +24,13 @@
             <artifactId>game-engine</artifactId>
         </dependency>
 
+        <!-- Oreng / Gamotech Provider Game Server SDK -->
+        <dependency>
+            <groupId>in.oreng</groupId>
+            <artifactId>game-sdk</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+
         <!-- Spring Boot WebSocket -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

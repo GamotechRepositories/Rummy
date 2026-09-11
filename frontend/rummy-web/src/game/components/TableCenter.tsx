@@ -3,9 +3,11 @@ import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { CardView } from './CardView';
 import { CheckCircle2, Inbox } from 'lucide-react';
+import { isDiscardPhase, isDrawPhase } from '../utils/turnPhase';
+import { soundEngine } from '../audio/soundEngine';
 
 export const TableCenter: React.FC = () => {
-  const { gameState, selectedCardIds, setDeclareModalOpen } = useGameStore();
+  const { gameState, selectedCardIds, setDeclareModalOpen, clearSelection } = useGameStore();
 
   if (!gameState) return null;
 
@@ -17,28 +19,41 @@ export const TableCenter: React.FC = () => {
     isMyTurn,
   } = gameState;
 
-  const canDraw = isMyTurn && turnPhase === 'DRAW';
-  const canDiscardOrFinish = isMyTurn && turnPhase === 'DISCARD';
+  const canDraw = isDrawPhase(isMyTurn, turnPhase);
+  const canDiscardOrFinish = isDiscardPhase(isMyTurn, turnPhase);
 
   const handleDrawClosed = () => {
-    if (canDraw) {
-      socketClient.draw('CLOSED_DECK');
-    }
+    if (!canDraw) return;
+    soundEngine.play('draw');
+    clearSelection();
+    socketClient.draw('CLOSED_DECK');
   };
 
   const handleDrawDiscard = () => {
-    if (canDraw && topDiscard) {
-      socketClient.draw('DISCARD_PILE');
-    }
+    if (!canDraw || !topDiscard) return;
+    soundEngine.play('draw');
+    clearSelection();
+    socketClient.draw('DISCARD_PILE');
   };
 
   const handleFinishSlotClick = () => {
-    if (canDiscardOrFinish) {
-      if (selectedCardIds.length === 1) {
-        setDeclareModalOpen(true);
-      } else {
-        alert('Please select exactly 1 card to place in the Finish slot to declare.');
-      }
+    if (!canDiscardOrFinish) return;
+    if (selectedCardIds.length === 1) {
+      soundEngine.play('modal');
+      setDeclareModalOpen(true);
+    } else {
+      soundEngine.play('error');
+      alert('Select exactly 1 card from your hand first, then tap here to declare a win.');
+    }
+  };
+
+  const handleDiscardPileDrop = () => {
+    // During discard phase, tapping open pile with 1 selected card = discard
+    if (canDiscardOrFinish && selectedCardIds.length === 1) {
+      const cardId = selectedCardIds[0];
+      soundEngine.play('discard');
+      clearSelection();
+      socketClient.discard(cardId);
     }
   };
 
@@ -48,8 +63,8 @@ export const TableCenter: React.FC = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '40px',
-        padding: '16px 28px',
+        gap: 'clamp(16px, 4vw, 40px)',
+        padding: 'clamp(8px, 1.5vh, 16px) clamp(12px, 2vw, 28px)',
         background: 'rgba(5, 29, 18, 0.65)',
         borderRadius: '24px',
         border: '2px solid rgba(212, 175, 55, 0.3)',
@@ -125,13 +140,13 @@ export const TableCenter: React.FC = () => {
 
         <span
           style={{
-            fontSize: '11px',
+            fontSize: 12,
             color: canDraw ? 'var(--gold-accent)' : 'var(--text-muted)',
-            fontWeight: canDraw ? 700 : 500,
-            marginTop: '8px',
+            fontWeight: canDraw ? 800 : 500,
+            marginTop: 8,
           }}
         >
-          {canDraw ? '👆 Click to Draw' : 'Closed Deck'}
+          {canDraw ? '👆 Draw mystery' : 'Draw pile'}
         </span>
       </div>
 
@@ -139,8 +154,15 @@ export const TableCenter: React.FC = () => {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
         <div
           id="pile-discard"
-          onClick={handleDrawDiscard}
-          className={canDraw && topDiscard ? 'gold-glow' : ''}
+          onClick={() => {
+            if (canDraw) handleDrawDiscard();
+            else handleDiscardPileDrop();
+          }}
+          className={
+            (canDraw && topDiscard) || (canDiscardOrFinish && selectedCardIds.length === 1)
+              ? 'gold-glow'
+              : ''
+          }
           style={{
             minWidth: '72px',
             minHeight: '104px',
@@ -149,7 +171,10 @@ export const TableCenter: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            cursor: canDraw && topDiscard ? 'pointer' : 'default',
+            cursor:
+              (canDraw && topDiscard) || (canDiscardOrFinish && selectedCardIds.length === 1)
+                ? 'pointer'
+                : 'default',
             position: 'relative',
           }}
         >
@@ -162,12 +187,22 @@ export const TableCenter: React.FC = () => {
 
         <span
           style={{
-            fontSize: '11px',
-            color: canDraw && topDiscard ? 'var(--gold-accent)' : 'var(--text-muted)',
-            fontWeight: canDraw && topDiscard ? 700 : 500,
+            fontSize: 12,
+            color:
+              (canDraw && topDiscard) || (canDiscardOrFinish && selectedCardIds.length === 1)
+                ? 'var(--gold-accent)'
+                : 'var(--text-muted)',
+            fontWeight:
+              (canDraw && topDiscard) || (canDiscardOrFinish && selectedCardIds.length === 1)
+                ? 800
+                : 500,
           }}
         >
-          {canDraw && topDiscard ? '👆 Draw Discard' : 'Open Discard'}
+          {canDraw && topDiscard
+            ? '👆 Take this'
+            : canDiscardOrFinish && selectedCardIds.length === 1
+              ? '👆 Discard here'
+              : 'Open pile'}
         </span>
       </div>
 
@@ -206,21 +241,21 @@ export const TableCenter: React.FC = () => {
             <>
               <CheckCircle2 size={24} />
               <span style={{ fontSize: '11px', fontWeight: 700, marginTop: '4px' }}>
-                Declare Show
+                Declare
               </span>
             </>
           ) : (
             <>
               <Inbox size={22} style={{ opacity: 0.5 }} />
               <span style={{ fontSize: '10px', marginTop: '4px', opacity: 0.7 }}>
-                Finish Slot
+                Win slot
               </span>
             </>
           )}
         </div>
 
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          14th Card Slot
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          Extra card → win
         </span>
       </div>
     </div>

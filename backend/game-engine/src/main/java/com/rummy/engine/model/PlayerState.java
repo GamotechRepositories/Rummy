@@ -127,6 +127,21 @@ public final class PlayerState implements Serializable {
         this.lastActionAt = Instant.now();
     }
 
+    /**
+     * Reset deal-specific fields so the same seated player can play another hand.
+     * Keeps seat, identity, chips, and cumulative score.
+     */
+    public void prepareForNewDeal() {
+        this.hand.clear();
+        this.status = PlayerStatus.READY;
+        this.score = 0;
+        this.hasDeclared = false;
+        this.hasDropped = false;
+        this.consecutiveMissedTurns = 0;
+        this.turnsCompleted = 0;
+        this.lastActionAt = Instant.now();
+    }
+
     public void markEliminated() {
         this.status = PlayerStatus.ELIMINATED;
         this.lastActionAt = Instant.now();

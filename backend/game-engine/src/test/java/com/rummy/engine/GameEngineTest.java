@@ -230,4 +230,35 @@ class GameEngineTest {
         assertThat(p1.getScore()).isEqualTo(0);
         assertThat(state.requirePlayer("P2").getScore()).isGreaterThan(0);
     }
+
+    @Test
+    @DisplayName("Play again after COMPLETED starts a fresh deal")
+    void testRematchAfterCompleted() {
+        Deck deck = Deck.createStandard13CardDeck();
+        GameState state = new GameState("G1", "T1", "POINTS_13", "1.0.0", List.of(), deck);
+        Instant now = Instant.now();
+
+        engine.process(state, new JoinCommand("c1", "G1", "P1", "Alice", 0, false, now), rules);
+        engine.process(state, new JoinCommand("c2", "G1", "P2", "Bob", 1, false, now), rules);
+        engine.process(state, new ReadyCommand("c3", "G1", "P1", now), rules);
+        engine.process(state, new ReadyCommand("c4", "G1", "P2", now), rules);
+        engine.process(state, new StartGameCommand("c5", "G1", "P1", now), rules);
+
+        // End game via first drop so status becomes COMPLETED
+        EngineResult drop = engine.process(state, new DropCommand("c6", "G1", "P1", now), rules);
+        assertThat(drop.isSuccess()).isTrue();
+        assertThat(state.getStatus()).isEqualTo(GameStatus.COMPLETED);
+
+        // Play again / rematch
+        EngineResult rematch = engine.process(state, new StartGameCommand("c7", "G1", "P2", now), rules);
+        assertThat(rematch.isSuccess()).isTrue();
+        assertThat(state.getStatus()).isEqualTo(GameStatus.IN_PROGRESS);
+        assertThat(state.getWinnerPlayerId()).isNull();
+        assertThat(state.requirePlayer("P1").getHandSize()).isEqualTo(13);
+        assertThat(state.requirePlayer("P2").getHandSize()).isEqualTo(13);
+        assertThat(state.requirePlayer("P1").getStatus()).isEqualTo(PlayerStatus.ACTIVE);
+        assertThat(state.requirePlayer("P2").getStatus()).isEqualTo(PlayerStatus.ACTIVE);
+        assertThat(state.getCutJoker()).isNotNull();
+        assertThat(state.topDiscard()).isNotNull();
+    }
 }

@@ -3,6 +3,15 @@ import { useGameStore } from '../store/useGameStore';
 import { CardView } from './CardView';
 import type { GroupValidationType } from '../types/game';
 import { Layers, ArrowUpDown, XCircle } from 'lucide-react';
+import { soundEngine } from '../audio/soundEngine';
+import { socketClient } from '../websocket/GameSocketClient';
+
+const GROUP_LABELS: Record<GroupValidationType, { title: string; color: string; bg: string }> = {
+  PURE_SEQUENCE: { title: '✓ Pure run', color: 'var(--color-pure)', bg: 'rgba(16,185,129,0.2)' },
+  IMPURE_SEQUENCE: { title: '★ Run', color: 'var(--color-impure)', bg: 'rgba(245,158,11,0.2)' },
+  SET: { title: '◆ Set', color: 'var(--color-set)', bg: 'rgba(59,130,246,0.2)' },
+  INVALID: { title: 'Not a group', color: 'var(--color-invalid)', bg: 'rgba(239,68,68,0.2)' },
+};
 
 export const PlayerHand: React.FC = () => {
   const {
@@ -16,224 +25,160 @@ export const PlayerHand: React.FC = () => {
   } = useGameStore();
 
   const wildJoker = gameState?.cutJoker ?? null;
-
-  const getGroupBadge = (type: GroupValidationType, points: number) => {
-    switch (type) {
-      case 'PURE_SEQUENCE':
-        return (
-          <div
-            style={{
-              backgroundColor: 'rgba(16, 185, 129, 0.2)',
-              border: '1px solid var(--color-pure)',
-              color: 'var(--color-pure)',
-              padding: '2px 8px',
-              borderRadius: '12px',
-              fontSize: '11px',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <span>✓ Pure Seq</span>
-            <span style={{ opacity: 0.7 }}>({points} pts)</span>
-          </div>
-        );
-      case 'IMPURE_SEQUENCE':
-        return (
-          <div
-            style={{
-              backgroundColor: 'rgba(245, 158, 11, 0.2)',
-              border: '1px solid var(--color-impure)',
-              color: 'var(--color-impure)',
-              padding: '2px 8px',
-              borderRadius: '12px',
-              fontSize: '11px',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <span>★ Impure Seq</span>
-            <span style={{ opacity: 0.7 }}>({points} pts)</span>
-          </div>
-        );
-      case 'SET':
-        return (
-          <div
-            style={{
-              backgroundColor: 'rgba(59, 130, 246, 0.2)',
-              border: '1px solid var(--color-set)',
-              color: 'var(--color-set)',
-              padding: '2px 8px',
-              borderRadius: '12px',
-              fontSize: '11px',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <span>◆ Set</span>
-            <span style={{ opacity: 0.7 }}>({points} pts)</span>
-          </div>
-        );
-      default:
-        return (
-          <div
-            style={{
-              backgroundColor: 'rgba(239, 68, 68, 0.2)',
-              border: '1px solid var(--color-invalid)',
-              color: 'var(--color-invalid)',
-              padding: '2px 8px',
-              borderRadius: '12px',
-              fontSize: '11px',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <span>Invalid</span>
-            <span style={{ opacity: 0.7 }}>({points} pts)</span>
-          </div>
-        );
-    }
-  };
-
-  const totalDeadwood = groups.reduce((acc, g) => {
-    // Pure sequences and valid sequences / sets do not contribute to penalty if declaration criteria are met
-    return acc + g.deadwoodPoints;
-  }, 0);
+  const hasPure = groups.some((g) => g.groupType === 'PURE_SEQUENCE');
 
   return (
     <div
       style={{
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
-        gap: '12px',
+        gap: 6,
         width: '100%',
-        maxWidth: '1100px',
+        maxWidth: 1100,
         margin: '0 auto',
+        height: '100%',
+        minHeight: 0,
       }}
     >
-      {/* Hand Action Toolbar */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          width: '100%',
-          padding: '6px 16px',
-          background: 'rgba(15, 23, 42, 0.8)',
-          borderRadius: '12px',
-          backdropFilter: 'blur(8px)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          gap: 8,
+          padding: '4px 8px',
+          flexWrap: 'wrap',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <button
             id="btn-group-cards"
+            type="button"
             className="btn-secondary"
-            onClick={groupSelectedCards}
+            onClick={() => {
+              soundEngine.play('group');
+              groupSelectedCards();
+            }}
             disabled={selectedCardIds.length < 2}
-            style={{ padding: '6px 12px', fontSize: '13px' }}
+            style={{ padding: '5px 10px', fontSize: 12 }}
           >
-            <Layers size={14} />
-            Group ({selectedCardIds.length})
+            <Layers size={13} />
+            Group{selectedCardIds.length >= 2 ? ` (${selectedCardIds.length})` : ''}
           </button>
-
           <button
             id="btn-sort-cards"
+            type="button"
             className="btn-secondary"
-            onClick={autoSortHand}
-            style={{ padding: '6px 12px', fontSize: '13px' }}
+            onClick={() => {
+              soundEngine.play('sort');
+              autoSortHand();
+            }}
+            style={{ padding: '5px 10px', fontSize: 12 }}
           >
-            <ArrowUpDown size={14} />
-            Auto Sort
+            <ArrowUpDown size={13} />
+            Sort
           </button>
-
           {selectedCardIds.length > 0 && (
             <button
-              id="btn-clear-selection"
+              type="button"
               className="btn-secondary"
               onClick={clearSelection}
-              style={{ padding: '6px 10px', fontSize: '13px' }}
+              style={{ padding: '5px 8px', fontSize: 12 }}
             >
-              <XCircle size={14} />
-              Clear
+              <XCircle size={13} />
             </button>
           )}
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-            Selected: <strong style={{ color: 'var(--gold-accent)' }}>{selectedCardIds.length}</strong>
-          </div>
-          <div
-            style={{
-              fontSize: '13px',
-              padding: '3px 10px',
-              background: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
-              borderRadius: '8px',
-              color: '#fca5a5',
-            }}
-          >
-            Raw Deadwood: <strong>{totalDeadwood}</strong> pts
-          </div>
-        </div>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            padding: '3px 8px',
+            borderRadius: 8,
+            background: hasPure ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.12)',
+            color: hasPure ? '#34d399' : '#fbbf24',
+          }}
+        >
+          {hasPure ? 'Pure run ✓' : 'Need pure run'}
+        </span>
       </div>
 
-      {/* Card Groups Area */}
       <div
         style={{
           display: 'flex',
           flexWrap: 'nowrap',
           overflowX: 'auto',
-          gap: '14px',
-          padding: '10px 4px 20px',
-          maxWidth: '100%',
+          overflowY: 'hidden',
+          gap: 10,
+          padding: '4px 2px 8px',
+          flex: 1,
+          minHeight: 0,
+          alignItems: 'flex-end',
+          WebkitOverflowScrolling: 'touch',
         }}
       >
-        {groups.map((group) => (
-          <div
-            key={group.id}
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '8px',
-              background: 'rgba(15, 23, 42, 0.5)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '12px',
-              padding: '8px 10px',
-            }}
-          >
-            {getGroupBadge(group.groupType, group.deadwoodPoints)}
-
-            <div style={{ display: 'flex', gap: '-24px', position: 'relative' }}>
-              {group.cards.map((card, idx) => (
-                <div
-                  key={card.instanceId}
-                  style={{
-                    marginLeft: idx === 0 ? 0 : '-34px',
-                    transition: 'margin 0.2s ease',
-                  }}
-                >
-                  <CardView
-                    card={card}
-                    wildJoker={wildJoker}
-                    isSelected={selectedCardIds.includes(card.instanceId)}
-                    onClick={() => toggleSelectCard(card.instanceId)}
-                  />
-                </div>
-              ))}
+        {groups.map((group) => {
+          const label = GROUP_LABELS[group.groupType] ?? GROUP_LABELS.INVALID;
+          return (
+            <div
+              key={group.id}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 4,
+                background: 'rgba(15, 23, 42, 0.45)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 10,
+                padding: '4px 6px 6px',
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  backgroundColor: label.bg,
+                  border: `1px solid ${label.color}`,
+                  color: label.color,
+                  padding: '1px 6px',
+                  borderRadius: 10,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {label.title}
+              </div>
+              <div style={{ display: 'flex' }}>
+                {group.cards.map((card, idx) => (
+                  <div
+                    key={card.instanceId}
+                    style={{ marginLeft: idx === 0 ? 0 : 'var(--card-overlap)' }}
+                  >
+                    <CardView
+                      card={card}
+                      wildJoker={wildJoker}
+                      isSelected={selectedCardIds.includes(card.instanceId)}
+                      onClick={() => {
+                        soundEngine.play('select');
+                        toggleSelectCard(card.instanceId);
+                      }}
+                      onDoubleClick={() => {
+                        // Fast discard: double-tap selected/any card during discard phase
+                        const { gameState: gs } = useGameStore.getState();
+                        if (!gs?.isMyTurn) return;
+                        const phase = String(gs.turnPhase || '');
+                        if (phase !== 'DISCARD' && phase !== 'AWAITING_DISCARD') return;
+                        soundEngine.play('discard');
+                        useGameStore.getState().clearSelection();
+                        socketClient.discard(card.instanceId);
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

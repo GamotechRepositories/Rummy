@@ -1,5 +1,6 @@
 import { useGameStore } from '../store/useGameStore';
 import type { CardInstance, PlayerGameView, WsClientMessage, WsServerMessage } from '../types/game';
+import { soundEngine } from '../audio/soundEngine';
 
 class GameSocketClient {
   private ws: WebSocket | null = null;
@@ -119,7 +120,36 @@ class GameSocketClient {
 
       case 'GAME_VIEW':
         if (msg.payload) {
-          useGameStore.getState().updateGameState(msg.payload as PlayerGameView);
+          const prev = useGameStore.getState().gameState;
+          const next = msg.payload as PlayerGameView;
+          useGameStore.getState().updateGameState(next);
+
+          // Sound cues from state transitions
+          if (!prev && next.gameStatus === 'IN_PROGRESS') {
+            soundEngine.play('deal');
+          } else if (prev && !prev.isMyTurn && next.isMyTurn && next.gameStatus === 'IN_PROGRESS') {
+            soundEngine.play('turn');
+          } else if (
+            prev?.gameStatus === 'IN_PROGRESS' &&
+            next.gameStatus === 'COMPLETED'
+          ) {
+            const me = useGameStore.getState().playerId;
+            soundEngine.play(next.winnerId === me ? 'win' : 'lose');
+          } else if (
+            prev &&
+            next.hand &&
+            prev.hand &&
+            next.hand.length > prev.hand.length
+          ) {
+            soundEngine.play('draw');
+          } else if (
+            prev &&
+            next.hand &&
+            prev.hand &&
+            next.hand.length < prev.hand.length
+          ) {
+            soundEngine.play('discard');
+          }
         }
         break;
 
@@ -127,6 +157,9 @@ class GameSocketClient {
         if (msg.payload && typeof msg.payload === 'object' && 'eventType' in msg.payload) {
           const evt = msg.payload as { eventType: string };
           useGameStore.getState().setLastEventMessage(evt.eventType);
+          if (evt.eventType.includes('Started') || evt.eventType === 'GAME_STARTED') {
+            soundEngine.play('deal');
+          }
         }
         break;
 
@@ -134,6 +167,7 @@ class GameSocketClient {
         if (msg.payload && typeof msg.payload === 'object' && 'message' in msg.payload) {
           const err = msg.payload as { message: string };
           useGameStore.getState().setErrorMessage(err.message);
+          soundEngine.play('error');
           setTimeout(() => {
             if (useGameStore.getState().errorMessage === err.message) {
               useGameStore.getState().setErrorMessage(null);

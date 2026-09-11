@@ -32,7 +32,14 @@ export type GameStatus =
   | 'COMPLETED'
   | 'ABORTED';
 
-export type TurnPhase = 'DRAW' | 'DISCARD' | 'FINISH';
+export type TurnPhase =
+  | 'DRAW'
+  | 'DISCARD'
+  | 'FINISH'
+  | 'AWAITING_DRAW'
+  | 'AWAITING_DISCARD'
+  | 'AWAITING_DECLARE_VALIDATION'
+  | 'COMPLETED';
 
 export type PlayerStatus =
   | 'WAITING'

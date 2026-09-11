@@ -82,6 +82,22 @@ public final class GameEngine {
     }
 
     private EngineResult handleStartGame(GameState state, StartGameCommand cmd, RummyRules rules) {
+        // Rematch / Play Next Deal after a finished hand
+        if (state.getStatus() == GameStatus.COMPLETED || state.getStatus() == GameStatus.ABORTED) {
+            if (state.getPlayers().size() < rules.getMinPlayers()) {
+                return EngineResult.failure(state, "Not enough players to start a new deal (minimum " + rules.getMinPlayers() + ")");
+            }
+            Deck freshDeck = Deck.createMultiPackDeck(
+                    rules.getDeckCount(),
+                    rules.getPrintedJokersPerDeck(),
+                    new java.security.SecureRandom());
+            state.prepareForNewDeal(freshDeck);
+            // Auto-ready seated players for immediate rematch
+            for (PlayerState player : state.getPlayers()) {
+                player.setStatus(PlayerStatus.READY);
+            }
+        }
+
         if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
             return EngineResult.failure(state, "Cannot start game when status is " + state.getStatus());
         }
@@ -101,7 +117,7 @@ public final class GameEngine {
         CardInstance cutJoker = deck.draw();
         state.setCutJoker(cutJoker);
 
-        // Deal 13 cards to each player
+        // Deal cards to each player
         for (PlayerState player : state.getPlayers()) {
             player.addCards(deck.drawBatch(rules.getCardsPerPlayer()));
             player.setStatus(PlayerStatus.ACTIVE);

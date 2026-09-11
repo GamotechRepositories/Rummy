@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { OpponentSeat } from './OpponentSeat';
@@ -7,21 +7,23 @@ import { PlayerHand } from './PlayerHand';
 import { ActionControls } from './ActionControls';
 import { DeclareModal } from './DeclareModal';
 import { TurnTimerRing } from './TurnTimerRing';
-import { HistoryModal } from './HistoryModal';
-import { LogOut, Wifi, AlertCircle, Sparkles, User } from 'lucide-react';
+import { LogOut, Wifi, AlertCircle, Sparkles, User, HelpCircle } from 'lucide-react';
+import { SoundToggle } from './SoundToggle';
+import { soundEngine } from '../audio/soundEngine';
+import { normalizeTurnPhase } from '../utils/turnPhase';
 
-export const GameBoard: React.FC = () => {
+interface GameBoardProps {
+  onOpenTutorial?: () => void;
+}
+
+export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
   const {
     gameState,
-    tableId,
     connectionStatus,
     errorMessage,
-    lastEventMessage,
     leaveTable,
-    playerId,
+    displayName,
   } = useGameStore();
-
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const handleLeaveTable = () => {
     socketClient.disconnect();
@@ -30,154 +32,140 @@ export const GameBoard: React.FC = () => {
 
   const opponents = gameState?.opponents ?? [];
   const isMyTurn = gameState?.isMyTurn ?? false;
-  const displayName = useGameStore.getState().displayName;
+
+  const turnLabel = !gameState
+    ? 'Connecting…'
+    : gameState.gameStatus === 'WAITING_FOR_PLAYERS'
+      ? 'Getting ready…'
+      : gameState.gameStatus === 'COMPLETED'
+        ? 'Finished'
+        : isMyTurn
+          ? normalizeTurnPhase(gameState.turnPhase) === 'DRAW'
+            ? 'Your turn — draw'
+            : normalizeTurnPhase(gameState.turnPhase) === 'DISCARD'
+              ? 'Your turn — discard'
+              : 'Your turn'
+          : 'Opponent’s turn';
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh',
-        background: 'radial-gradient(ellipse at 50% 10%, #0d1e16 0%, #05080c 100%)',
-        padding: '12px 20px',
-      }}
-    >
-      {/* Top Header Bar */}
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 16px',
-          background: 'rgba(15, 23, 42, 0.75)',
-          backdropFilter: 'blur(10px)',
-          borderRadius: '12px',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          marginBottom: '10px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Sparkles size={18} color="var(--gold-accent)" />
-            <span style={{ fontWeight: 800, fontSize: '15px', color: 'var(--gold-light)' }}>
-              Royal Rummy
-            </span>
-          </div>
-          <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-            Table: <strong style={{ color: 'var(--text-main)' }}>{tableId}</strong>
-          </div>
-          {gameState && (
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Round: <strong style={{ color: 'var(--text-main)' }}>#{gameState.gameId.substring(0, 8)}</strong>
-            </div>
-          )}
+    <div className="game-frame">
+      <header className="game-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <Sparkles size={16} color="var(--gold-accent)" />
+          <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--gold-light)' }}>
+            Royal Rummy
+          </span>
+          <span
+            className={isMyTurn ? 'my-turn-pulse' : undefined}
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              padding: '3px 8px',
+              borderRadius: 16,
+              background: isMyTurn ? 'rgba(212,175,55,0.2)' : 'rgba(255,255,255,0.06)',
+              color: isMyTurn ? '#fef08a' : '#94a3b8',
+              border: isMyTurn ? '1px solid rgba(212,175,55,0.5)' : '1px solid transparent',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: 160,
+            }}
+          >
+            {turnLabel}
+          </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          {/* Connection Status Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              fontSize: '11px',
+              gap: 4,
+              fontSize: 10,
               fontWeight: 700,
-              padding: '4px 10px',
-              borderRadius: '20px',
+              padding: '3px 8px',
+              borderRadius: 16,
               background:
                 connectionStatus === 'CONNECTED'
                   ? 'rgba(16, 185, 129, 0.15)'
-                  : connectionStatus === 'CONNECTING' || connectionStatus === 'RECONNECTING'
-                  ? 'rgba(245, 158, 11, 0.15)'
-                  : 'rgba(239, 68, 68, 0.15)',
-              color:
-                connectionStatus === 'CONNECTED'
-                  ? 'var(--color-pure)'
-                  : connectionStatus === 'CONNECTING' || connectionStatus === 'RECONNECTING'
-                  ? 'var(--color-impure)'
-                  : 'var(--color-invalid)',
-              border: '1px solid currentColor',
+                  : 'rgba(245, 158, 11, 0.15)',
+              color: connectionStatus === 'CONNECTED' ? 'var(--color-pure)' : 'var(--color-impure)',
             }}
           >
-            <Wifi size={12} />
-            <span>{connectionStatus}</span>
+            <Wifi size={11} />
+            {connectionStatus === 'CONNECTED' ? 'Live' : '…'}
           </div>
 
-          <button
-            id="btn-board-history"
-            onClick={() => setIsHistoryOpen(true)}
-            className="btn-secondary"
-            style={{ padding: '6px 12px', fontSize: '12px' }}
-          >
-            📜 History
-          </button>
+          {onOpenTutorial && (
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.play('click');
+                onOpenTutorial();
+              }}
+              className="btn-secondary"
+              style={{ padding: '4px 8px', fontSize: 11 }}
+              title="How to play"
+            >
+              <HelpCircle size={14} />
+            </button>
+          )}
+
+          <SoundToggle compact />
 
           <button
             id="btn-leave-table"
-            onClick={handleLeaveTable}
+            type="button"
+            onClick={() => {
+              soundEngine.play('click');
+              handleLeaveTable();
+            }}
             className="btn-secondary"
-            style={{ padding: '6px 12px', fontSize: '12px' }}
+            style={{ padding: '4px 8px', fontSize: 11 }}
           >
-            <LogOut size={14} />
-            Leave Table
+            <LogOut size={13} />
+            Leave
           </button>
         </div>
       </header>
 
-      {/* Floating Error Toast */}
       {errorMessage && (
         <div
           style={{
+            position: 'absolute',
+            top: 56,
+            left: '50%',
+            transform: 'translateX(-50%)',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            background: 'rgba(239, 68, 68, 0.9)',
-            color: '#ffffff',
-            padding: '10px 16px',
-            borderRadius: '8px',
-            fontSize: '13px',
+            gap: 8,
+            background: 'rgba(239, 68, 68, 0.95)',
+            color: '#fff',
+            padding: '8px 14px',
+            borderRadius: 8,
+            fontSize: 12,
             fontWeight: 600,
-            margin: '0 auto 10px',
-            maxWidth: '600px',
-            boxShadow: '0 8px 20px rgba(0,0,0,0.5)',
             zIndex: 50,
+            maxWidth: '90%',
           }}
         >
-          <AlertCircle size={18} />
+          <AlertCircle size={16} />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* Event Notification Sub-toast */}
-      {lastEventMessage && (
-        <div
-          style={{
-            textAlign: 'center',
-            fontSize: '11px',
-            color: 'var(--gold-light)',
-            opacity: 0.8,
-            marginBottom: '4px',
-          }}
-        >
-          Latest Game Event: {lastEventMessage}
-        </div>
-      )}
-
-      {/* Master Casino Oval Felt Table */}
       <main className="casino-table" id="game-felt-table">
         <div className="table-felt-pattern" />
 
-        {/* Top Opponents Row */}
         <section
           aria-label="Opponents"
           style={{
             display: 'flex',
             justifyContent: 'space-around',
             width: '100%',
-            maxWidth: '850px',
-            margin: '0 auto',
+            maxWidth: 850,
             zIndex: 10,
+            scale: '0.92',
           }}
         >
           {opponents.length > 0 ? (
@@ -191,57 +179,39 @@ export const GameBoard: React.FC = () => {
               />
             ))
           ) : (
-            <div
-              style={{
-                color: 'rgba(255, 255, 255, 0.4)',
-                fontSize: '13px',
-                padding: '12px',
-                background: 'rgba(0,0,0,0.2)',
-                borderRadius: '8px',
-              }}
-            >
-              Waiting for opponents to join table... Dealing cards!
-            </div>
+            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Waiting for opponent…</div>
           )}
         </section>
 
-        {/* Table Center (Decks, Wild Joker, Discard, Finish Slot) */}
-        <section aria-label="Table Center" style={{ margin: 'auto', zIndex: 10 }}>
+        <section aria-label="Table Center" style={{ zIndex: 10, scale: '0.9' }}>
           <TableCenter />
         </section>
 
-        {/* Bottom Current Player Indicator */}
         <section
-          aria-label="My Player Status"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '12px',
-            zIndex: 10,
-          }}
+          aria-label="My status"
+          style={{ zIndex: 10, display: 'flex', justifyContent: 'center' }}
         >
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '10px',
-              background: isMyTurn ? 'rgba(212, 175, 55, 0.15)' : 'rgba(15, 23, 42, 0.7)',
+              gap: 8,
+              background: isMyTurn ? 'rgba(212,175,55,0.15)' : 'rgba(15,23,42,0.7)',
               border: isMyTurn ? '1px solid var(--border-gold)' : '1px solid rgba(255,255,255,0.1)',
-              padding: '4px 14px',
-              borderRadius: '24px',
+              padding: '3px 12px',
+              borderRadius: 20,
             }}
           >
-            <div style={{ position: 'relative', width: '32px', height: '32px' }}>
+            <div style={{ position: 'relative', width: 28, height: 28 }}>
               {isMyTurn && (
-                <div style={{ position: 'absolute', top: '-4px', left: '-4px' }}>
-                  <TurnTimerRing turnDeadline={gameState?.turnDeadline ?? null} size={40} strokeWidth={3} />
+                <div style={{ position: 'absolute', top: -3, left: -3 }}>
+                  <TurnTimerRing turnDeadline={gameState?.turnDeadline ?? null} size={34} strokeWidth={3} />
                 </div>
               )}
               <div
                 style={{
-                  width: '32px',
-                  height: '32px',
+                  width: 28,
+                  height: 28,
                   borderRadius: '50%',
                   background: 'var(--felt-green-center)',
                   display: 'flex',
@@ -250,41 +220,23 @@ export const GameBoard: React.FC = () => {
                   color: 'var(--gold-light)',
                 }}
               >
-                <User size={18} />
+                <User size={14} />
               </div>
             </div>
-
-            <div>
-              <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-main)' }}>
-                {displayName} (You)
-              </span>
-              <span style={{ fontSize: '11px', color: 'var(--gold-accent)', marginLeft: '8px' }}>
-                {isMyTurn ? `Your Turn — Phase: ${gameState?.turnPhase}` : 'Waiting for turn...'}
-              </span>
-            </div>
+            <span style={{ fontSize: 12, fontWeight: 800 }}>{displayName}</span>
           </div>
         </section>
       </main>
 
-      {/* Player's Card Hand */}
-      <section aria-label="Player Hand" style={{ marginTop: '8px' }}>
+      <section className="hand-area" aria-label="Player Hand">
         <PlayerHand />
       </section>
 
-      {/* Action Controls Bar */}
-      <section aria-label="Action Controls">
+      <section className="actions-area" aria-label="Actions">
         <ActionControls />
       </section>
 
-      {/* Declaration Confirmation Modal */}
       <DeclareModal />
-
-      {/* Career Match History Modal */}
-      <HistoryModal
-        playerId={playerId}
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-      />
     </div>
   );
 };

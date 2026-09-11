@@ -131,6 +131,24 @@ const getStoredPlayerId = (): string => {
   }
 };
 
+/** Backend CardInstance may nest suit/rank under `card` and use `deckNumber`. */
+function normalizeCard(raw: unknown): CardInstance {
+  const c = raw as Record<string, unknown>;
+  const nested = (c.card as Record<string, unknown> | undefined) ?? {};
+  return {
+    instanceId: String(c.instanceId ?? ''),
+    suit: (c.suit ?? nested.suit ?? 'NONE') as CardInstance['suit'],
+    rank: (c.rank ?? nested.rank ?? 'JOKER') as CardInstance['rank'],
+    deckIndex: Number(c.deckIndex ?? c.deckNumber ?? 1),
+    printedJoker: Boolean(c.printedJoker ?? nested.printedJoker ?? false),
+  };
+}
+
+function normalizeHand(hand: unknown[] | undefined | null): CardInstance[] {
+  if (!hand || !Array.isArray(hand)) return [];
+  return hand.map(normalizeCard).filter((c) => !!c.instanceId);
+}
+
 export const useGameStore = create<GameStoreState>((set, get) => ({
   tableId: 'TBL_ROYAL_01',
   playerId: getStoredPlayerId(),
@@ -163,13 +181,24 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     }),
 
   updateGameState: (view) => {
-    const { groups } = get();
-    const hand = view.hand || [];
-    const cutJoker = view.cutJoker || null;
+    const { groups, selectedCardIds } = get();
+    const hand = normalizeHand(view.hand || []);
+    const cutJoker = view.cutJoker ? normalizeCard(view.cutJoker) : null;
+    const topDiscard = view.topDiscard ? normalizeCard(view.topDiscard) : null;
+    const normalizedView: PlayerGameView = {
+      ...view,
+      hand,
+      cutJoker,
+      topDiscard,
+      turnPhase: view.turnPhase,
+    };
     const updatedGroups = organizeHandIntoGroups(groups, hand, cutJoker);
+    const handIds = new Set(hand.map((c) => c.instanceId));
+    const nextSelected = selectedCardIds.filter((id) => handIds.has(id));
     set({
-      gameState: view,
+      gameState: normalizedView,
       groups: updatedGroups,
+      selectedCardIds: nextSelected,
     });
   },
 

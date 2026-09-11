@@ -7,6 +7,7 @@ interface CardViewProps {
   wildJoker: CardInstance | null;
   isSelected?: boolean;
   onClick?: () => void;
+  onDoubleClick?: () => void;
   isDraggable?: boolean;
   className?: string;
   size?: 'normal' | 'small' | 'large';
@@ -42,6 +43,7 @@ export const CardView: React.FC<CardViewProps> = ({
   wildJoker,
   isSelected = false,
   onClick,
+  onDoubleClick,
   className = '',
   size = 'normal',
 }) => {
@@ -53,9 +55,9 @@ export const CardView: React.FC<CardViewProps> = ({
 
   const scaleStyle: React.CSSProperties =
     size === 'small'
-      ? { width: '52px', height: '76px', fontSize: '12px' }
+      ? { width: 'calc(var(--card-w) * 0.72)', height: 'calc(var(--card-h) * 0.72)', fontSize: '11px' }
       : size === 'large'
-      ? { width: '84px', height: '120px', fontSize: '16px' }
+      ? { width: 'calc(var(--card-w) * 1.15)', height: 'calc(var(--card-h) * 1.15)', fontSize: '15px' }
       : {};
 
   return (
@@ -67,6 +69,7 @@ export const CardView: React.FC<CardViewProps> = ({
         color: isRed ? 'var(--card-red)' : 'var(--card-black)',
       }}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       role="button"
       tabIndex={0}
       aria-label={`${card.rank} of ${card.suit}`}

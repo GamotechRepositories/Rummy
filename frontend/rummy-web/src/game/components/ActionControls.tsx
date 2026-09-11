@@ -1,171 +1,253 @@
 import React from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
-import { Play, Trash2, Award, Flag, ArrowDownToLine, Loader2 } from 'lucide-react';
+import { Play, Trash2, Award, Flag, ArrowDownToLine, Loader2, Hand } from 'lucide-react';
+import { soundEngine } from '../audio/soundEngine';
+import { isDiscardPhase, isDrawPhase, normalizeTurnPhase } from '../utils/turnPhase';
 
 export const ActionControls: React.FC = () => {
-  const {
-    gameState,
-    selectedCardIds,
-    setDeclareModalOpen,
-  } = useGameStore();
+  const { gameState, selectedCardIds, setDeclareModalOpen, playerId, clearSelection } =
+    useGameStore();
 
   if (!gameState) return null;
 
   const { gameStatus, isMyTurn, turnPhase, opponents, activePlayerId } = gameState;
-  const isDrawPhase = isMyTurn && turnPhase === 'DRAW';
-  const isDiscardPhase = isMyTurn && turnPhase === 'DISCARD';
+  const drawPhase = isDrawPhase(isMyTurn, turnPhase);
+  const discardPhase = isDiscardPhase(isMyTurn, turnPhase);
+  const uiPhase = normalizeTurnPhase(turnPhase);
+  const opponentName =
+    opponents.find((p) => p.playerId === activePlayerId)?.displayName ?? 'Opponent';
 
-  const handleDrawClosed = () => socketClient.draw('CLOSED_DECK');
-  const handleDrawDiscard = () => socketClient.draw('DISCARD_PILE');
+  React.useEffect(() => {
+    if (gameStatus === 'WAITING_FOR_PLAYERS') {
+      socketClient.sendReady();
+      const t = setTimeout(() => socketClient.startGame(), 500);
+      return () => clearTimeout(t);
+    }
+  }, [gameStatus]);
 
   const handleDiscard = () => {
-    if (selectedCardIds.length === 1) {
-      socketClient.discard(selectedCardIds[0]);
+    if (selectedCardIds.length !== 1) return;
+    if (!discardPhase) {
+      soundEngine.play('error');
+      return;
     }
+    const cardId = selectedCardIds[0];
+    soundEngine.play('discard');
+    clearSelection();
+    socketClient.discard(cardId);
   };
 
   const handleOpenDeclare = () => {
-    if (selectedCardIds.length === 1) {
-      setDeclareModalOpen(true);
+    if (selectedCardIds.length !== 1) return;
+    if (!discardPhase) {
+      soundEngine.play('error');
+      return;
     }
+    soundEngine.play('modal');
+    setDeclareModalOpen(true);
   };
 
   const handleDrop = () => {
-    if (window.confirm('Are you sure you want to Drop this hand? You will incur drop penalty points.')) {
+    if (window.confirm('Quit this hand? You will get penalty points.')) {
+      soundEngine.play('lose');
       socketClient.drop();
     }
   };
 
-  // Automatically ready up and start game when entering pre-game state
-  React.useEffect(() => {
-    if (gameStatus === 'WAITING_FOR_PLAYERS') {
-      socketClient.sendReady();
-      const t = setTimeout(() => {
-        socketClient.startGame();
-      }, 500);
-      return () => clearTimeout(t);
+  const handleDraw = (source: 'CLOSED_DECK' | 'DISCARD_PILE') => {
+    if (!drawPhase) {
+      soundEngine.play('error');
+      return;
     }
-  }, [gameStatus]);
+    soundEngine.play('draw');
+    clearSelection();
+    socketClient.draw(source);
+  };
+
+  let coachTitle = '';
+  let coachHint = '';
+  if (gameStatus === 'WAITING_FOR_PLAYERS') {
+    coachTitle = 'Dealing cards…';
+    coachHint = 'Game starts automatically.';
+  } else if (gameStatus === 'COMPLETED') {
+    coachTitle = 'Game over';
+    coachHint = 'Play again or leave.';
+  } else if (drawPhase) {
+    coachTitle = 'Step 1 — Draw a card';
+    coachHint = 'Mystery pile or open pile.';
+  } else if (discardPhase) {
+    coachTitle = 'Step 2 — Throw one card';
+    coachHint =
+      selectedCardIds.length === 1
+        ? 'Tap Discard, or Declare if you won.'
+        : 'Tap exactly one card in your hand, then Discard.';
+  } else if (!isMyTurn) {
+    coachTitle = `Waiting for ${opponentName}`;
+    coachHint = 'Arrange your groups.';
+  } else if (isMyTurn && uiPhase == null) {
+    coachTitle = 'Your turn';
+    coachHint = 'Waiting for table sync…';
+  }
 
   return (
     <div
       style={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '12px',
-        padding: '12px 20px',
-        background: 'rgba(15, 23, 42, 0.85)',
-        borderRadius: '16px',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        maxWidth: '1000px',
-        margin: '8px auto 0',
+        flexDirection: 'column',
+        gap: 6,
+        width: '100%',
+        maxWidth: 1000,
+        margin: '0 auto',
+        height: '100%',
       }}
     >
-      {/* Dealing Status Display */}
-      {gameStatus === 'WAITING_FOR_PLAYERS' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#fef08a', fontSize: '14px', fontWeight: 700 }}>
-          <Loader2 size={18} className="spinner" color="#d4af37" />
-          <span>Shuffling Deck & Dealing Cards... Starting Game!</span>
-        </div>
-      )}
-
-      {/* In-Progress Turn Controls */}
-      {gameStatus === 'IN_PROGRESS' && (
-        <>
-          {/* Draw Phase */}
-          {isDrawPhase && (
-            <>
-              <button
-                id="btn-action-draw-deck"
-                className="btn-primary"
-                onClick={handleDrawClosed}
-              >
-                <ArrowDownToLine size={16} />
-                Draw from Closed Deck
-              </button>
-
-              <button
-                id="btn-action-draw-discard"
-                className="btn-secondary"
-                onClick={handleDrawDiscard}
-                disabled={!gameState.topDiscard}
-              >
-                <ArrowDownToLine size={16} />
-                Draw Discard
-              </button>
-            </>
+      {coachTitle && (
+        <div
+          className="coach-banner"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '8px 12px',
+            borderRadius: 12,
+            background: isMyTurn
+              ? 'linear-gradient(135deg, rgba(212,175,55,0.22), rgba(15,23,42,0.9))'
+              : 'rgba(15, 23, 42, 0.85)',
+            border: isMyTurn
+              ? '1px solid rgba(212,175,55,0.55)'
+              : '1px solid rgba(255,255,255,0.1)',
+          }}
+        >
+          {gameStatus === 'WAITING_FOR_PLAYERS' ? (
+            <Loader2 size={16} className="spinner" color="#d4af37" />
+          ) : (
+            <Hand size={16} color={isMyTurn ? '#fef08a' : '#94a3b8'} />
           )}
-
-          {/* Discard Phase */}
-          {isDiscardPhase && (
-            <>
-              <button
-                id="btn-action-discard"
-                className="btn-primary"
-                onClick={handleDiscard}
-                disabled={selectedCardIds.length !== 1}
-              >
-                <Trash2 size={16} />
-                Discard Card {selectedCardIds.length === 1 ? '✓' : '(Select 1)'}
-              </button>
-
-              <button
-                id="btn-action-declare"
-                className="btn-primary"
-                onClick={handleOpenDeclare}
-                disabled={selectedCardIds.length !== 1}
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)',
-                }}
-              >
-                <Award size={16} />
-                Declare Show
-              </button>
-            </>
-          )}
-
-          {/* Non-Turn Status Display */}
-          {!isMyTurn && (
-            <div style={{ color: 'var(--text-muted)', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: 'var(--gold-accent)' }} />
-              Waiting for {opponents.find(p => p.playerId === activePlayerId)?.displayName ?? 'Opponent'}'s move...
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontWeight: 800,
+                fontSize: 13,
+                color: isMyTurn ? '#fef08a' : '#e2e8f0',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {coachTitle}
             </div>
-          )}
-
-          {/* Drop Button */}
-          <button
-            id="btn-action-drop"
-            className="btn-danger"
-            onClick={handleDrop}
-            disabled={!isMyTurn || !isDrawPhase}
-            title={!isDrawPhase ? 'Can only drop at the start of your turn prior to drawing' : 'Drop game (20/40 pts penalty)'}
-          >
-            <Flag size={14} />
-            Drop Hand
-          </button>
-        </>
-      )}
-
-      {/* Game Completed / Winner Banner */}
-      {gameStatus === 'COMPLETED' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ color: 'var(--gold-light)', fontWeight: 800, fontSize: '16px' }}>
-            🎉 Game Over! Winner: {opponents.find(p => p.playerId === gameState.winnerId)?.displayName ?? 'You / Winner'}
+            <div style={{ fontSize: 11, color: '#94a3b8' }}>{coachHint}</div>
           </div>
-          <button
-            id="btn-play-again"
-            className="btn-primary"
-            onClick={() => socketClient.startGame()}
-          >
-            <Play size={16} />
-            Play Next Deal
-          </button>
         </div>
       )}
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+          gap: 8,
+          padding: '8px 10px',
+          background: 'rgba(15, 23, 42, 0.85)',
+          borderRadius: 12,
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+        }}
+      >
+        {gameStatus === 'IN_PROGRESS' && (
+          <>
+            {drawPhase && (
+              <>
+                <button
+                  id="btn-action-draw-deck"
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => handleDraw('CLOSED_DECK')}
+                >
+                  <ArrowDownToLine size={15} />
+                  Draw mystery
+                </button>
+                <button
+                  id="btn-action-draw-discard"
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => handleDraw('DISCARD_PILE')}
+                  disabled={!gameState.topDiscard}
+                >
+                  <ArrowDownToLine size={15} />
+                  Take open
+                </button>
+              </>
+            )}
+
+            {discardPhase && (
+              <>
+                <button
+                  id="btn-action-discard"
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleDiscard}
+                  disabled={selectedCardIds.length !== 1}
+                >
+                  <Trash2 size={15} />
+                  {selectedCardIds.length === 1 ? 'Discard' : 'Select 1 card'}
+                </button>
+                <button
+                  id="btn-action-declare"
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleOpenDeclare}
+                  disabled={selectedCardIds.length !== 1}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)',
+                  }}
+                >
+                  <Award size={15} />
+                  Declare win
+                </button>
+              </>
+            )}
+
+            <button
+              id="btn-action-drop"
+              type="button"
+              className="btn-danger"
+              onClick={handleDrop}
+              disabled={!isMyTurn || !drawPhase}
+            >
+              <Flag size={13} />
+              Quit
+            </button>
+          </>
+        )}
+
+        {gameStatus === 'COMPLETED' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ color: 'var(--gold-light)', fontWeight: 800, fontSize: 14 }}>
+              Winner:{' '}
+              {gameState.winnerId === playerId
+                ? 'You!'
+                : opponents.find((p) => p.playerId === gameState.winnerId)?.displayName ??
+                  'Opponent'}
+            </div>
+            <button
+              id="btn-play-again"
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                soundEngine.play('deal');
+                clearSelection();
+                socketClient.startGame();
+              }}
+            >
+              <Play size={15} />
+              Play again
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
