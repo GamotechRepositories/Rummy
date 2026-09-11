@@ -11,7 +11,7 @@ spring:
     banner-mode: off
   data:
     mongodb:
-      uri: mongodb://localhost:27017/rummy_db
+      uri: ${SPRING_DATA_MONGODB_URI:${MONGODB_URI:mongodb://localhost:27017/rummy_db}}
       auto-index-creation: true
 
 management:
