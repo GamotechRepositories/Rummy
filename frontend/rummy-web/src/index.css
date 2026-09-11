@@ -431,7 +431,7 @@ h1, h2, h3, h4, .font-display {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: radial-gradient(ellipse at 50% 0%, #134e3a 0%, #0a1628 45%, #06090e 100%);
+  background: radial-gradient(ellipse at 50% -10%, #0a4633 0%, #052c1f 40%, #021a12 75%, #010b07 100%);
 }
 
 .lobby-main {

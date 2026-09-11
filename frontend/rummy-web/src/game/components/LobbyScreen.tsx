@@ -385,8 +385,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
-                  background: 'rgba(212,175,55,0.12)',
-                  border: '1px solid rgba(212,175,55,0.3)',
+                  background: 'rgba(220, 38, 38, 0.2)',
+                  border: '1px solid rgba(212, 175, 55, 0.4)',
                   color: '#fef08a',
                   borderRadius: 20,
                   padding: '4px 14px',
@@ -405,42 +405,43 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                   fontWeight: 900,
                   lineHeight: 1.2,
                   margin: '0 0 6px 0',
+                  color: '#ffffff',
                 }}
               >
                 Choose Your Rummy Variant
               </h1>
-              <p style={{ color: '#94a3b8', fontSize: 'clamp(13px, 2.5vw, 14px)', margin: 0 }}>
+              <p style={{ color: '#cbd5e1', fontSize: 'clamp(13px, 2.5vw, 14px)', margin: 0 }}>
                 Pick a format below to select player count (2/6), point value, and entry fee.
               </p>
             </div>
 
-            {/* 4 Cards Grid - Single Horizontal Line on Desktop */}
+            {/* 4 Cards Grid - Single Horizontal Line on Desktop (Casino Red & Green Theme) */}
             <div className="variant-cards-row">
-              {/* Card 1: Point Rummy */}
+              {/* Card 1: Point Rummy (Casino Velvet Red) */}
               <div
                 id="card-select-points"
                 onClick={() => handleSelectVariant('POINTS')}
                 style={{
-                  background: 'radial-gradient(ellipse at 50% 0%, #881337 0%, #1e1b4b 70%, #0f172a 100%)',
-                  border: '2px solid rgba(245, 158, 11, 0.5)',
+                  background: 'radial-gradient(ellipse at 50% 0%, #6b1111 0%, #380709 60%, #150304 100%)',
+                  border: '1.5px solid rgba(212, 175, 55, 0.5)',
                   borderRadius: 18,
                   padding: 22,
                   cursor: 'pointer',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 12,
-                  boxShadow: '0 10px 28px rgba(0,0,0,0.4)',
+                  boxShadow: '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)',
                   transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease',
                   position: 'relative',
                   overflow: 'hidden',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
-                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(245, 158, 11, 0.35)';
+                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(220, 38, 38, 0.4), 0 0 18px rgba(212, 175, 55, 0.3)';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 10px 28px rgba(0,0,0,0.4)';
+                  e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)';
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -450,14 +451,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                       fontWeight: 900,
                       padding: '3px 10px',
                       borderRadius: 12,
-                      background: 'rgba(245, 158, 11, 0.25)',
-                      color: '#fbbf24',
-                      border: '1px solid rgba(245, 158, 11, 0.5)',
+                      background: 'rgba(220, 38, 38, 0.35)',
+                      color: '#fee2e2',
+                      border: '1px solid rgba(248, 113, 113, 0.5)',
                     }}
                   >
                     🔥 MOST POPULAR
                   </span>
-                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(212, 175, 55, 0.15)', border: '1px solid rgba(212, 175, 55, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Flame size={20} color="#fbbf24" />
                   </div>
                 </div>
@@ -471,41 +472,41 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                   </p>
                 </div>
 
-                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(212, 175, 55, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 12, color: '#fef08a', fontWeight: 700 }}>
                     ₹0.05 - ₹5.0 / pt
                   </span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 3 }}>
                     Play Now <ChevronRight size={14} />
                   </span>
                 </div>
               </div>
 
-              {/* Card 2: Pool Rummy */}
+              {/* Card 2: Pool Rummy (Casino Emerald Felt Green) */}
               <div
                 id="card-select-pool"
                 onClick={() => handleSelectVariant('POOL')}
                 style={{
-                  background: 'radial-gradient(ellipse at 50% 0%, #1e3a8a 0%, #0f172a 70%, #020617 100%)',
-                  border: '2px solid rgba(59, 130, 246, 0.5)',
+                  background: 'radial-gradient(ellipse at 50% 0%, #064e3b 0%, #042f22 60%, #02150f 100%)',
+                  border: '1.5px solid rgba(212, 175, 55, 0.5)',
                   borderRadius: 18,
                   padding: 22,
                   cursor: 'pointer',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 12,
-                  boxShadow: '0 10px 28px rgba(0,0,0,0.4)',
+                  boxShadow: '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)',
                   transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease',
                   position: 'relative',
                   overflow: 'hidden',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
-                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(59, 130, 246, 0.35)';
+                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(16, 185, 129, 0.4), 0 0 18px rgba(212, 175, 55, 0.3)';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 10px 28px rgba(0,0,0,0.4)';
+                  e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)';
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -515,15 +516,15 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                       fontWeight: 900,
                       padding: '3px 10px',
                       borderRadius: 12,
-                      background: 'rgba(59, 130, 246, 0.25)',
-                      color: '#60a5fa',
-                      border: '1px solid rgba(59, 130, 246, 0.5)',
+                      background: 'rgba(16, 185, 129, 0.25)',
+                      color: '#d1fae5',
+                      border: '1px solid rgba(52, 211, 153, 0.5)',
                     }}
                   >
                     🏆 101 / 201 TOURNAMENT
                   </span>
-                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Trophy size={20} color="#60a5fa" />
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(212, 175, 55, 0.15)', border: '1px solid rgba(212, 175, 55, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Trophy size={20} color="#fbbf24" />
                   </div>
                 </div>
 
@@ -536,41 +537,41 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                   </p>
                 </div>
 
-                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 12, color: '#93c5fd', fontWeight: 700 }}>
+                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(212, 175, 55, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 12, color: '#fef08a', fontWeight: 700 }}>
                     Stakes: ₹10 - ₹250
                   </span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 3 }}>
                     Play Now <ChevronRight size={14} />
                   </span>
                 </div>
               </div>
 
-              {/* Card 3: Deal Rummy */}
+              {/* Card 3: Deal Rummy (Casino Emerald Felt Green) */}
               <div
                 id="card-select-deals"
                 onClick={() => handleSelectVariant('DEALS')}
                 style={{
-                  background: 'radial-gradient(ellipse at 50% 0%, #065f46 0%, #0f172a 70%, #020617 100%)',
-                  border: '2px solid rgba(16, 185, 129, 0.5)',
+                  background: 'radial-gradient(ellipse at 50% 0%, #064e3b 0%, #042f22 60%, #02150f 100%)',
+                  border: '1.5px solid rgba(212, 175, 55, 0.5)',
                   borderRadius: 18,
                   padding: 22,
                   cursor: 'pointer',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 12,
-                  boxShadow: '0 10px 28px rgba(0,0,0,0.4)',
+                  boxShadow: '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)',
                   transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease',
                   position: 'relative',
                   overflow: 'hidden',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
-                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(16, 185, 129, 0.35)';
+                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(16, 185, 129, 0.4), 0 0 18px rgba(212, 175, 55, 0.3)';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 10px 28px rgba(0,0,0,0.4)';
+                  e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)';
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -581,14 +582,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                       padding: '3px 10px',
                       borderRadius: 12,
                       background: 'rgba(16, 185, 129, 0.25)',
-                      color: '#34d399',
-                      border: '1px solid rgba(16, 185, 129, 0.5)',
+                      color: '#d1fae5',
+                      border: '1px solid rgba(52, 211, 153, 0.5)',
                     }}
                   >
                     🎯 2 DEALS BATTLE
                   </span>
-                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Target size={20} color="#34d399" />
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(212, 175, 55, 0.15)', border: '1px solid rgba(212, 175, 55, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Target size={20} color="#fbbf24" />
                   </div>
                 </div>
 
@@ -601,41 +602,41 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                   </p>
                 </div>
 
-                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 12, color: '#6ee7b7', fontWeight: 700 }}>
+                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(212, 175, 55, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 12, color: '#fef08a', fontWeight: 700 }}>
                     Stakes: ₹10 - ₹100
                   </span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 3 }}>
                     Play Now <ChevronRight size={14} />
                   </span>
                 </div>
               </div>
 
-              {/* Card 4: 21-Card Rummy */}
+              {/* Card 4: 21-Card Rummy (Casino Velvet Red) */}
               <div
                 id="card-select-21card"
                 onClick={() => handleSelectVariant('RUMMY_21')}
                 style={{
-                  background: 'radial-gradient(ellipse at 50% 0%, #831843 0%, #0f172a 70%, #020617 100%)',
-                  border: '2px solid rgba(236, 72, 153, 0.5)',
+                  background: 'radial-gradient(ellipse at 50% 0%, #6b1111 0%, #380709 60%, #150304 100%)',
+                  border: '1.5px solid rgba(212, 175, 55, 0.5)',
                   borderRadius: 18,
                   padding: 22,
                   cursor: 'pointer',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 12,
-                  boxShadow: '0 10px 28px rgba(0,0,0,0.4)',
+                  boxShadow: '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)',
                   transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease',
                   position: 'relative',
                   overflow: 'hidden',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
-                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(236, 72, 153, 0.35)';
+                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(220, 38, 38, 0.4), 0 0 18px rgba(212, 175, 55, 0.3)';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 10px 28px rgba(0,0,0,0.4)';
+                  e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)';
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -645,15 +646,15 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                       fontWeight: 900,
                       padding: '3px 10px',
                       borderRadius: 12,
-                      background: 'rgba(236, 72, 153, 0.25)',
-                      color: '#f472b6',
-                      border: '1px solid rgba(236, 72, 153, 0.5)',
+                      background: 'rgba(220, 38, 38, 0.35)',
+                      color: '#fee2e2',
+                      border: '1px solid rgba(248, 113, 113, 0.5)',
                     }}
                   >
-                    🃏 MARRIAGE RUMMY
+                    👑 MARRIAGE RUMMY
                   </span>
-                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(236, 72, 153, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Crown size={20} color="#f472b6" />
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(212, 175, 55, 0.15)', border: '1px solid rgba(212, 175, 55, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Crown size={20} color="#fbbf24" />
                   </div>
                 </div>
 
@@ -666,11 +667,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                   </p>
                 </div>
 
-                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 12, color: '#fbcfe8', fontWeight: 700 }}>
+                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(212, 175, 55, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 12, color: '#fef08a', fontWeight: 700 }}>
                     Stakes: ₹25 - ₹250
                   </span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 3 }}>
                     Play Now <ChevronRight size={14} />
                   </span>
                 </div>
