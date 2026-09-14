@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # -------------------------------------------------------------
   # Infrastructure Data Stores & Messaging
@@ -83,6 +81,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      default:
+        aliases:
+          - game-service
 
   game-service-2:
     build:

@@ -26,30 +26,19 @@ A production-grade, distributed, real-time Rummy platform designed for 300,000�
 ```text
 rummy-platform/
 ├── frontend/                     # React + TypeScript web application
-│   └── rummy-web/
-├── backend/                      # Java 21 + Spring Boot microservices
-│   ├── api-service/              # REST APIs (Auth, User, Profile)
-│   ├── game-service/             # WebSocket Game Server & Engine
-│   ├── matchmaking-service/      # Queue & table allocation
-│   └── notification-service/     # Push & in-app alerts
-├── shared/                       # Shared schemas and libraries
-│   ├── game-contracts/           # Commands, events, and state models
-│   ├── event-contracts/          # Kafka event schemas
-│   └── common-security/          # Auth & token validation helpers
-├── infrastructure/               # Database & messaging setup scripts
-│   ├── mongodb/                  # Indexes, schemas, initial seeds
-│   ├── postgres/                 # Migration scripts (if applicable)
-│   ├── redis/                    # Cluster configuration
-│   ├── kafka/                    # Topic configurations
-│   └── monitoring/               # Prometheus & Grafana configs
-├── load-test/                    # Scale & concurrency simulation
+│   └── rummy-web/                # Modern table UI & WebSocket client
+├── backend/                      # Java 21 + Spring Boot game services
+│   ├── game-engine/              # Server-authoritative card rules & state machines
+│   └── game-service/             # WebSocket Gateway, TableActor cluster & MongoDB Atlas
+├── deployment/                   # Containerization, orchestration & database configs
+│   ├── docker/                   # Docker Compose, Mongo seeds & Redis configs
+│   ├── kubernetes/               # Enterprise K8s manifests (HPA, Ingress, Pods)
+│   ├── monitoring/               # Prometheus & Grafana dashboard metrics
+│   └── scripts/                  # Graceful draining and deployment scripts
+├── load-test/                    # Concurrency, bot simulation & reconnect storm tests
 │   ├── player-simulator/         # Virtual player bots
-│   ├── websocket-load/           # Connection & reconnect storm tests
+│   ├── websocket-load/           # WebSocket benchmark harness
 │   └── scenarios/                # Gameplay load profiles
-├── deployment/                   # Containerization & orchestration
-│   ├── docker/                   # Dockerfiles and docker-compose
-│   ├── kubernetes/               # Helm charts / K8s manifests
-│   └── environments/             # Environment configs (dev/stage/prod)
 └── docs/                         # Engineering and architecture documentation
     ├── architecture/             # High-level architecture & diagrams
     ├── api/                      # REST & WebSocket protocol specifications
@@ -64,6 +53,7 @@ rummy-platform/
 ## 🎯 Master Roadmap & Specification
 
 For complete details on game variants, table state machines, scoring algorithms, and multi-phase roadmap, see:
+- [Run & Deployment Guide (Local & Docker)](file:///D:/Projects/Rummy/Rummy/HOW_TO_RUN.md)
 - [Master Specification README](file:///D:/Projects/Rummy/Rummy/Rummy_Real_Money_Australia_Master_README%20%284%29.md)
 - [Architecture Overview](file:///D:/Projects/Rummy/Rummy/docs/architecture/overview.md)
 - [Game Rules Specification](file:///D:/Projects/Rummy/Rummy/docs/game-rules/rummy-rules.md)
