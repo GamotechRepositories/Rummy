@@ -179,7 +179,33 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
               />
             ))
           ) : (
-            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Waiting for opponent…</div>
+            <div
+              style={{
+                color: '#fef08a',
+                fontSize: 12,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: 'rgba(15, 23, 42, 0.75)',
+                padding: '6px 14px',
+                borderRadius: 20,
+                border: '1px solid rgba(212, 175, 55, 0.4)',
+                boxShadow: '0 4px 15px rgba(0, 0, 0, 0.4)',
+              }}
+            >
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: '#fbbf24',
+                  boxShadow: '0 0 8px #fbbf24',
+                  animation: 'pulse 1.5s infinite',
+                }}
+              />
+              Waiting for opponent… (AI bot auto-joins shortly)
+            </div>
           )}
         </section>
 

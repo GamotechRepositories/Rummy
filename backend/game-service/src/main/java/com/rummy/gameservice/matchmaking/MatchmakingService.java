@@ -81,6 +81,14 @@ public class MatchmakingService {
      * Submit a player into the matchmaking queue.
      */
     public MatchmakingTicket enqueue(MatchmakingRequest request) {
+        // Cancel any previous queued ticket for the same player to prevent duplicate self-matching
+        for (MatchmakingTicket existing : tickets.values()) {
+            if (existing.getPlayerId().equals(request.getPlayerId()) && existing.getStatus() == MatchmakingTicket.Status.QUEUED) {
+                existing.setStatus(MatchmakingTicket.Status.CANCELLED);
+                log.info("[Matchmaking] Cancelled previous queued ticket {} for player {}", existing.getTicketId(), request.getPlayerId());
+            }
+        }
+
         String ticketId = "TKT_" + UUID.randomUUID().toString().substring(0, 8);
         MatchmakingTicket ticket = new MatchmakingTicket(
                 ticketId,
@@ -128,6 +136,12 @@ public class MatchmakingService {
                 if (candidate.getStatus() != MatchmakingTicket.Status.QUEUED) {
                     continue; // Skip cancelled or already matched
                 }
+                // Also check if candidate player is still online
+                if (presenceService != null && !presenceService.isPlayerOnline(candidate.getPlayerId())) {
+                    candidate.setStatus(MatchmakingTicket.Status.CANCELLED);
+                    log.info("[Matchmaking] Skipped offline player ticket {}", candidate.getTicketId());
+                    continue;
+                }
                 validWaiting.add(candidate);
             }
 
@@ -135,19 +149,27 @@ public class MatchmakingService {
                 continue;
             }
 
-            // Check if we can form full human player groups
+            // Check if we can form full human player groups of DISTINCT players
             int targetSize = validWaiting.get(0).getMaxPlayers();
             List<MatchmakingTicket> matchedGroup = new ArrayList<>();
+            Set<String> groupedPlayerIds = new HashSet<>();
 
             for (MatchmakingTicket ticket : validWaiting) {
+                if (groupedPlayerIds.contains(ticket.getPlayerId())) {
+                    // Duplicate ticket for same player, mark cancelled
+                    ticket.setStatus(MatchmakingTicket.Status.CANCELLED);
+                    continue;
+                }
                 matchedGroup.add(ticket);
+                groupedPlayerIds.add(ticket.getPlayerId());
                 if (matchedGroup.size() == targetSize) {
-                    createAndAssignTable(matchedGroup, false);
+                    createAndAssignTable(new ArrayList<>(matchedGroup), false);
                     matchedGroup.clear();
+                    groupedPlayerIds.clear();
                 }
             }
 
-            // For remaining players in queue (e.g. 2, 3, 4, or 5 players in a 6-player table):
+            // For remaining players in queue (e.g. 1 player in a 2-player table, or 2 players in a 6-player table):
             if (!matchedGroup.isEmpty()) {
                 boolean anyTimedOut = matchedGroup.stream().anyMatch(t ->
                         t.isAllowAiFallback() && Duration.between(t.getCreatedAt(), Instant.now()).toMillis() >= aiFallbackTimeoutMs
@@ -155,9 +177,9 @@ public class MatchmakingService {
 
                 if (anyTimedOut) {
                     // Group ALL waiting real players together into 1 shared table, and fill remaining seats with bots!
-                    // e.g. 3 real players + 3 bots = 6 players
                     createAndAssignTable(new ArrayList<>(matchedGroup), true);
                     matchedGroup.clear();
+                    groupedPlayerIds.clear();
                 } else {
                     for (MatchmakingTicket leftover : matchedGroup) {
                         long elapsed = Duration.between(leftover.getCreatedAt(), Instant.now()).toMillis();

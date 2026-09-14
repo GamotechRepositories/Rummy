@@ -45,7 +45,17 @@ interface LobbyScreenProps {
 }
 
 export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
-  const { displayName, setSession, setHasJoinedTable, connectionStatus, playerId } = useGameStore();
+  const {
+    displayName,
+    setSession,
+    setHasJoinedTable,
+    connectionStatus,
+    playerId,
+    lastGameConfig,
+    autoMatchmakePending,
+    setAutoMatchmakePending,
+    setLastGameConfig,
+  } = useGameStore();
 
   const [localName, setLocalName] = useState(displayName);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -78,6 +88,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
   const [mmQueueTime, setMmQueueTime] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
+  const isEnqueuingRef = useRef(false);
 
   // Resolve current active stake and rulesetId
   let activeRulesetId = 'POINTS_13';
@@ -134,22 +145,53 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
     return () => clearInterval(timer);
   }, [isMatchmaking]);
 
+  useEffect(() => {
+    if (autoMatchmakePending) {
+      setAutoMatchmakePending(false);
+      const targetConfig = lastGameConfig ?? {
+        rulesetId: activeRulesetId,
+        entryFee: activeEntryFee,
+        maxPlayers: selectedPlayers,
+      };
+      handlePlay(targetConfig);
+    }
+  }, [autoMatchmakePending]);
+
   const handleSelectVariant = (variant: VariantType) => {
     soundEngine.play('click');
     setSelectedVariant(variant);
     setCurrentPage('CONFIGURE_TABLE');
   };
 
-  const handlePlay = async () => {
+  const handlePlay = async (customConfig?: { rulesetId: string; entryFee: number; maxPlayers: number }) => {
+    if (isEnqueuingRef.current || isMatchmaking) return;
+    isEnqueuingRef.current = true;
+
     const name = localName.trim() || 'Player';
     setErrorMsg(null);
 
-    if (walletBalance < activeEntryFee) {
+    const rId = customConfig?.rulesetId ?? activeRulesetId;
+    const eFee = customConfig?.entryFee ?? activeEntryFee;
+    const mPlayers = customConfig?.maxPlayers ?? selectedPlayers;
+
+    setLastGameConfig({
+      rulesetId: rId,
+      entryFee: eFee,
+      maxPlayers: mPlayers,
+    });
+
+    if (walletBalance < eFee) {
       setErrorMsg(
-        `Insufficient Balance: You need ₹ ${activeEntryFee} to join this table. Click '+ Add Cash' to deposit.`
+        `Insufficient Balance: You need ₹ ${eFee} to join this table. Click '+ Add Cash' to deposit.`
       );
       setIsWalletOpen(true);
+      isEnqueuingRef.current = false;
       return;
+    }
+
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
     }
 
     setIsMatchmaking(true);
@@ -163,9 +205,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
         body: JSON.stringify({
           playerId,
           playerName: name,
-          rulesetId: activeRulesetId,
-          stakeTier: activeEntryFee,
-          maxPlayers: selectedPlayers,
+          rulesetId: rId,
+          stakeTier: eFee,
+          maxPlayers: mPlayers,
           allowAiFallback: true,
         }),
       });
@@ -184,7 +226,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
           if (!pollRes.ok) return;
           const ticketData = await pollRes.json();
           if (ticketData.status === 'MATCHED' && ticketData.matchedTableId) {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
             setIsMatchmaking(false);
             soundEngine.play('deal');
             setSession(ticketData.matchedTableId, playerId, name);
@@ -202,6 +247,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
     } catch (err: unknown) {
       setIsMatchmaking(false);
       setErrorMsg(err instanceof Error ? err.message : 'Could not join table.');
+    } finally {
+      isEnqueuingRef.current = false;
     }
   };
 

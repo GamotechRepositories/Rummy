@@ -42,6 +42,7 @@ public final class TableActor {
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
     private final Map<String, BotPlayerAgent> botAgents = new ConcurrentHashMap<>();
     private ScheduledFuture<?> turnTimeoutFuture;
+    private ScheduledFuture<?> autoStartFallbackFuture;
 
     public TableActor(String tableId,
                       GameState initialState,
@@ -89,11 +90,19 @@ public final class TableActor {
         if (state.getPlayer(playerId).isPresent()) {
             sendPlayerView(playerId, null);
         }
+
+        if (state.getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+            checkAndScheduleAutoBotFallback();
+        }
     }
 
     public synchronized void unregisterSession(String playerId) {
         sessions.remove(playerId);
         log.info("[TableActor:{}] Unregistered session for player {}", tableId, playerId);
+        boolean hasActiveHuman = sessions.values().stream().anyMatch(WebSocketSession::isOpen);
+        if (!hasActiveHuman && state.getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+            cancelAutoBotFallback();
+        }
     }
 
     public synchronized void registerBot(String botId, String displayName, BotDifficulty difficulty) {
@@ -146,6 +155,13 @@ public final class TableActor {
 
         // 4. Trigger bot turn if active player is a bot
         triggerBotTurnIfApplicable();
+
+        // 5. Update auto-bot fallback timer when in WAITING_FOR_PLAYERS
+        if (state.getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+            checkAndScheduleAutoBotFallback();
+        } else {
+            cancelAutoBotFallback();
+        }
 
         return result;
     }
@@ -253,10 +269,103 @@ public final class TableActor {
         return tableId;
     }
 
+    private void checkAndScheduleAutoBotFallback() {
+        if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
+            cancelAutoBotFallback();
+            return;
+        }
+
+        boolean hasHuman = state.getPlayers().stream().anyMatch(p -> !p.isBot());
+        if (!hasHuman || state.getPlayers().size() >= 2) {
+            if (state.getPlayers().size() >= 2) {
+                cancelAutoBotFallback();
+            }
+            return;
+        }
+
+        if (autoStartFallbackFuture != null && !autoStartFallbackFuture.isDone()) {
+            return;
+        }
+
+        log.info("[TableActor:{}] Scheduling 10s auto-bot fallback for waiting player...", tableId);
+        autoStartFallbackFuture = scheduler.schedule(() -> {
+            synchronized (this) {
+                if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
+                    return;
+                }
+
+                int currentCount = state.getPlayers().size();
+                if (currentCount >= 2) {
+                    return;
+                }
+
+                log.info("[TableActor:{}] Auto-bot fallback triggered: Table has {} player(s), adding bot to start match", tableId, currentCount);
+
+                Set<Integer> occupied = new HashSet<>();
+                for (PlayerState p : state.getPlayers()) {
+                    occupied.add(p.getSeatIndex());
+                }
+
+                int neededBots = 2 - currentCount;
+                for (int i = 0; i < neededBots; i++) {
+                    int freeSeat = 1;
+                    for (int s = 0; s < 6; s++) {
+                        if (!occupied.contains(s)) {
+                            freeSeat = s;
+                            occupied.add(s);
+                            break;
+                        }
+                    }
+
+                    String botId = "BOT_" + UUID.randomUUID().toString().substring(0, 4);
+                    String botName = "RoyalBot_" + (botAgents.size() + 1);
+                    registerBot(botId, botName, BotDifficulty.MEDIUM);
+
+                    processCommand(new JoinCommand(
+                            UUID.randomUUID().toString(),
+                            state.getGameId(),
+                            botId,
+                            botName,
+                            freeSeat,
+                            true,
+                            Instant.now()
+                    ), "FALLBACK_BOT_JOIN");
+
+                    processCommand(new ReadyCommand(
+                            UUID.randomUUID().toString(),
+                            state.getGameId(),
+                            botId,
+                            Instant.now()
+                    ), "FALLBACK_BOT_READY");
+                }
+
+                boolean allReady = state.getPlayers().stream().allMatch(p -> p.getStatus() == PlayerStatus.READY);
+                if (allReady && state.getPlayers().size() >= 2 && state.getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+                    String starterId = state.getPlayers().get(0).getPlayerId();
+                    processCommand(new StartGameCommand(
+                            UUID.randomUUID().toString(),
+                            state.getGameId(),
+                            starterId,
+                            Instant.now()
+                    ), "FALLBACK_AUTO_START");
+                    log.info("[TableActor:{}] Auto-started game with bot via fallback", tableId);
+                }
+            }
+        }, 10, TimeUnit.SECONDS);
+    }
+
+    private void cancelAutoBotFallback() {
+        if (autoStartFallbackFuture != null && !autoStartFallbackFuture.isDone()) {
+            autoStartFallbackFuture.cancel(false);
+            autoStartFallbackFuture = null;
+        }
+    }
+
     public synchronized void destroy() {
         if (turnTimeoutFuture != null) {
             turnTimeoutFuture.cancel(true);
         }
+        cancelAutoBotFallback();
         sessions.clear();
         botAgents.clear();
     }

@@ -237,9 +237,11 @@ export const ActionControls: React.FC = () => {
               type="button"
               className="btn-primary"
               onClick={() => {
-                soundEngine.play('deal');
+                soundEngine.play('match');
                 clearSelection();
-                socketClient.startGame();
+                useGameStore.getState().setAutoMatchmakePending(true);
+                socketClient.disconnect();
+                useGameStore.getState().leaveTable();
               }}
             >
               <Play size={15} />

@@ -14,12 +14,20 @@ interface GameStoreState {
   isDeclareModalOpen: boolean;
   errorMessage: string | null;
   lastEventMessage: string | null;
+  lastGameConfig: {
+    rulesetId: string;
+    entryFee: number;
+    maxPlayers: number;
+  } | null;
+  autoMatchmakePending: boolean;
 
   // Actions
   setConnectionStatus: (status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING') => void;
   setSession: (tableId: string, playerId: string, displayName: string) => void;
   setHasJoinedTable: (joined: boolean) => void;
   leaveTable: () => void;
+  setLastGameConfig: (config: { rulesetId: string; entryFee: number; maxPlayers: number } | null) => void;
+  setAutoMatchmakePending: (pending: boolean) => void;
   updateGameState: (view: PlayerGameView) => void;
   toggleSelectCard: (cardId: string) => void;
   clearSelection: () => void;
@@ -161,6 +169,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   isDeclareModalOpen: false,
   errorMessage: null,
   lastEventMessage: null,
+  lastGameConfig: null,
+  autoMatchmakePending: false,
 
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 
@@ -168,6 +178,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({ tableId, playerId, displayName }),
 
   setHasJoinedTable: (joined) => set({ hasJoinedTable: joined }),
+
+  setLastGameConfig: (config) => set({ lastGameConfig: config }),
+
+  setAutoMatchmakePending: (pending) => set({ autoMatchmakePending: pending }),
 
   leaveTable: () =>
     set({
