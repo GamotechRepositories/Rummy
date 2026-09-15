@@ -48,6 +48,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
   const {
     displayName,
     setSession,
+    setDisplayName,
     setHasJoinedTable,
     connectionStatus,
     playerId,
@@ -61,6 +62,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number>(1000);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [rematchNotice, setRematchNotice] = useState(false);
+
+  const commitDisplayName = () => {
+    const next = localName.trim() || 'Player';
+    setLocalName(next);
+    setDisplayName(next);
+    setIsEditingName(false);
+  };
 
   // 2-PAGE FLOW: Page 1 = 'SELECT_VARIANT', Page 2 = 'CONFIGURE_TABLE'
   const [currentPage, setCurrentPage] = useState<'SELECT_VARIANT' | 'CONFIGURE_TABLE'>('SELECT_VARIANT');
@@ -148,6 +157,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
   useEffect(() => {
     if (autoMatchmakePending) {
       setAutoMatchmakePending(false);
+      setRematchNotice(true);
       const targetConfig = lastGameConfig ?? {
         rulesetId: activeRulesetId,
         entryFee: activeEntryFee,
@@ -156,6 +166,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
       handlePlay(targetConfig);
     }
   }, [autoMatchmakePending]);
+
+  useEffect(() => {
+    if (!isMatchmaking) setRematchNotice(false);
+  }, [isMatchmaking]);
 
   const handleSelectVariant = (variant: VariantType) => {
     soundEngine.play('click');
@@ -307,9 +321,33 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
             >
               Royal Rummy
             </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#10b981' }}>
-              <CircleDot size={9} />
-              <span>Real Indian Cash & Point Formats</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+              <span style={{ color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <CircleDot size={9} />
+                Cash tables · Instant rematch
+              </span>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 8px',
+                  borderRadius: 12,
+                  fontWeight: 700,
+                  fontSize: 10,
+                  background:
+                    connectionStatus === 'CONNECTED'
+                      ? 'rgba(16,185,129,0.18)'
+                      : 'rgba(245,158,11,0.18)',
+                  color: connectionStatus === 'CONNECTED' ? '#34d399' : '#fbbf24',
+                  border:
+                    connectionStatus === 'CONNECTED'
+                      ? '1px solid rgba(16,185,129,0.35)'
+                      : '1px solid rgba(245,158,11,0.35)',
+                }}
+              >
+                {connectionStatus === 'CONNECTED' ? '● Live' : '○ Connecting'}
+              </span>
             </div>
           </div>
         </div>
@@ -335,8 +373,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
               type="text"
               value={localName}
               onChange={(e) => setLocalName(e.target.value)}
-              onBlur={() => setIsEditingName(false)}
-              onKeyDown={(e) => e.key === 'Enter' && setIsEditingName(false)}
+              onBlur={commitDisplayName}
+              onKeyDown={(e) => e.key === 'Enter' && commitDisplayName()}
               autoFocus
               maxLength={16}
               aria-label="Your name"
@@ -410,6 +448,25 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
 
       {/* Main Container */}
       <main className="lobby-main" style={{ justifyContent: 'flex-start', paddingBottom: 40 }}>
+        {rematchNotice && isMatchmaking && (
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 560,
+              margin: '0 auto 12px',
+              padding: '10px 14px',
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, rgba(212,175,55,0.22), rgba(15,23,42,0.92))',
+              border: '1px solid rgba(212,175,55,0.45)',
+              color: '#fef08a',
+              fontSize: 13,
+              fontWeight: 700,
+              textAlign: 'center',
+            }}
+          >
+            Rematch started — same stake &amp; rules. Finding table…
+          </div>
+        )}
         {/* ========================================================= */}
         {/* PAGE 1: CHOOSE VARIANT HUB                                */}
         {/* ========================================================= */}

@@ -24,6 +24,7 @@ interface GameStoreState {
   // Actions
   setConnectionStatus: (status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING') => void;
   setSession: (tableId: string, playerId: string, displayName: string) => void;
+  setDisplayName: (displayName: string) => void;
   setHasJoinedTable: (joined: boolean) => void;
   leaveTable: () => void;
   setLastGameConfig: (config: { rulesetId: string; entryFee: number; maxPlayers: number } | null) => void;
@@ -176,6 +177,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   setSession: (tableId, playerId, displayName) =>
     set({ tableId, playerId, displayName }),
+
+  setDisplayName: (displayName) => set({ displayName }),
 
   setHasJoinedTable: (joined) => set({ hasJoinedTable: joined }),
 

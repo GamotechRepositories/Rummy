@@ -71,8 +71,11 @@ export const ActionControls: React.FC = () => {
     coachTitle = 'Dealing cards…';
     coachHint = 'Game starts automatically.';
   } else if (gameStatus === 'COMPLETED') {
-    coachTitle = 'Game over';
-    coachHint = 'Play again or leave.';
+    const iWon = gameState.winnerId === playerId;
+    coachTitle = iWon ? 'You won this hand!' : 'Hand finished';
+    coachHint = iWon
+      ? 'Nice declare. Rematch with the same stake anytime.'
+      : 'Tap Rematch for the same table stake, or Leave.';
   } else if (drawPhase) {
     coachTitle = 'Step 1 — Draw a card';
     coachHint = 'Mystery pile or open pile.';
@@ -226,11 +229,24 @@ export const ActionControls: React.FC = () => {
         {gameStatus === 'COMPLETED' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ color: 'var(--gold-light)', fontWeight: 800, fontSize: 14 }}>
-              Winner:{' '}
-              {gameState.winnerId === playerId
-                ? 'You!'
-                : opponents.find((p) => p.playerId === gameState.winnerId)?.displayName ??
-                  'Opponent'}
+              {gameState.winnerId === playerId ? (
+                <>Winner: You!</>
+              ) : (
+                <>
+                  Winner:{' '}
+                  {opponents.find((p) => p.playerId === gameState.winnerId)?.displayName ??
+                    'Opponent'}
+                </>
+              )}
+              {opponents.length > 0 && (
+                <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: 12, marginLeft: 8 }}>
+                  (
+                  {opponents
+                    .map((o) => `${o.displayName}: ${o.score} pts`)
+                    .join(' · ')}
+                  )
+                </span>
+              )}
             </div>
             <button
               id="btn-play-again"
@@ -245,7 +261,7 @@ export const ActionControls: React.FC = () => {
               }}
             >
               <Play size={15} />
-              Play again
+              Rematch same stake
             </button>
           </div>
         )}

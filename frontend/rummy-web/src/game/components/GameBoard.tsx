@@ -23,6 +23,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
     errorMessage,
     leaveTable,
     displayName,
+    groups,
+    playerId,
   } = useGameStore();
 
   const handleLeaveTable = () => {
@@ -32,13 +34,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
 
   const opponents = gameState?.opponents ?? [];
   const isMyTurn = gameState?.isMyTurn ?? false;
+  const estimatedHandPts = groups.reduce((sum, g) => sum + (g.deadwoodPoints || 0), 0);
 
   const turnLabel = !gameState
     ? 'Connecting…'
     : gameState.gameStatus === 'WAITING_FOR_PLAYERS'
       ? 'Getting ready…'
       : gameState.gameStatus === 'COMPLETED'
-        ? 'Finished'
+        ? gameState.winnerId === playerId
+          ? 'You won'
+          : 'Finished'
         : isMyTurn
           ? normalizeTurnPhase(gameState.turnPhase) === 'DRAW'
             ? 'Your turn — draw'
@@ -204,7 +209,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
                   animation: 'pulse 1.5s infinite',
                 }}
               />
-              Waiting for opponent… (AI bot auto-joins shortly)
+              Waiting for opponent… bot joins in a few seconds
             </div>
           )}
         </section>
@@ -250,6 +255,21 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
               </div>
             </div>
             <span style={{ fontSize: 12, fontWeight: 800 }}>{displayName}</span>
+            {gameState?.gameStatus === 'IN_PROGRESS' && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: estimatedHandPts <= 40 ? '#86efac' : '#fde68a',
+                  background: 'rgba(0,0,0,0.25)',
+                  padding: '2px 8px',
+                  borderRadius: 10,
+                }}
+                title="Estimated ungrouped / deadwood points"
+              >
+                ~{estimatedHandPts} pts
+              </span>
+            )}
           </div>
         </section>
       </main>
