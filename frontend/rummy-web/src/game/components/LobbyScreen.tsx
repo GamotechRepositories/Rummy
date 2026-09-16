@@ -7,15 +7,13 @@ import {
   Coins,
   Play,
   X,
-  ShieldCheck,
-  Zap,
   Minus,
   Plus,
-  Trophy,
-  Layers,
   ArrowLeft,
   Pencil,
-  Sparkles,
+  Users,
+  UsersRound,
+  Target,
 } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { soundEngine } from '../audio/soundEngine';
@@ -50,6 +48,48 @@ const VARIANT_BANNERS: Array<{
 
 interface LobbyScreenProps {
   onOpenTutorial?: () => void;
+}
+
+function StakeStepper({
+  value,
+  minusId,
+  plusId,
+  onMinus,
+  onPlus,
+  minusDisabled,
+  plusDisabled,
+}: {
+  value: React.ReactNode;
+  minusId: string;
+  plusId: string;
+  onMinus: () => void;
+  onPlus: () => void;
+  minusDisabled: boolean;
+  plusDisabled: boolean;
+}) {
+  return (
+    <div className="stake-stepper">
+      <button
+        type="button"
+        id={minusId}
+        className="stake-step-btn"
+        disabled={minusDisabled}
+        onClick={onMinus}
+      >
+        <Minus size={16} strokeWidth={3.5} />
+      </button>
+      <div className="stake-step-value">{value}</div>
+      <button
+        type="button"
+        id={plusId}
+        className="stake-step-btn"
+        disabled={plusDisabled}
+        onClick={onPlus}
+      >
+        <Plus size={16} strokeWidth={3.5} />
+      </button>
+    </div>
+  );
 }
 
 export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
@@ -290,7 +330,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
   return (
     <div className="lobby-frame" style={{ color: '#f8fafc' }}>
       {/* Top Header Bar */}
-      <header className="lobby-topbar">
+      <header className="lobby-topbar" style={{ display: currentPage === 'CONFIGURE_TABLE' ? 'none' : undefined }}>
         <div className="lobby-brand">
           <div className="lobby-brand-mark">
             <Crown size={18} color="#1a1006" />
@@ -346,8 +386,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
       <main
         className="lobby-main"
         style={{
-          justifyContent: currentPage === 'SELECT_VARIANT' ? 'center' : 'flex-start',
-          paddingBottom: currentPage === 'SELECT_VARIANT' ? '20vh' : 40,
+          justifyContent: 'center',
+          paddingBottom: currentPage === 'SELECT_VARIANT' ? '20vh' : 28,
         }}
       >
         {rematchNotice && isMatchmaking && (
@@ -422,325 +462,177 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
         {/* PAGE 2: TABLE CONFIGURATION & STAKE (MATCHING REAL APP)   */}
         {/* ========================================================= */}
         {currentPage === 'CONFIGURE_TABLE' && (
-          <div
-            style={{
-              width: '100%',
-              maxWidth: 720,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 16,
-              marginTop: 4,
-            }}
-          >
-            {/* Back to Variants Bar */}
-            <div
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
+          <div className="stake-screen">
+            <div className="stake-nav">
               <button
                 type="button"
                 id="btn-back-to-variants"
+                className="stake-back"
                 onClick={() => {
                   soundEngine.play('click');
                   setCurrentPage('SELECT_VARIANT');
                 }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '8px 16px',
-                  borderRadius: 20,
-                  border: '1px solid rgba(212, 175, 55, 0.4)',
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  color: '#fef08a',
-                  fontSize: 13,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
               >
-                <ArrowLeft size={16} color="#fbbf24" /> ← Change Variant
+                <ArrowLeft size={15} strokeWidth={2.5} />
+                Change Variant
               </button>
-
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 800,
-                  color: '#94a3b8',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                <span>Step 2 of 2:</span>
-                <span style={{ color: '#fff' }}>Configure Stakes</span>
+              <div className="stake-step">
+                Step 2 of 2: <strong>Configure Stakes</strong>
               </div>
             </div>
 
-            {/* Red Casino Felt Box (Tantotant ScreenShot Pramane) */}
-            <div
-              style={{
-                width: '100%',
-                background: 'radial-gradient(ellipse at 50% 30%, #7f1d1d 0%, #450a0a 65%, #1c0303 100%)',
-                border: '2px solid rgba(212, 175, 55, 0.45)',
-                borderRadius: 24,
-                padding: '28px 32px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 22,
-                boxShadow: '0 20px 48px rgba(0, 0, 0, 0.65), inset 0 0 50px rgba(0, 0, 0, 0.55)',
-                position: 'relative',
-              }}
-            >
-              {/* Variant Emblem Title */}
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  background: 'rgba(0,0,0,0.55)',
-                  border: '1px solid rgba(212,175,55,0.4)',
-                  borderRadius: 24,
-                  padding: '8px 24px',
-                  fontSize: 18,
-                  fontWeight: 900,
-                  color: '#ffffff',
-                  boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
-                }}
-              >
-                <Sparkles size={20} color="#d4af37" />
-                <span>{activeVariantTitle}</span>
+            <div className="stake-card">
+              <span className="stake-suit stake-suit-tl">♠</span>
+              <span className="stake-suit stake-suit-tr">♦</span>
+              <span className="stake-suit stake-suit-bl">♠</span>
+              <span className="stake-suit stake-suit-br">♥</span>
+
+              <div className="stake-corner-fan bl" aria-hidden>
+                <span className="stake-deco-card d1">♠</span>
+                <span className="stake-deco-card d2">♠</span>
+                <span className="stake-deco-card d3">♠</span>
+              </div>
+              <div className="stake-corner-fan br" aria-hidden>
+                <span className="stake-deco-card d1">♥</span>
+                <span className="stake-deco-card d2">♥</span>
+                <span className="stake-deco-card d3">♥</span>
               </div>
 
-              {/* 1. SELECT PLAYERS: 2 or 6 */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#fca5a5', letterSpacing: '0.5px' }}>
+              <div className="stake-emblem">
+                <div className="stake-fan">
+                  <div className="stake-mini-card left">
+                    <span className="rank">A</span>
+                    <span className="suit">♠</span>
+                  </div>
+                  <div className="stake-mini-card mid">
+                    <span className="rank">A</span>
+                    <span className="suit">♥</span>
+                  </div>
+                  <div className="stake-mini-card right">
+                    <span className="rank">A</span>
+                    <span className="suit">♣</span>
+                  </div>
+                  <div className="stake-crown">
+                    <Crown size={20} color="#3a2408" strokeWidth={2.2} />
+                  </div>
+                </div>
+                <div className="stake-ribbon">
+                  <h2>{activeVariantTitle.toUpperCase()}</h2>
+                  <p>PLAY WITH SKILL</p>
+                </div>
+              </div>
+
+              <div className="stake-players">
+                <div className="stake-section-label">
+                  <Users size={18} />
                   Select Players
                 </div>
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    background: 'rgba(0, 0, 0, 0.5)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    borderRadius: 12,
-                    overflow: 'hidden',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-                  }}
-                >
-                  {[2, 6].map((p) => {
-                    const isSelected = selectedPlayers === p;
-                    return (
-                      <button
-                        key={p}
-                        type="button"
-                        id={`btn-select-player-${p}`}
-                        onClick={() => {
-                          soundEngine.play('click');
-                          setSelectedPlayers(p);
-                        }}
-                        style={{
-                          width: 80,
-                          padding: '10px 0',
-                          border: 'none',
-                          background: isSelected
-                            ? 'linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%)'
-                            : 'transparent',
-                          color: isSelected ? '#0f172a' : '#f87171',
-                          fontSize: 17,
-                          fontWeight: 900,
-                          cursor: 'pointer',
-                          boxShadow: isSelected
-                            ? 'inset 0 1px 0 rgba(255,255,255,0.8), 0 2px 8px rgba(0,0,0,0.4)'
-                            : 'none',
-                          transition: 'all 0.18s ease',
-                        }}
-                      >
-                        {p}
-                      </button>
-                    );
-                  })}
+                <div className="stake-player-row">
+                  <button
+                    type="button"
+                    id="btn-select-player-2"
+                    className={`stake-player-btn${selectedPlayers === 2 ? ' on' : ''}`}
+                    onClick={() => {
+                      soundEngine.play('click');
+                      setSelectedPlayers(2);
+                    }}
+                  >
+                    <Users size={18} />
+                    2 Players
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-select-player-6"
+                    className={`stake-player-btn${selectedPlayers === 6 ? ' on' : ''}`}
+                    onClick={() => {
+                      soundEngine.play('click');
+                      setSelectedPlayers(6);
+                    }}
+                  >
+                    <UsersRound size={18} />
+                    6 Players
+                  </button>
                 </div>
               </div>
 
-              {/* 2. POINT VALUE & ENTRY FEE SLIDER (FOR POINT RUMMY) */}
               {selectedVariant === 'POINTS' && (
-                <div
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 18,
-                  }}
-                >
-                  {/* Point Value & Entry Fee Display Boxes */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 20,
-                      width: '100%',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    {/* Point value Box */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: '#fecaca' }}>Point value:</span>
-                      <div
-                        style={{
-                          background: 'rgba(0, 0, 0, 0.65)',
-                          border: '1px solid rgba(255, 255, 255, 0.2)',
-                          borderRadius: 10,
-                          padding: '8px 22px',
-                          fontSize: 19,
-                          fontWeight: 900,
-                          color: '#ffffff',
-                          minWidth: 70,
-                          textAlign: 'center',
-                          boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.5)',
-                        }}
-                      >
-                        {POINT_VALUE_TIERS[ptIndex].pt}
+                <>
+                  <div className="stake-values">
+                    <div className="stake-metric">
+                      <div className="stake-metric-head">
+                        <div className="stake-metric-title">
+                          <Target size={15} />
+                          Point Value
+                        </div>
+                        <div className="stake-metric-sub">Points per game</div>
                       </div>
-                    </div>
-
-                    {/* Entry Fee Box */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: '#fecaca' }}>Entry Fee:</span>
-                      <div
-                        style={{
-                          background: 'rgba(0, 0, 0, 0.65)',
-                          border: '1px solid rgba(212, 175, 55, 0.6)',
-                          borderRadius: 10,
-                          padding: '8px 22px',
-                          fontSize: 19,
-                          fontWeight: 900,
-                          color: '#fef08a',
-                          minWidth: 70,
-                          textAlign: 'center',
-                          boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.5)',
-                        }}
-                      >
-                        ₹ {POINT_VALUE_TIERS[ptIndex].entry}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Stepper with Minus & Plus buttons and Range Slider */}
-                  <div
-                    style={{
-                      width: '100%',
-                      maxWidth: 480,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 14,
-                    }}
-                  >
-                    {/* Minus Button */}
-                    <button
-                      type="button"
-                      id="btn-pt-minus"
-                      disabled={ptIndex <= 0}
-                      onClick={() => {
-                        soundEngine.play('click');
-                        setPtIndex((i) => Math.max(0, i - 1));
-                      }}
-                      style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: '50%',
-                        border: 'none',
-                        background:
-                          ptIndex <= 0
-                            ? 'rgba(255,255,255,0.1)'
-                            : 'linear-gradient(135deg, #10b981, #059669)',
-                        color: '#fff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: ptIndex <= 0 ? 'not-allowed' : 'pointer',
-                        boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <Minus size={20} strokeWidth={3} />
-                    </button>
-
-                    {/* HTML Range Slider */}
-                    <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-                      <input
-                        type="range"
-                        min={0}
-                        max={POINT_VALUE_TIERS.length - 1}
-                        step={1}
-                        value={ptIndex}
-                        onChange={(e) => {
+                      <StakeStepper
+                        value={POINT_VALUE_TIERS[ptIndex].pt}
+                        minusId="btn-pt-minus"
+                        plusId="btn-pt-plus"
+                        minusDisabled={ptIndex <= 0}
+                        plusDisabled={ptIndex >= POINT_VALUE_TIERS.length - 1}
+                        onMinus={() => {
                           soundEngine.play('click');
-                          setPtIndex(parseInt(e.target.value, 10));
+                          setPtIndex((i) => Math.max(0, i - 1));
                         }}
-                        className="rummy-slider"
+                        onPlus={() => {
+                          soundEngine.play('click');
+                          setPtIndex((i) => Math.min(POINT_VALUE_TIERS.length - 1, i + 1));
+                        }}
                       />
-                      {/* Min / Max Labels directly under slider */}
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: '#cbd5e1',
-                          marginTop: 6,
-                        }}
-                      >
-                        <span>₹0.05 (₹4 Fee)</span>
-                        <span>₹5.0 (₹400 Fee)</span>
-                      </div>
                     </div>
 
-                    {/* Plus Button */}
-                    <button
-                      type="button"
-                      id="btn-pt-plus"
-                      disabled={ptIndex >= POINT_VALUE_TIERS.length - 1}
-                      onClick={() => {
-                        soundEngine.play('click');
-                        setPtIndex((i) => Math.min(POINT_VALUE_TIERS.length - 1, i + 1));
-                      }}
-                      style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: '50%',
-                        border: 'none',
-                        background:
-                          ptIndex >= POINT_VALUE_TIERS.length - 1
-                            ? 'rgba(255,255,255,0.1)'
-                            : 'linear-gradient(135deg, #10b981, #059669)',
-                        color: '#fff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: ptIndex >= POINT_VALUE_TIERS.length - 1 ? 'not-allowed' : 'pointer',
-                        boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <Plus size={20} strokeWidth={3} />
-                    </button>
+                    <div className="stake-metric">
+                      <div className="stake-metric-head">
+                        <div className="stake-metric-title">
+                          <Coins size={15} />
+                          Entry Fee
+                        </div>
+                        <div className="stake-metric-sub">Amount to join</div>
+                      </div>
+                      <StakeStepper
+                        value={`₹ ${POINT_VALUE_TIERS[ptIndex].entry}`}
+                        minusId="btn-fee-minus"
+                        plusId="btn-fee-plus"
+                        minusDisabled={ptIndex <= 0}
+                        plusDisabled={ptIndex >= POINT_VALUE_TIERS.length - 1}
+                        onMinus={() => {
+                          soundEngine.play('click');
+                          setPtIndex((i) => Math.max(0, i - 1));
+                        }}
+                        onPlus={() => {
+                          soundEngine.play('click');
+                          setPtIndex((i) => Math.min(POINT_VALUE_TIERS.length - 1, i + 1));
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
+
+                  <div className="stake-slider-wrap">
+                    <input
+                      type="range"
+                      min={0}
+                      max={POINT_VALUE_TIERS.length - 1}
+                      step={1}
+                      value={ptIndex}
+                      onChange={(e) => {
+                        soundEngine.play('click');
+                        setPtIndex(parseInt(e.target.value, 10));
+                      }}
+                      className="rummy-slider"
+                      style={
+                        {
+                          '--fill': `${(ptIndex / (POINT_VALUE_TIERS.length - 1)) * 100}%`,
+                        } as React.CSSProperties
+                      }
+                    />
+                    <div className="stake-range">
+                      <span>₹0.05 (₹4 Fee)</span>
+                      <span>₹5.0 (₹400 Fee)</span>
+                    </div>
+                  </div>
+                </>
               )}
 
               {/* POOL RUMMY CONFIG */}
@@ -933,122 +825,26 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
                 </div>
               )}
 
-              {/* Error Message if any */}
-              {errorMsg && (
-                <div
-                  style={{
-                    width: '100%',
-                    background: 'rgba(0, 0, 0, 0.6)',
-                    border: '1px solid rgba(239, 68, 68, 0.6)',
-                    borderRadius: 12,
-                    padding: '10px 16px',
-                    color: '#fca5a5',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    textAlign: 'center',
-                  }}
-                >
-                  {errorMsg}
-                </div>
-              )}
+              {errorMsg && <div className="stake-error">{errorMsg}</div>}
 
-              {/* Big Golden PLAY NOW button */}
               <button
                 type="button"
                 id="btn-play-now"
+                className="stake-play-btn"
                 onClick={() => {
                   soundEngine.unlock();
                   soundEngine.play('click');
                   void handlePlay();
                 }}
                 disabled={isMatchmaking}
-                style={{
-                  width: '100%',
-                  maxWidth: 360,
-                  padding: '16px 28px',
-                  borderRadius: 30,
-                  border: 'none',
-                  background: 'linear-gradient(180deg, #fef08a 0%, #f59e0b 50%, #b45309 100%)',
-                  color: '#0f172a',
-                  fontSize: 22,
-                  fontWeight: 900,
-                  letterSpacing: '0.8px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 10,
-                  boxShadow:
-                    '0 8px 30px rgba(245, 158, 11, 0.4), inset 0 2px 0 rgba(255,255,255,0.8)',
-                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                }}
               >
-                <Play size={24} fill="#0f172a" />
+                <Play size={18} fill="#2a1a06" />
                 PLAY NOW
               </button>
 
-              <div style={{ fontSize: 13, color: '#fecaca', textAlign: 'center' }}>
-                Table Stake: <strong>₹ {activeEntryFee}</strong> · {selectedPlayers} Players Table
+              <div className="stake-summary">
+                Table Stake: ₹ {activeEntryFee} · {selectedPlayers} Players Table
                 {activePointValue !== null && ` · ₹${activePointValue}/point`}
-              </div>
-            </div>
-
-            {/* Quick Rules Footer */}
-            <div
-              style={{
-                width: '100%',
-                background: 'rgba(15, 23, 42, 0.75)',
-                border: '1px solid rgba(212,175,55,0.25)',
-                borderRadius: 16,
-                padding: '14px 20px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, color: '#fef08a' }}>
-                  <ShieldCheck size={16} color="#10b981" />
-                  <span>Official Rules: {activeVariantTitle}</span>
-                </div>
-                <span style={{ fontSize: 11, color: '#10b981', fontWeight: 700 }}>Server Authoritative</span>
-              </div>
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                  gap: 10,
-                  fontSize: 12,
-                  color: '#cbd5e1',
-                }}
-              >
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <Layers size={15} color="#38bdf8" />
-                  <span>{selectedVariant === 'RUMMY_21' ? '21 Cards (3 Pure Runs)' : '13 Cards (Min 1 Pure Run)'}</span>
-                </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <Zap size={15} color="#f59e0b" />
-                  <span>
-                    {selectedVariant === 'POOL' && poolSubVariant === 'POOL_201'
-                      ? 'Drop: 25 1st / 50 Mid'
-                      : selectedVariant === 'RUMMY_21'
-                      ? 'Drop: 30 1st / 60 Mid'
-                      : 'Drop: 20 1st / 40 Mid'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <Trophy size={15} color="#34d399" />
-                  <span>
-                    {selectedVariant === 'POINTS'
-                      ? '1 Deal Fast Settlement'
-                      : selectedVariant === 'POOL'
-                      ? `Knockout at ${poolSubVariant === 'POOL_101' ? '101' : '201'} pts`
-                      : selectedVariant === 'DEALS'
-                      ? 'Highest Chips in 2 Deals'
-                      : '3 Pure Sequences to Declare'}
-                  </span>
-                </div>
               </div>
             </div>
           </div>
