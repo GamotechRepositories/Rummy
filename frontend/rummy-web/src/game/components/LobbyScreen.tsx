@@ -7,19 +7,15 @@ import {
   Coins,
   Play,
   X,
-  PlusCircle,
-  Sparkles,
   ShieldCheck,
   Zap,
-  CircleDot,
   Minus,
   Plus,
   Trophy,
   Layers,
   ArrowLeft,
-  ChevronRight,
-  Flame,
-  Target,
+  Pencil,
+  Sparkles,
 } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { soundEngine } from '../audio/soundEngine';
@@ -39,6 +35,18 @@ const POINT_VALUE_TIERS = [
 const POOL_ENTRY_OPTIONS = [10, 25, 50, 100, 250];
 const DEALS_ENTRY_OPTIONS = [10, 25, 50, 100];
 const RUMMY_21_ENTRY_OPTIONS = [25, 50, 100, 250];
+
+const VARIANT_BANNERS: Array<{
+  id: VariantType;
+  cardId: string;
+  label: string;
+  src: string;
+}> = [
+  { id: 'POINTS', cardId: 'card-select-points', label: 'Point Rummy', src: '/d42908de-8c15-4770-b847-f17f4652ef27.jpg' },
+  { id: 'POOL', cardId: 'card-select-pool', label: 'Pool Rummy', src: '/2197f428-15ef-4951-a896-8769b4e87cef.jpg' },
+  { id: 'DEALS', cardId: 'card-select-deals', label: 'Deal Rummy', src: '/83ab5ed4-1049-445c-804f-3f7b65c6e986.jpg' },
+  { id: 'RUMMY_21', cardId: 'card-select-21card', label: '21-Card Rummy', src: '/f3e7974b-2f26-463a-9eff-6dead79be1da.jpg' },
+];
 
 interface LobbyScreenProps {
   onOpenTutorial?: () => void;
@@ -282,87 +290,24 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
   return (
     <div className="lobby-frame" style={{ color: '#f8fafc' }}>
       {/* Top Header Bar */}
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 20px',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-          background: 'rgba(10, 15, 26, 0.85)',
-          backdropFilter: 'blur(10px)',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              background: 'linear-gradient(135deg, #d4af37, #78350f)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 12px rgba(212, 175, 55, 0.4)',
-            }}
-          >
-            <Crown size={20} color="#fff" />
+      <header className="lobby-topbar">
+        <div className="lobby-brand">
+          <div className="lobby-brand-mark">
+            <Crown size={18} color="#1a1006" />
           </div>
-          <div>
-            <span
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: 18,
-                fontWeight: 800,
-                letterSpacing: '0.5px',
-                color: '#fff',
-              }}
-            >
-              Royal Rummy
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-              <span style={{ color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <CircleDot size={9} />
-                Cash tables · Instant rematch
-              </span>
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '2px 8px',
-                  borderRadius: 12,
-                  fontWeight: 700,
-                  fontSize: 10,
-                  background:
-                    connectionStatus === 'CONNECTED'
-                      ? 'rgba(16,185,129,0.18)'
-                      : 'rgba(245,158,11,0.18)',
-                  color: connectionStatus === 'CONNECTED' ? '#34d399' : '#fbbf24',
-                  border:
-                    connectionStatus === 'CONNECTED'
-                      ? '1px solid rgba(16,185,129,0.35)'
-                      : '1px solid rgba(245,158,11,0.35)',
-                }}
-              >
-                {connectionStatus === 'CONNECTED' ? '● Live' : '○ Connecting'}
-              </span>
-            </div>
-          </div>
+          <span className="lobby-brand-name">Royal Rummy</span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="lobby-top-actions">
           <SoundToggle compact />
           {onOpenTutorial && (
             <button
               type="button"
+              className="lobby-link-btn"
               onClick={() => {
                 soundEngine.play('click');
                 onOpenTutorial();
               }}
-              className="btn-secondary"
-              style={{ padding: '6px 12px', fontSize: 12, borderRadius: 20 }}
             >
               How to play
             </button>
@@ -378,76 +323,33 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
               autoFocus
               maxLength={16}
               aria-label="Your name"
-              style={{
-                background: '#0f172a',
-                border: '1px solid var(--border-gold)',
-                borderRadius: 20,
-                color: '#fff',
-                fontSize: 12,
-                padding: '6px 12px',
-                width: 120,
-                outline: 'none',
-              }}
+              className="lobby-name-input"
             />
           ) : (
-            <button
-              type="button"
-              onClick={() => setIsEditingName(true)}
-              style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: 20,
-                color: '#e2e8f0',
-                padding: '6px 12px',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              {localName || 'Player'} ✎
+            <button type="button" className="lobby-link-btn" onClick={() => setIsEditingName(true)}>
+              {localName || 'Player'}
+              <Pencil size={12} strokeWidth={2} />
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => setIsWalletOpen(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'rgba(212,175,55,0.12)',
-              border: '1px solid rgba(212,175,55,0.4)',
-              borderRadius: 20,
-              padding: '4px 6px 4px 10px',
-              color: '#fef08a',
-              cursor: 'pointer',
-              fontWeight: 700,
-              fontSize: 12,
-            }}
-          >
+          <div className="lobby-balance">
             <Coins size={14} />
-            ₹ {walletBalance.toLocaleString()}
-            <span
-              style={{
-                background: '#10b981',
-                color: '#fff',
-                borderRadius: 12,
-                padding: '3px 8px',
-                fontSize: 10,
-                fontWeight: 800,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 3,
-              }}
-            >
-              <PlusCircle size={11} /> + Add Cash
-            </span>
-          </button>
+            <span>₹ {walletBalance.toLocaleString()}</span>
+            <button type="button" className="lobby-add-btn" onClick={() => setIsWalletOpen(true)}>
+              Add Cash
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Main Container */}
-      <main className="lobby-main" style={{ justifyContent: 'flex-start', paddingBottom: 40 }}>
+      <main
+        className="lobby-main"
+        style={{
+          justifyContent: currentPage === 'SELECT_VARIANT' ? 'center' : 'flex-start',
+          paddingBottom: currentPage === 'SELECT_VARIANT' ? '20vh' : 40,
+        }}
+      >
         {rematchNotice && isMatchmaking && (
           <div
             style={{
@@ -474,34 +376,15 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
           <div
             style={{
               width: '100%',
-              maxWidth: 1200,
+              maxWidth: 980,
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: 22,
-              marginTop: 6,
+              gap: 18,
             }}
           >
             {/* Title Section */}
             <div style={{ textAlign: 'center' }}>
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: 'rgba(220, 38, 38, 0.2)',
-                  border: '1px solid rgba(212, 175, 55, 0.4)',
-                  color: '#fef08a',
-                  borderRadius: 20,
-                  padding: '4px 14px',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  marginBottom: 8,
-                  letterSpacing: '0.4px',
-                }}
-              >
-                <Sparkles size={12} color="#fbbf24" /> Step 1: Select Game Variant
-              </div>
               <h1
                 style={{
                   fontFamily: 'var(--font-display)',
@@ -519,267 +402,19 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
               </p>
             </div>
 
-            {/* 4 Cards Grid - Single Horizontal Line on Desktop (Casino Red & Green Theme) */}
             <div className="variant-cards-row">
-              {/* Card 1: Point Rummy (Casino Velvet Red) */}
-              <div
-                id="card-select-points"
-                onClick={() => handleSelectVariant('POINTS')}
-                style={{
-                  background: 'radial-gradient(ellipse at 50% 0%, #6b1111 0%, #380709 60%, #150304 100%)',
-                  border: '1.5px solid rgba(212, 175, 55, 0.5)',
-                  borderRadius: 18,
-                  padding: 22,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12,
-                  boxShadow: '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)',
-                  transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
-                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(220, 38, 38, 0.4), 0 0 18px rgba(212, 175, 55, 0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)';
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 900,
-                      padding: '3px 10px',
-                      borderRadius: 12,
-                      background: 'rgba(220, 38, 38, 0.35)',
-                      color: '#fee2e2',
-                      border: '1px solid rgba(248, 113, 113, 0.5)',
-                    }}
-                  >
-                    🔥 MOST POPULAR
-                  </span>
-                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(212, 175, 55, 0.15)', border: '1px solid rgba(212, 175, 55, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Flame size={20} color="#fbbf24" />
-                  </div>
-                </div>
-
-                <div>
-                  <h2 style={{ fontSize: 20, fontWeight: 900, margin: '0 0 4px 0', color: '#ffffff' }}>
-                    Point Rummy
-                  </h2>
-                  <p style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.4, margin: 0 }}>
-                    13 Cards · 1 Quick Deal. Points value multiplied per point. Fastest cash action format.
-                  </p>
-                </div>
-
-                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(212, 175, 55, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 12, color: '#fef08a', fontWeight: 700 }}>
-                    ₹0.05 - ₹5.0 / pt
-                  </span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 3 }}>
-                    Play Now <ChevronRight size={14} />
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 2: Pool Rummy (Casino Emerald Felt Green) */}
-              <div
-                id="card-select-pool"
-                onClick={() => handleSelectVariant('POOL')}
-                style={{
-                  background: 'radial-gradient(ellipse at 50% 0%, #064e3b 0%, #042f22 60%, #02150f 100%)',
-                  border: '1.5px solid rgba(212, 175, 55, 0.5)',
-                  borderRadius: 18,
-                  padding: 22,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12,
-                  boxShadow: '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)',
-                  transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
-                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(16, 185, 129, 0.4), 0 0 18px rgba(212, 175, 55, 0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)';
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 900,
-                      padding: '3px 10px',
-                      borderRadius: 12,
-                      background: 'rgba(16, 185, 129, 0.25)',
-                      color: '#d1fae5',
-                      border: '1px solid rgba(52, 211, 153, 0.5)',
-                    }}
-                  >
-                    🏆 101 / 201 TOURNAMENT
-                  </span>
-                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(212, 175, 55, 0.15)', border: '1px solid rgba(212, 175, 55, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Trophy size={20} color="#fbbf24" />
-                  </div>
-                </div>
-
-                <div>
-                  <h2 style={{ fontSize: 20, fontWeight: 900, margin: '0 0 4px 0', color: '#ffffff' }}>
-                    Pool Rummy
-                  </h2>
-                  <p style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.4, margin: 0 }}>
-                    13 Cards · Elimination Battle. Reach 101 or 201 points and you are out. Last survivor wins the pool.
-                  </p>
-                </div>
-
-                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(212, 175, 55, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 12, color: '#fef08a', fontWeight: 700 }}>
-                    Stakes: ₹10 - ₹250
-                  </span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 3 }}>
-                    Play Now <ChevronRight size={14} />
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 3: Deal Rummy (Casino Emerald Felt Green) */}
-              <div
-                id="card-select-deals"
-                onClick={() => handleSelectVariant('DEALS')}
-                style={{
-                  background: 'radial-gradient(ellipse at 50% 0%, #064e3b 0%, #042f22 60%, #02150f 100%)',
-                  border: '1.5px solid rgba(212, 175, 55, 0.5)',
-                  borderRadius: 18,
-                  padding: 22,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12,
-                  boxShadow: '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)',
-                  transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
-                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(16, 185, 129, 0.4), 0 0 18px rgba(212, 175, 55, 0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)';
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 900,
-                      padding: '3px 10px',
-                      borderRadius: 12,
-                      background: 'rgba(16, 185, 129, 0.25)',
-                      color: '#d1fae5',
-                      border: '1px solid rgba(52, 211, 153, 0.5)',
-                    }}
-                  >
-                    🎯 2 DEALS BATTLE
-                  </span>
-                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(212, 175, 55, 0.15)', border: '1px solid rgba(212, 175, 55, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Target size={20} color="#fbbf24" />
-                  </div>
-                </div>
-
-                <div>
-                  <h2 style={{ fontSize: 20, fontWeight: 900, margin: '0 0 4px 0', color: '#ffffff' }}>
-                    Deal Rummy
-                  </h2>
-                  <p style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.4, margin: 0 }}>
-                    13 Cards · Fixed 2 Deals. Equal chips given to all players; highest cumulative chips wins the table.
-                  </p>
-                </div>
-
-                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(212, 175, 55, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 12, color: '#fef08a', fontWeight: 700 }}>
-                    Stakes: ₹10 - ₹100
-                  </span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 3 }}>
-                    Play Now <ChevronRight size={14} />
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 4: 21-Card Rummy (Casino Velvet Red) */}
-              <div
-                id="card-select-21card"
-                onClick={() => handleSelectVariant('RUMMY_21')}
-                style={{
-                  background: 'radial-gradient(ellipse at 50% 0%, #6b1111 0%, #380709 60%, #150304 100%)',
-                  border: '1.5px solid rgba(212, 175, 55, 0.5)',
-                  borderRadius: 18,
-                  padding: 22,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12,
-                  boxShadow: '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)',
-                  transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
-                  e.currentTarget.style.boxShadow = '0 16px 36px rgba(220, 38, 38, 0.4), 0 0 18px rgba(212, 175, 55, 0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(254, 240, 138, 0.2)';
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 900,
-                      padding: '3px 10px',
-                      borderRadius: 12,
-                      background: 'rgba(220, 38, 38, 0.35)',
-                      color: '#fee2e2',
-                      border: '1px solid rgba(248, 113, 113, 0.5)',
-                    }}
-                  >
-                    👑 MARRIAGE RUMMY
-                  </span>
-                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(212, 175, 55, 0.15)', border: '1px solid rgba(212, 175, 55, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Crown size={20} color="#fbbf24" />
-                  </div>
-                </div>
-
-                <div>
-                  <h2 style={{ fontSize: 20, fontWeight: 900, margin: '0 0 4px 0', color: '#ffffff' }}>
-                    21-Card Rummy
-                  </h2>
-                  <p style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.4, margin: 0 }}>
-                    21 Cards · 3 Decks. High-stakes Indian Marriage Rummy. Requires exactly 3 Pure Runs to declare.
-                  </p>
-                </div>
-
-                <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid rgba(212, 175, 55, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 12, color: '#fef08a', fontWeight: 700 }}>
-                    Stakes: ₹25 - ₹250
-                  </span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 3 }}>
-                    Play Now <ChevronRight size={14} />
-                  </span>
-                </div>
-              </div>
+              {VARIANT_BANNERS.map((v) => (
+                <button
+                  key={v.id}
+                  id={v.cardId}
+                  type="button"
+                  className="variant-banner"
+                  aria-label={v.label}
+                  onClick={() => handleSelectVariant(v.id)}
+                >
+                  <img src={v.src} alt={v.label} />
+                </button>
+              ))}
             </div>
           </div>
         )}
