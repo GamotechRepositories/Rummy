@@ -42,9 +42,9 @@ const VARIANT_BANNERS: Array<{
   label: string;
   src: string;
 }> = [
-  { id: 'POINTS', cardId: 'card-select-points', label: 'Point Rummy', src: '/d42908de-8c15-4770-b847-f17f4652ef27.jpg' },
-  { id: 'POOL', cardId: 'card-select-pool', label: 'Pool Rummy', src: '/2197f428-15ef-4951-a896-8769b4e87cef.jpg' },
-  { id: 'DEALS', cardId: 'card-select-deals', label: 'Deal Rummy', src: '/83ab5ed4-1049-445c-804f-3f7b65c6e986.jpg' },
+  { id: 'POINTS', cardId: 'card-select-points', label: 'Point Rummy', src: '/3cc9cf25-042c-4870-9b09-f7f07c2ddc39.jpg' },
+  { id: 'POOL', cardId: 'card-select-pool', label: 'Pool Rummy', src: '/7b9b7c96-a115-450d-ae27-568b5b8fbc89.jpg' },
+  { id: 'DEALS', cardId: 'card-select-deals', label: 'Deal Rummy', src: '/8a9db3f4-972d-4293-b2df-9c50601211ea.jpg' },
   { id: 'RUMMY_21', cardId: 'card-select-21card', label: '21-Card Rummy', src: '/f3e7974b-2f26-463a-9eff-6dead79be1da.jpg' },
 ];
 
@@ -388,18 +388,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
               <h1
                 style={{
                   fontFamily: 'var(--font-display)',
-                  fontSize: 'clamp(24px, 4.5vw, 32px)',
+                  fontSize: 'clamp(30px, 4.2vw, 42px)',
                   fontWeight: 900,
                   lineHeight: 1.2,
-                  margin: '0 0 6px 0',
+                  margin: 0,
                   color: '#ffffff',
+                  letterSpacing: '-0.01em',
+                  textShadow: '0 3px 14px rgba(0, 0, 0, 0.65)',
                 }}
               >
-                Choose Your Rummy Variant
+                Choose Your Rummy
               </h1>
-              <p style={{ color: '#cbd5e1', fontSize: 'clamp(13px, 2.5vw, 14px)', margin: 0 }}>
-                Pick a format below to select player count (2/6), point value, and entry fee.
-              </p>
             </div>
 
             <div className="variant-cards-row">
