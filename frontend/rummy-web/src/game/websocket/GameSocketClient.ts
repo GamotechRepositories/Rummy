@@ -1,6 +1,7 @@
 import { useGameStore } from '../store/useGameStore';
 import type { CardInstance, PlayerGameView, WsClientMessage, WsServerMessage } from '../types/game';
 import { soundEngine } from '../audio/soundEngine';
+import { getWsBaseUrl } from '../utils/apiConfig';
 
 class GameSocketClient {
   private ws: WebSocket | null = null;
@@ -13,9 +14,7 @@ class GameSocketClient {
   private url: string;
 
   constructor() {
-    this.url =
-      (import.meta as unknown as { env?: { VITE_WS_URL?: string } }).env?.VITE_WS_URL ||
-      'ws://localhost:8081/ws/game';
+    this.url = getWsBaseUrl();
   }
 
   public connect(): void {

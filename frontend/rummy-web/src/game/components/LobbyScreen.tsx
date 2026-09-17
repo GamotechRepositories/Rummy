@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { soundEngine } from '../audio/soundEngine';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 export type VariantType = 'POINTS' | 'POOL' | 'DEALS' | 'RUMMY_21';
 
@@ -177,7 +178,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
 
   const fetchBalance = useCallback(async () => {
     try {
-      const res = await fetch(`http://localhost:8081/api/wallet/balance?playerId=${playerId}`);
+      const res = await fetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${playerId}`);
       if (res.ok) {
         const data = await res.json();
         setWalletBalance(data.freePlayBalance ?? 1000);
@@ -261,7 +262,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
     soundEngine.play('match');
 
     try {
-      const res = await fetch('http://localhost:8081/api/matchmaking/join', {
+      const res = await fetch(`${getApiBaseUrl()}/api/matchmaking/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -284,7 +285,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
 
       pollIntervalRef.current = window.setInterval(async () => {
         try {
-          const pollRes = await fetch(`http://localhost:8081/api/matchmaking/ticket/${data.ticketId}`);
+          const pollRes = await fetch(`${getApiBaseUrl()}/api/matchmaking/ticket/${data.ticketId}`);
           if (!pollRes.ok) return;
           const ticketData = await pollRes.json();
           if (ticketData.status === 'MATCHED' && ticketData.matchedTableId) {
@@ -330,7 +331,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     if (mmTicketId) {
       try {
-        await fetch(`http://localhost:8081/api/matchmaking/cancel/${mmTicketId}`, { method: 'POST' });
+        await fetch(`${getApiBaseUrl()}/api/matchmaking/cancel/${mmTicketId}`, { method: 'POST' });
       } catch {
         // ignore
       }

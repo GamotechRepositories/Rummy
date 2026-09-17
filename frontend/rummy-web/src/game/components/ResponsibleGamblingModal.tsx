@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { ShieldCheck, Clock, AlertTriangle, PhoneCall, CheckCircle2, Lock, X } from 'lucide-react';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 interface ResponsibleGamblingModalProps {
   isOpen: boolean;
@@ -20,7 +21,7 @@ export const ResponsibleGamblingModal: React.FC<ResponsibleGamblingModalProps> =
   const fetchSettings = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`http://localhost:8081/api/responsible-gambling/settings?playerId=${playerId}`);
+      const res = await fetch(`${getApiBaseUrl()}/api/responsible-gambling/settings?playerId=${playerId}`);
       if (res.ok) {
         const data = await res.json();
         setSessionMinutes(data.dailySessionLimitMinutes ?? 120);
@@ -46,7 +47,7 @@ export const ResponsibleGamblingModal: React.FC<ResponsibleGamblingModalProps> =
     try {
       setLoading(true);
       const res = await fetch(
-        `http://localhost:8081/api/responsible-gambling/limits?playerId=${playerId}&sessionMinutes=${sessionMinutes}&lossLimit=${lossLimit}&realityCheckMinutes=${realityCheck}`,
+        `${getApiBaseUrl()}/api/responsible-gambling/limits?playerId=${playerId}&sessionMinutes=${sessionMinutes}&lossLimit=${lossLimit}&realityCheckMinutes=${realityCheck}`,
         { method: 'POST' }
       );
       if (res.ok) {
@@ -64,7 +65,7 @@ export const ResponsibleGamblingModal: React.FC<ResponsibleGamblingModalProps> =
     try {
       setLoading(true);
       const res = await fetch(
-        `http://localhost:8081/api/responsible-gambling/cool-off?playerId=${playerId}&hours=${hours}`,
+        `${getApiBaseUrl()}/api/responsible-gambling/cool-off?playerId=${playerId}&hours=${hours}`,
         { method: 'POST' }
       );
       if (res.ok) {
@@ -87,7 +88,7 @@ export const ResponsibleGamblingModal: React.FC<ResponsibleGamblingModalProps> =
     try {
       setLoading(true);
       const res = await fetch(
-        `http://localhost:8081/api/responsible-gambling/self-exclude?playerId=${playerId}&days=30&reason=PlayerInitiated`,
+        `${getApiBaseUrl()}/api/responsible-gambling/self-exclude?playerId=${playerId}&days=30&reason=PlayerInitiated`,
         { method: 'POST' }
       );
       if (res.ok) {

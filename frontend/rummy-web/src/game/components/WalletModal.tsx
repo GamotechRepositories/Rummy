@@ -12,6 +12,7 @@ import {
   Smartphone,
   Gift,
 } from 'lucide-react';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 interface WalletTransaction {
   id: string;
@@ -49,7 +50,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
   const fetchWallet = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`http://localhost:8081/api/wallet/balance?playerId=${playerId}`);
+      const res = await fetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${playerId}`);
       if (res.ok) {
         const data = await res.json();
         const total = data.totalBalance ?? data.freePlayBalance ?? 1000;
@@ -58,7 +59,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
         setWinningsBalance(data.winningsBalance ?? total * 0.4);
       }
 
-      const txRes = await fetch(`http://localhost:8081/api/wallet/transactions?playerId=${playerId}`);
+      const txRes = await fetch(`${getApiBaseUrl()}/api/wallet/transactions?playerId=${playerId}`);
       if (txRes.ok) {
         const txData = await txRes.json();
         setTransactions(txData);
@@ -81,7 +82,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
     try {
       setLoading(true);
       const res = await fetch(
-        `http://localhost:8081/api/wallet/deposit?playerId=${playerId}&amount=${depositAmount}&method=${payMethod}`,
+        `${getApiBaseUrl()}/api/wallet/deposit?playerId=${playerId}&amount=${depositAmount}&method=${payMethod}`,
         { method: 'POST' }
       );
       const data = await res.json();
@@ -110,7 +111,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
     try {
       setLoading(true);
       const res = await fetch(
-        `http://localhost:8081/api/wallet/withdraw?playerId=${playerId}&amount=${withdrawAmount}&method=UPI&destination=${encodeURIComponent(
+        `${getApiBaseUrl()}/api/wallet/withdraw?playerId=${playerId}&amount=${withdrawAmount}&method=UPI&destination=${encodeURIComponent(
           upiId
         )}`,
         { method: 'POST' }
@@ -133,7 +134,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
   const handleClaimDaily = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`http://localhost:8081/api/wallet/claim-daily?playerId=${playerId}`, {
+      const res = await fetch(`${getApiBaseUrl()}/api/wallet/claim-daily?playerId=${playerId}`, {
         method: 'POST',
       });
       const data = await res.json();

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, Server, Cpu, ShieldCheck, X, RefreshCw, Layers, ShieldAlert } from 'lucide-react';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 interface DiagnosticsData {
   serverInstanceId: string;
@@ -38,13 +39,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({ isOpen
   const fetchDiagnostics = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:8081/api/admin/diagnostics');
+      const res = await fetch(`${getApiBaseUrl()}/api/admin/diagnostics`);
       if (res.ok) {
         const json = await res.json();
         setData(json);
       }
 
-      const fraudRes = await fetch('http://localhost:8081/api/fraud/alerts');
+      const fraudRes = await fetch(`${getApiBaseUrl()}/api/fraud/alerts`);
       if (fraudRes.ok) {
         const fraudJson = await fraudRes.json();
         setFraudAlerts(fraudJson);
