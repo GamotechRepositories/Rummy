@@ -851,229 +851,71 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
         )}
       </main>
 
-      {/* Matchmaking Radar Overlay */}
+      {/* Matchmaking Overlay — Step 2 stake-card style */}
       {isMatchmaking && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'radial-gradient(circle at 50% 45%, rgba(120, 53, 15, 0.22) 0%, rgba(10, 15, 26, 0.92) 55%, rgba(3, 7, 18, 0.98) 100%)',
-            backdropFilter: 'blur(18px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: 20,
-          }}
-        >
-          <div
-            className="radar-card"
-            style={{
-              width: '100%',
-              maxWidth: 390,
-              padding: '36px 30px 30px',
-              textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 20,
-              background: 'linear-gradient(180deg, rgba(26, 34, 52, 0.96) 0%, rgba(13, 18, 30, 0.98) 100%)',
-              border: '1.5px solid rgba(212, 175, 55, 0.45)',
-              borderRadius: 28,
-              boxShadow: '0 25px 60px -10px rgba(0, 0, 0, 0.8), 0 0 50px rgba(212, 175, 55, 0.15)',
-            }}
-          >
-            {/* Animated Radar Visual */}
-            <div
-              style={{
-                width: 130,
-                height: 130,
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <div
-                className="radar-wave-1"
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  borderRadius: '50%',
-                  border: '1.5px solid rgba(212, 175, 55, 0.6)',
-                  pointerEvents: 'none',
-                }}
-              />
-              <div
-                className="radar-wave-2"
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  borderRadius: '50%',
-                  border: '1.5px solid rgba(212, 175, 55, 0.35)',
-                  pointerEvents: 'none',
-                }}
-              />
-              <div
-                className="radar-wave-3"
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  borderRadius: '50%',
-                  border: '1.5px solid rgba(16, 185, 129, 0.25)',
-                  pointerEvents: 'none',
-                }}
-              />
-              <div
-                className="radar-core"
-                style={{
-                  width: 72,
-                  height: 72,
-                  borderRadius: '50%',
-                  background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 60%, #78350f 100%)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 0 30px rgba(245, 158, 11, 0.6)',
-                  zIndex: 2,
-                }}
-              >
-                <Crown size={32} color="#ffffff" />
-              </div>
-            </div>
+        <div className="mm-overlay">
+          <div className="stake-card mm-card">
+            <span className="stake-suit stake-suit-tl">♠</span>
+            <span className="stake-suit stake-suit-tr">♦</span>
+            <span className="stake-suit stake-suit-bl">♠</span>
+            <span className="stake-suit stake-suit-br">♥</span>
 
-            {/* Info Section */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, width: '100%' }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: '#fef08a',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  background: 'rgba(212, 175, 55, 0.12)',
-                  border: '1px solid rgba(212, 175, 55, 0.3)',
-                  borderRadius: 20,
-                  padding: '4px 14px',
-                }}
-              >
-                {activeVariantTitle} · {selectedPlayers} Players
-              </div>
-
-              <h2
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: 24,
-                  fontWeight: 900,
-                  margin: '4px 0 2px 0',
-                  color: '#ffffff',
-                  letterSpacing: '0.3px',
-                }}
-              >
-                Finding Table...
-              </h2>
-
-              <div
-                style={{
-                  fontSize: 13,
-                  color: '#94a3b8',
-                  background: 'rgba(0,0,0,0.35)',
-                  border: '1px solid rgba(255,255,255,0.06)',
-                  borderRadius: 12,
-                  padding: '4px 14px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                <span>Stake:</span>
-                <strong style={{ color: '#fef08a' }}>₹ {activeEntryFee}</strong>
-                {activePointValue !== null && (
-                  <span style={{ color: '#cbd5e1' }}>(₹{activePointValue}/pt)</span>
-                )}
-              </div>
-
-              <p style={{ fontSize: 12, color: '#94a3b8', margin: '4px 0 0 0', lineHeight: 1.4 }}>
-                {mmQueueTime < 15
-                  ? 'Searching live opponents in queue...'
-                  : 'Starting table with Royal AI partner...'}
+            <div className="stake-ribbon mm-ribbon">
+              <h2>FINDING TABLE</h2>
+              <p>
+                {activeVariantTitle.toUpperCase()} · {selectedPlayers} PLAYERS
               </p>
             </div>
 
-            {/* 15s Timer bar */}
-            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  fontSize: 12,
-                  color: '#94a3b8',
-                }}
-              >
-                <span>AI Fallback Guarantee</span>
-                <span
-                  style={{
-                    fontWeight: 800,
-                    color: '#fef08a',
-                    background: 'rgba(0, 0, 0, 0.4)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: 6,
-                    padding: '2px 8px',
-                    fontSize: 12,
-                  }}
-                >
-                  {Math.max(0, 15 - mmQueueTime)}s
-                </span>
+            <div className="mm-status">
+              {mmQueueTime < 15
+                ? 'Searching live opponents in queue...'
+                : 'Starting table with Royal AI partner...'}
+            </div>
+
+            <div className="stake-values mm-metrics">
+              <div className="stake-metric">
+                <div className="stake-metric-head">
+                  <div className="stake-metric-title">
+                    <Coins size={15} />
+                    Stake
+                  </div>
+                  <div className="stake-metric-sub">Entry fee</div>
+                </div>
+                <div className="mm-metric-value">₹ {activeEntryFee}</div>
               </div>
-              <div
-                style={{
-                  width: '100%',
-                  height: 6,
-                  background: 'rgba(255, 255, 255, 0.08)',
-                  borderRadius: 6,
-                  overflow: 'hidden',
-                }}
-              >
+              <div className="stake-metric">
+                <div className="stake-metric-head">
+                  <div className="stake-metric-title">
+                    <Users size={15} />
+                    Table
+                  </div>
+                  <div className="stake-metric-sub">Seats</div>
+                </div>
+                <div className="mm-metric-value">{selectedPlayers}P</div>
+              </div>
+            </div>
+
+            {activePointValue !== null && (
+              <div className="stake-summary">Point value: ₹{activePointValue}/point</div>
+            )}
+
+            <div className="mm-progress-wrap">
+              <div className="mm-progress-head">
+                <span>AI Fallback Guarantee</span>
+                <span className="mm-timer">{Math.max(0, 15 - mmQueueTime)}s</span>
+              </div>
+              <div className="mm-progress-track">
                 <div
-                  style={{
-                    height: '100%',
-                    width: `${Math.min(100, (mmQueueTime / 15) * 100)}%`,
-                    background: 'linear-gradient(90deg, #10b981 0%, #d4af37 100%)',
-                    boxShadow: '0 0 10px rgba(16, 185, 129, 0.5)',
-                    transition: 'width 1s linear',
-                  }}
+                  className="mm-progress-fill"
+                  style={{ width: `${Math.min(100, (mmQueueTime / 15) * 100)}%` }}
                 />
               </div>
             </div>
 
-            {/* Cancel Button */}
-            <button
-              type="button"
-              id="btn-cancel-matchmaking"
-              onClick={handleCancel}
-              style={{
-                background: 'rgba(239, 68, 68, 0.08)',
-                border: '1px solid rgba(239, 68, 68, 0.35)',
-                color: '#fca5a5',
-                borderRadius: 14,
-                padding: '10px 22px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 13,
-                transition: 'all 0.2s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
-              }}
-            >
-              <X size={15} /> Cancel Search
+            <button type="button" id="btn-cancel-matchmaking" className="mm-cancel-btn" onClick={handleCancel}>
+              <X size={16} strokeWidth={2.5} />
+              Cancel Search
             </button>
           </div>
         </div>

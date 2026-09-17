@@ -163,6 +163,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
         <div className="table-felt-pattern" />
 
         <section
+          className="table-opponents"
           aria-label="Opponents"
           style={{
             display: 'flex',
@@ -170,7 +171,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
             width: '100%',
             maxWidth: 850,
             zIndex: 10,
-            scale: '0.92',
           }}
         >
           {opponents.length > 0 ? (
@@ -214,7 +214,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
           )}
         </section>
 
-        <section aria-label="Table Center" style={{ zIndex: 10, scale: '0.9' }}>
+        <section className="table-center-wrap" aria-label="Table Center" style={{ zIndex: 10 }}>
           <TableCenter />
         </section>
 

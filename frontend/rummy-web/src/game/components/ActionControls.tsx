@@ -146,6 +146,7 @@ export const ActionControls: React.FC = () => {
       )}
 
       <div
+        className="action-bar"
         style={{
           display: 'flex',
           alignItems: 'center',

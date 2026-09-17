@@ -33,6 +33,7 @@ interface GameStoreState {
   toggleSelectCard: (cardId: string) => void;
   clearSelection: () => void;
   groupSelectedCards: () => void;
+  moveCardsToGroup: (cardIds: string[], targetGroupId: string | 'NEW') => void;
   ungroupCard: (cardId: string) => void;
   autoSortHand: () => void;
   setDeclareModalOpen: (open: boolean) => void;
@@ -270,6 +271,72 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           0
         ),
       });
+    }
+
+    set({ groups: remainingGroups, selectedCardIds: [] });
+  },
+
+  moveCardsToGroup: (cardIds, targetGroupId) => {
+    const { groups, gameState } = get();
+    if (!cardIds.length) return;
+
+    const movingSet = new Set(cardIds);
+    const movingCards: CardInstance[] = [];
+    const remainingGroups: VisualCardGroup[] = [];
+    const wildJoker = gameState?.cutJoker ?? null;
+
+    for (const g of groups) {
+      const keptCards: CardInstance[] = [];
+      for (const c of g.cards) {
+        if (movingSet.has(c.instanceId)) {
+          movingCards.push(c);
+        } else {
+          keptCards.push(c);
+        }
+      }
+      if (keptCards.length > 0) {
+        remainingGroups.push({
+          ...g,
+          cards: keptCards,
+          groupType: evaluateCardGroup(keptCards, wildJoker),
+          deadwoodPoints: keptCards.reduce((acc, c) => acc + getCardScore(c, wildJoker), 0),
+        });
+      }
+    }
+
+    if (movingCards.length === 0) return;
+
+    if (targetGroupId === 'NEW') {
+      remainingGroups.push({
+        id: 'grp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+        cards: movingCards,
+        groupType: evaluateCardGroup(movingCards, wildJoker),
+        deadwoodPoints: movingCards.reduce((acc, c) => acc + getCardScore(c, wildJoker), 0),
+      });
+    } else {
+      let found = false;
+      for (let i = 0; i < remainingGroups.length; i++) {
+        if (remainingGroups[i].id === targetGroupId) {
+          const nextCards = [...remainingGroups[i].cards, ...movingCards];
+          remainingGroups[i] = {
+            ...remainingGroups[i],
+            cards: nextCards,
+            groupType: evaluateCardGroup(nextCards, wildJoker),
+            deadwoodPoints: nextCards.reduce((acc, c) => acc + getCardScore(c, wildJoker), 0),
+          };
+          found = true;
+          break;
+        }
+      }
+      // Target vanished (e.g. emptied while dragging) — create new group
+      if (!found) {
+        remainingGroups.push({
+          id: targetGroupId.startsWith('grp_') ? targetGroupId : 'grp_' + Date.now(),
+          cards: movingCards,
+          groupType: evaluateCardGroup(movingCards, wildJoker),
+          deadwoodPoints: movingCards.reduce((acc, c) => acc + getCardScore(c, wildJoker), 0),
+        });
+      }
     }
 
     set({ groups: remainingGroups, selectedCardIds: [] });

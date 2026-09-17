@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { CardView } from './CardView';
 import type { GroupValidationType } from '../types/game';
-import { Layers, ArrowUpDown, XCircle } from 'lucide-react';
+import { Layers, ArrowUpDown, XCircle, Plus } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { socketClient } from '../websocket/GameSocketClient';
 
@@ -13,6 +13,8 @@ const GROUP_LABELS: Record<GroupValidationType, { title: string; color: string; 
   INVALID: { title: 'Not a group', color: 'var(--color-invalid)', bg: 'rgba(239,68,68,0.2)' },
 };
 
+const DND_MIME = 'application/x-rummy-cards';
+
 export const PlayerHand: React.FC = () => {
   const {
     groups,
@@ -20,37 +22,83 @@ export const PlayerHand: React.FC = () => {
     gameState,
     toggleSelectCard,
     groupSelectedCards,
+    moveCardsToGroup,
     autoSortHand,
     clearSelection,
   } = useGameStore();
 
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+
   const wildJoker = gameState?.cutJoker ?? null;
   const hasPure = groups.some((g) => g.groupType === 'PURE_SEQUENCE');
+  const totalCards = groups.reduce((n, g) => n + g.cards.length, 0);
+
+  const resolveDragIds = (cardId: string): string[] => {
+    if (selectedCardIds.includes(cardId) && selectedCardIds.length > 1) {
+      return [...selectedCardIds];
+    }
+    return [cardId];
+  };
+
+  const handleCardDragStart = (e: React.DragEvent, cardId: string) => {
+    const ids = resolveDragIds(cardId);
+    const payload = JSON.stringify(ids);
+    e.dataTransfer.setData(DND_MIME, payload);
+    e.dataTransfer.setData('text/plain', payload);
+    e.dataTransfer.effectAllowed = 'move';
+    setDragging(true);
+    (e.currentTarget as HTMLElement).classList.add('dragging');
+  };
+
+  const handleCardDragEnd = (e: React.DragEvent) => {
+    (e.currentTarget as HTMLElement).classList.remove('dragging');
+    setDragging(false);
+    setDropTargetId(null);
+  };
+
+  const parseDragIds = (e: React.DragEvent): string[] => {
+    try {
+      const raw = e.dataTransfer.getData(DND_MIME) || e.dataTransfer.getData('text/plain');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const allowDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dropTargetId !== targetId) setDropTargetId(targetId);
+  };
+
+  const handleDropOnGroup = (e: React.DragEvent, targetGroupId: string | 'NEW') => {
+    e.preventDefault();
+    e.stopPropagation();
+    const ids = parseDragIds(e);
+    setDropTargetId(null);
+    setDragging(false);
+    if (!ids.length) return;
+
+    // Dropping onto same group with no other cards removed is a no-op for UX sound
+    if (targetGroupId !== 'NEW') {
+      const sourceOnly = groups.find((g) => g.id === targetGroupId);
+      if (sourceOnly && ids.every((id) => sourceOnly.cards.some((c) => c.instanceId === id))
+          && ids.length === sourceOnly.cards.length) {
+        return;
+      }
+    }
+
+    soundEngine.play('group');
+    moveCardsToGroup(ids, targetGroupId);
+  };
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6,
-        width: '100%',
-        maxWidth: 1100,
-        margin: '0 auto',
-        height: '100%',
-        minHeight: 0,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-          padding: '4px 8px',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+    <div className="player-hand">
+      <div className="player-hand-toolbar">
+        <div className="player-hand-actions">
           <button
             id="btn-group-cards"
             type="button"
@@ -88,82 +136,65 @@ export const PlayerHand: React.FC = () => {
               <XCircle size={13} />
             </button>
           )}
+          <span className="player-hand-hint">
+            {dragging ? 'Drop on a group tray' : 'Drag cards onto a group · or select & Group'}
+          </span>
+          <span className="player-hand-hint player-hand-hint-short">
+            {dragging ? 'Drop here' : 'Drag to group'}
+          </span>
         </div>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            padding: '3px 8px',
-            borderRadius: 8,
-            background: hasPure ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.12)',
-            color: hasPure ? '#34d399' : '#fbbf24',
-          }}
-        >
+        <span className={`player-hand-pure${hasPure ? ' ok' : ''}`}>
           {hasPure ? 'Pure run ✓' : 'Need pure run'}
         </span>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'nowrap',
-          overflowX: 'auto',
-          overflowY: 'hidden',
-          gap: 10,
-          padding: '4px 2px 8px',
-          flex: 1,
-          minHeight: 0,
-          alignItems: 'flex-end',
-          WebkitOverflowScrolling: 'touch',
-        }}
-      >
+      <div className="player-hand-tray">
+        {totalCards === 0 && (
+          <div className="player-hand-empty">Your cards will appear here after the deal.</div>
+        )}
+
         {groups.map((group) => {
           const label = GROUP_LABELS[group.groupType] ?? GROUP_LABELS.INVALID;
+          const isOver = dropTargetId === group.id;
           return (
             <div
               key={group.id}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 4,
-                background: 'rgba(15, 23, 42, 0.45)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 10,
-                padding: '4px 6px 6px',
-                flexShrink: 0,
+              className={`hand-group${isOver ? ' drop-over' : ''} hand-group--${group.groupType.toLowerCase()}`}
+              onDragOver={(e) => allowDrop(e, group.id)}
+              onDragLeave={() => {
+                if (dropTargetId === group.id) setDropTargetId(null);
               }}
+              onDrop={(e) => handleDropOnGroup(e, group.id)}
             >
               <div
+                className="hand-group-label"
                 style={{
                   backgroundColor: label.bg,
-                  border: `1px solid ${label.color}`,
+                  borderColor: label.color,
                   color: label.color,
-                  padding: '1px 6px',
-                  borderRadius: 10,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  whiteSpace: 'nowrap',
                 }}
               >
                 {label.title}
               </div>
-              <div style={{ display: 'flex' }}>
+              <div className="hand-group-cards">
                 {group.cards.map((card, idx) => (
                   <div
                     key={card.instanceId}
+                    className="hand-card-slot"
                     style={{ marginLeft: idx === 0 ? 0 : 'var(--card-overlap)' }}
                   >
                     <CardView
                       card={card}
                       wildJoker={wildJoker}
                       isSelected={selectedCardIds.includes(card.instanceId)}
+                      isDraggable
+                      onDragStart={(e) => handleCardDragStart(e, card.instanceId)}
+                      onDragEnd={handleCardDragEnd}
                       onClick={() => {
                         soundEngine.play('select');
                         toggleSelectCard(card.instanceId);
                       }}
                       onDoubleClick={() => {
-                        // Fast discard: double-tap selected/any card during discard phase
                         const { gameState: gs } = useGameStore.getState();
                         if (!gs?.isMyTurn) return;
                         const phase = String(gs.turnPhase || '');
@@ -179,6 +210,20 @@ export const PlayerHand: React.FC = () => {
             </div>
           );
         })}
+
+        {totalCards > 0 && (
+          <div
+            className={`hand-new-group-zone${dropTargetId === 'NEW' ? ' drop-over' : ''}`}
+            onDragOver={(e) => allowDrop(e, 'NEW')}
+            onDragLeave={() => {
+              if (dropTargetId === 'NEW') setDropTargetId(null);
+            }}
+            onDrop={(e) => handleDropOnGroup(e, 'NEW')}
+          >
+            <Plus size={18} />
+            <span>New group</span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -9,6 +9,8 @@ interface CardViewProps {
   onClick?: () => void;
   onDoubleClick?: () => void;
   isDraggable?: boolean;
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void;
   className?: string;
   size?: 'normal' | 'small' | 'large';
 }
@@ -44,6 +46,9 @@ export const CardView: React.FC<CardViewProps> = ({
   isSelected = false,
   onClick,
   onDoubleClick,
+  isDraggable = false,
+  onDragStart,
+  onDragEnd,
   className = '',
   size = 'normal',
 }) => {
@@ -57,24 +62,27 @@ export const CardView: React.FC<CardViewProps> = ({
     size === 'small'
       ? { width: 'calc(var(--card-w) * 0.72)', height: 'calc(var(--card-h) * 0.72)', fontSize: '11px' }
       : size === 'large'
-      ? { width: 'calc(var(--card-w) * 1.15)', height: 'calc(var(--card-h) * 1.15)', fontSize: '15px' }
-      : {};
+        ? { width: 'calc(var(--card-w) * 1.15)', height: 'calc(var(--card-h) * 1.15)', fontSize: '15px' }
+        : {};
 
   return (
     <div
       id={`card-${card.instanceId}`}
-      className={`rummy-card ${isSelected ? 'selected' : ''} ${className}`}
+      className={`rummy-card ${isSelected ? 'selected' : ''} ${isDraggable ? 'is-draggable' : ''} ${className}`}
       style={{
         ...scaleStyle,
         color: isRed ? 'var(--card-red)' : 'var(--card-black)',
+        cursor: isDraggable ? 'grab' : onClick ? 'pointer' : undefined,
       }}
+      draggable={isDraggable}
+      onDragStart={isDraggable ? onDragStart : undefined}
+      onDragEnd={isDraggable ? onDragEnd : undefined}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       role="button"
       tabIndex={0}
       aria-label={`${card.rank} of ${card.suit}`}
     >
-      {/* Joker Ribbon */}
       {joker && (
         <div
           style={{
@@ -96,7 +104,6 @@ export const CardView: React.FC<CardViewProps> = ({
         </div>
       )}
 
-      {/* Top Left Rank & Suit */}
       <div style={{ lineHeight: 1.1, textAlign: 'left' }}>
         <div style={{ fontWeight: 800, fontSize: size === 'small' ? '12px' : '15px' }}>
           {rankStr}
@@ -104,7 +111,6 @@ export const CardView: React.FC<CardViewProps> = ({
         <div style={{ fontSize: size === 'small' ? '12px' : '16px' }}>{suitChar}</div>
       </div>
 
-      {/* Center Watermark / Symbol */}
       <div
         style={{
           position: 'absolute',
@@ -118,7 +124,6 @@ export const CardView: React.FC<CardViewProps> = ({
         {isPrinted ? '🃏' : suitChar}
       </div>
 
-      {/* Bottom Right Inverted */}
       <div
         style={{
           lineHeight: 1.1,
