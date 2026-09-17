@@ -301,6 +301,18 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
             } else {
               socketClient.connect();
             }
+          } else if (ticketData.status === 'CANCELLED' || ticketData.status === 'EXPIRED') {
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+            setIsMatchmaking(false);
+            setMmTicketId(null);
+            setErrorMsg(
+              ticketData.status === 'EXPIRED'
+                ? 'No opponents found. Please try again.'
+                : 'Matchmaking was cancelled. Please try again.'
+            );
           }
         } catch {
           // retry next poll
@@ -869,8 +881,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
 
             <div className="mm-status">
               {mmQueueTime < 15
-                ? 'Searching live opponents in queue...'
-                : 'Starting table with Royal AI partner...'}
+                ? 'Searching online players in queue...'
+                : 'Table matched! Connecting...'}
             </div>
 
             <div className="stake-values mm-metrics">
@@ -902,7 +914,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
 
             <div className="mm-progress-wrap">
               <div className="mm-progress-head">
-                <span>AI Fallback Guarantee</span>
+                <span>Estimated Match Time</span>
                 <span className="mm-timer">{Math.max(0, 15 - mmQueueTime)}s</span>
               </div>
               <div className="mm-progress-track">

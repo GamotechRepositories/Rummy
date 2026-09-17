@@ -1,6 +1,7 @@
 package com.rummy.gameservice.matchmaking;
 
 import com.rummy.engine.bot.BotDifficulty;
+import com.rummy.engine.bot.IndianBotNames;
 import com.rummy.engine.command.JoinCommand;
 import com.rummy.engine.command.ReadyCommand;
 import com.rummy.engine.rules.PointsRummyRules;
@@ -125,8 +126,16 @@ public class MatchmakingService {
     }
 
     void processQueues() {
+        try {
+            processQueuesUnsafe();
+        } catch (Exception e) {
+            // Single-thread scheduler dies forever if an unchecked exception escapes.
+            log.error("[Matchmaking] processQueues failed — will retry next tick", e);
+        }
+    }
+
+    private void processQueuesUnsafe() {
         for (Map.Entry<String, ConcurrentLinkedQueue<MatchmakingTicket>> entry : queues.entrySet()) {
-            String queueKey = entry.getKey();
             ConcurrentLinkedQueue<MatchmakingTicket> queue = entry.getValue();
 
             List<MatchmakingTicket> validWaiting = new ArrayList<>();
@@ -233,9 +242,15 @@ public class MatchmakingService {
         // If AI fill requested, add AI bots to table
         if (fillWithAi) {
             int neededBots = first.getMaxPlayers() - humanTickets.size();
+            Set<String> usedNames = new HashSet<>();
+            for (MatchmakingTicket humanTicket : humanTickets) {
+                if (humanTicket.getPlayerName() != null) {
+                    usedNames.add(humanTicket.getPlayerName());
+                }
+            }
             for (int i = 1; i <= neededBots; i++) {
                 String botId = "BOT_" + UUID.randomUUID().toString().substring(0, 4);
-                String botName = "RoyalBot_" + i;
+                String botName = IndianBotNames.nextUnique(usedNames);
                 int seatIndex = humanTickets.size() + (i - 1);
                 
                 actor.registerBot(botId, botName, BotDifficulty.MEDIUM);

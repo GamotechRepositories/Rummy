@@ -1,7 +1,7 @@
 import React from 'react';
 import type { OpponentView } from '../types/game';
 import { TurnTimerRing } from './TurnTimerRing';
-import { Bot, User } from 'lucide-react';
+import { User } from 'lucide-react';
 
 interface OpponentSeatProps {
   player?: OpponentView;
@@ -90,7 +90,7 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
             position: 'relative',
           }}
         >
-          {player.isBot ? <Bot size={28} color="#93c5fd" /> : <User size={28} color="#fde047" />}
+          <User size={28} color="#fde047" />
 
           {/* Status Badge */}
           {isDropped && (

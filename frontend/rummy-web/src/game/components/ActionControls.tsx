@@ -68,6 +68,9 @@ export const ActionControls: React.FC = () => {
   let coachTitle = '';
   let coachHint = '';
   if (gameStatus === 'WAITING_FOR_PLAYERS') {
+    coachTitle = 'Waiting for opponent…';
+    coachHint = 'Game starts automatically once matched.';
+  } else if (gameStatus === 'DEALING') {
     coachTitle = 'Dealing cards…';
     coachHint = 'Game starts automatically.';
   } else if (gameStatus === 'COMPLETED') {

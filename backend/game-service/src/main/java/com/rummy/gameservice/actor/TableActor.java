@@ -5,6 +5,7 @@ import com.rummy.engine.EngineResult;
 import com.rummy.engine.GameEngine;
 import com.rummy.engine.bot.BotDifficulty;
 import com.rummy.engine.bot.BotPlayerAgent;
+import com.rummy.engine.bot.IndianBotNames;
 import com.rummy.engine.command.*;
 import com.rummy.engine.event.GameEvent;
 import com.rummy.engine.model.*;
@@ -287,7 +288,7 @@ public final class TableActor {
             return;
         }
 
-        log.info("[TableActor:{}] Scheduling 10s auto-bot fallback for waiting player...", tableId);
+        log.info("[TableActor:{}] Scheduling 15s auto-bot fallback for waiting player...", tableId);
         autoStartFallbackFuture = scheduler.schedule(() -> {
             synchronized (this) {
                 if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
@@ -307,6 +308,12 @@ public final class TableActor {
                 }
 
                 int neededBots = 2 - currentCount;
+                Set<String> usedNames = new HashSet<>();
+                for (PlayerState p : state.getPlayers()) {
+                    if (p.getDisplayName() != null) {
+                        usedNames.add(p.getDisplayName());
+                    }
+                }
                 for (int i = 0; i < neededBots; i++) {
                     int freeSeat = 1;
                     for (int s = 0; s < 6; s++) {
@@ -318,7 +325,7 @@ public final class TableActor {
                     }
 
                     String botId = "BOT_" + UUID.randomUUID().toString().substring(0, 4);
-                    String botName = "RoyalBot_" + (botAgents.size() + 1);
+                    String botName = IndianBotNames.nextUnique(usedNames);
                     registerBot(botId, botName, BotDifficulty.MEDIUM);
 
                     processCommand(new JoinCommand(
@@ -351,7 +358,7 @@ public final class TableActor {
                     log.info("[TableActor:{}] Auto-started game with bot via fallback", tableId);
                 }
             }
-        }, 10, TimeUnit.SECONDS);
+        }, 15, TimeUnit.SECONDS);
     }
 
     private void cancelAutoBotFallback() {

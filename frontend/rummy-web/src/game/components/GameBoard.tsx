@@ -209,7 +209,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
                   animation: 'pulse 1.5s infinite',
                 }}
               />
-              Waiting for opponent… bot joins in a few seconds
+              Waiting for opponent…
             </div>
           )}
         </section>

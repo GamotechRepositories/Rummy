@@ -236,7 +236,7 @@ class GameSocketClient {
       tableId,
       payload: {
         playerId: botId,
-        displayName: displayName + ' (AI)',
+        displayName,
         seatIndex,
         isBot: true,
       },

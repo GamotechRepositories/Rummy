@@ -8,11 +8,11 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Phase 17: Real-time Player Presence & Session Heartbeat Tracker.
+ * Local map is authoritative for this JVM so matchmaking never blocks on a dead Redis.
  */
 @Service
 public class PlayerPresenceService {
@@ -43,17 +43,25 @@ public class PlayerPresenceService {
     }
 
     public boolean isPlayerOnline(String playerId) {
+        // Prefer in-memory presence so a down/slow Redis cannot stall matchmaking.
+        Instant lastSeen = localPresenceMap.get(playerId);
+        if (lastSeen != null && Duration.between(lastSeen, Instant.now()).compareTo(PRESENCE_TTL) <= 0) {
+            return true;
+        }
+
         if (redisTemplate != null) {
             try {
                 Boolean hasKey = redisTemplate.hasKey(PRESENCE_PREFIX + playerId);
-                if (hasKey != null) return hasKey;
+                if (Boolean.TRUE.equals(hasKey)) {
+                    localPresenceMap.put(playerId, Instant.now());
+                    return true;
+                }
             } catch (Exception e) {
                 log.warn("[Presence] Redis check failed for {}: {}", playerId, e.getMessage());
             }
         }
-        Instant lastSeen = localPresenceMap.get(playerId);
-        if (lastSeen == null) return false;
-        return Duration.between(lastSeen, Instant.now()).compareTo(PRESENCE_TTL) <= 0;
+
+        return false;
     }
 
     public void removePresence(String playerId) {
