@@ -232,3 +232,64 @@ export function checkOverallDeclaration(
 
   return { isValid: true };
 }
+
+export function calculateHandPenalty(
+  groups: { cards: CardInstance[]; groupType?: GroupValidationType }[],
+  wildJoker: CardInstance | null,
+  maxPenalty = 80
+): number {
+  if (!groups || groups.length === 0) return 0;
+
+  let pureSeqCount = 0;
+  let totalSeqCount = 0;
+  const pureGroups: typeof groups = [];
+  const invalidGroups: typeof groups = [];
+
+  for (const g of groups) {
+    const type = g.groupType ?? evaluateCardGroup(g.cards, wildJoker);
+    if (type === 'PURE_SEQUENCE') {
+      pureSeqCount++;
+      totalSeqCount++;
+      pureGroups.push(g);
+    } else if (type === 'IMPURE_SEQUENCE') {
+      totalSeqCount++;
+    } else if (type === 'INVALID') {
+      invalidGroups.push(g);
+    }
+  }
+
+  // CASE 1: No pure sequence -> all ungrouped cards count (cap 80)
+  if (pureSeqCount === 0) {
+    let total = 0;
+    for (const g of groups) {
+      for (const c of g.cards) {
+        total += getCardScore(c, wildJoker);
+      }
+    }
+    return Math.min(total, maxPenalty);
+  }
+
+  // CASE 2: 1 pure sequence, but less than 2 sequences
+  // Pure sequence is exempt (0 pts); all other cards count (cap 80)
+  if (totalSeqCount < 2) {
+    let total = 0;
+    for (const g of groups) {
+      if (!pureGroups.includes(g)) {
+        for (const c of g.cards) {
+          total += getCardScore(c, wildJoker);
+        }
+      }
+    }
+    return Math.min(total, maxPenalty);
+  }
+
+  // CASE 3: At least 2 sequences (including at least 1 pure)
+  // All valid sequences and sets are exempt (0 pts); only cards in invalid groups count
+  let total = 0;
+  for (const g of invalidGroups) {
+    for (const c of g.cards) {
+      total += getCardScore(c, wildJoker);
+    }
+  }
+  return Math.min(total, maxPenalty);
+}

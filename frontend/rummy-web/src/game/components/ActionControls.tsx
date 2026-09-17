@@ -1,7 +1,7 @@
 import React from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
-import { Play, Trash2, Award, Flag, ArrowDownToLine, Loader2, Hand } from 'lucide-react';
+import { Trash2, Award, Flag, ArrowDownToLine, Loader2, Hand } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { isDiscardPhase, isDrawPhase, normalizeTurnPhase } from '../utils/turnPhase';
 
@@ -38,6 +38,10 @@ export const ActionControls: React.FC = () => {
     socketClient.discard(cardId);
   };
 
+  const [confirmDropOpen, setConfirmDropOpen] = React.useState(false);
+  const isFirstTurn = (gameState.discardHistory?.length ?? 0) <= 1;
+  const dropPenaltyPoints = isFirstTurn ? 20 : 40;
+
   const handleOpenDeclare = () => {
     if (selectedCardIds.length !== 1) return;
     if (!discardPhase) {
@@ -48,11 +52,10 @@ export const ActionControls: React.FC = () => {
     setDeclareModalOpen(true);
   };
 
-  const handleDrop = () => {
-    if (window.confirm('Quit this hand? You will get penalty points.')) {
-      soundEngine.play('lose');
-      socketClient.drop();
-    }
+  const handleConfirmDrop = () => {
+    setConfirmDropOpen(false);
+    soundEngine.play('lose');
+    socketClient.drop();
   };
 
   const handleDraw = (source: 'CLOSED_DECK' | 'DISCARD_PILE') => {
@@ -98,53 +101,48 @@ export const ActionControls: React.FC = () => {
 
   return (
     <div
+      className="table-action-controls"
       style={{
         display: 'flex',
         flexDirection: 'column',
+        alignItems: 'center',
         gap: 6,
         width: '100%',
         maxWidth: 1000,
         margin: '0 auto',
-        height: '100%',
+        flexShrink: 0,
       }}
     >
       {coachTitle && (
         <div
-          className="coach-banner"
           style={{
-            display: 'flex',
+            display: 'inline-flex',
             alignItems: 'center',
-            gap: 10,
-            padding: '8px 12px',
-            borderRadius: 12,
+            justifyContent: 'center',
+            gap: 8,
+            padding: '4px 16px',
+            borderRadius: 20,
             background: isMyTurn
-              ? 'linear-gradient(135deg, rgba(212,175,55,0.22), rgba(15,23,42,0.9))'
-              : 'rgba(15, 23, 42, 0.85)',
+              ? 'linear-gradient(135deg, rgba(212,175,55,0.25), rgba(15,23,42,0.85))'
+              : 'rgba(10, 25, 18, 0.75)',
             border: isMyTurn
-              ? '1px solid rgba(212,175,55,0.55)'
-              : '1px solid rgba(255,255,255,0.1)',
+              ? '1px solid rgba(251, 191, 36, 0.6)'
+              : '1px solid rgba(255, 255, 255, 0.1)',
+            boxShadow: isMyTurn ? '0 0 16px rgba(251, 191, 36, 0.35)' : 'none',
+            backdropFilter: 'blur(10px)',
+            margin: '0 auto',
+            maxWidth: '90%',
           }}
         >
           {gameStatus === 'WAITING_FOR_PLAYERS' ? (
-            <Loader2 size={16} className="spinner" color="#d4af37" />
+            <Loader2 size={14} className="spinner" color="#fbbf24" />
           ) : (
-            <Hand size={16} color={isMyTurn ? '#fef08a' : '#94a3b8'} />
+            <Hand size={14} color={isMyTurn ? '#fef08a' : '#94a3b8'} />
           )}
-          <div style={{ minWidth: 0 }}>
-            <div
-              style={{
-                fontWeight: 800,
-                fontSize: 13,
-                color: isMyTurn ? '#fef08a' : '#e2e8f0',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {coachTitle}
-            </div>
-            <div style={{ fontSize: 11, color: '#94a3b8' }}>{coachHint}</div>
-          </div>
+          <span style={{ fontWeight: 800, fontSize: '12px', color: isMyTurn ? '#fef08a' : '#e2e8f0' }}>
+            {coachTitle}
+          </span>
+          <span style={{ fontSize: '11px', color: isMyTurn ? '#fef08a' : '#94a3b8' }}>• {coachHint}</span>
         </div>
       )}
 
@@ -155,11 +153,10 @@ export const ActionControls: React.FC = () => {
           alignItems: 'center',
           justifyContent: 'center',
           flexWrap: 'wrap',
-          gap: 8,
-          padding: '8px 10px',
-          background: 'rgba(15, 23, 42, 0.85)',
-          borderRadius: 12,
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          gap: 12,
+          padding: '2px 8px',
+          background: 'transparent',
+          border: 'none',
         }}
       >
         {gameStatus === 'IN_PROGRESS' && (
@@ -171,9 +168,16 @@ export const ActionControls: React.FC = () => {
                   type="button"
                   className="btn-primary"
                   onClick={() => handleDraw('CLOSED_DECK')}
+                  style={{
+                    padding: '9px 18px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 14px rgba(251, 191, 36, 0.4)',
+                  }}
                 >
                   <ArrowDownToLine size={15} />
-                  Draw mystery
+                  Draw from Deck
                 </button>
                 <button
                   id="btn-action-draw-discard"
@@ -181,9 +185,15 @@ export const ActionControls: React.FC = () => {
                   className="btn-secondary"
                   onClick={() => handleDraw('DISCARD_PILE')}
                   disabled={!gameState.topDiscard}
+                  style={{
+                    padding: '9px 18px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    borderRadius: '12px',
+                  }}
                 >
                   <ArrowDownToLine size={15} />
-                  Take open
+                  Take Open Card
                 </button>
               </>
             )}
@@ -193,12 +203,25 @@ export const ActionControls: React.FC = () => {
                 <button
                   id="btn-action-discard"
                   type="button"
-                  className="btn-primary"
+                  className="btn-danger"
                   onClick={handleDiscard}
                   disabled={selectedCardIds.length !== 1}
+                  style={{
+                    padding: '9px 20px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    borderRadius: '12px',
+                    background: selectedCardIds.length === 1
+                      ? 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)'
+                      : 'rgba(239, 68, 68, 0.25)',
+                    border: '1px solid rgba(239, 68, 68, 0.5)',
+                    color: '#ffffff',
+                    cursor: selectedCardIds.length === 1 ? 'pointer' : 'not-allowed',
+                    boxShadow: selectedCardIds.length === 1 ? '0 4px 16px rgba(239, 68, 68, 0.5)' : 'none',
+                  }}
                 >
                   <Trash2 size={15} />
-                  {selectedCardIds.length === 1 ? 'Discard' : 'Select 1 card'}
+                  {selectedCardIds.length === 1 ? 'Discard' : 'Select 1 Card'}
                 </button>
                 <button
                   id="btn-action-declare"
@@ -207,12 +230,21 @@ export const ActionControls: React.FC = () => {
                   onClick={handleOpenDeclare}
                   disabled={selectedCardIds.length !== 1}
                   style={{
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)',
+                    padding: '9px 22px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    borderRadius: '12px',
+                    background: selectedCardIds.length === 1
+                      ? 'linear-gradient(135deg, #10b981 0%, #047857 100%)'
+                      : 'rgba(16, 185, 129, 0.25)',
+                    border: '1px solid rgba(16, 185, 129, 0.5)',
+                    color: '#ffffff',
+                    boxShadow: selectedCardIds.length === 1 ? '0 4px 18px rgba(16, 185, 129, 0.6)' : 'none',
+                    cursor: selectedCardIds.length === 1 ? 'pointer' : 'not-allowed',
                   }}
                 >
-                  <Award size={15} />
-                  Declare win
+                  <Award size={16} />
+                  Declare Win
                 </button>
               </>
             )}
@@ -221,55 +253,133 @@ export const ActionControls: React.FC = () => {
               id="btn-action-drop"
               type="button"
               className="btn-danger"
-              onClick={handleDrop}
+              onClick={() => setConfirmDropOpen(true)}
               disabled={!isMyTurn || !drawPhase}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 16px',
+                fontSize: '13px',
+                fontWeight: 800,
+                borderRadius: '10px',
+                background:
+                  !isMyTurn || !drawPhase
+                    ? 'rgba(239, 68, 68, 0.2)'
+                    : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                border: '1px solid rgba(239, 68, 68, 0.5)',
+                color: '#ffffff',
+                cursor: !isMyTurn || !drawPhase ? 'not-allowed' : 'pointer',
+                boxShadow:
+                  isMyTurn && drawPhase
+                    ? '0 0 14px rgba(239, 68, 68, 0.35)'
+                    : 'none',
+              }}
             >
-              <Flag size={13} />
-              Quit
+              <Flag size={14} />
+              Drop ({dropPenaltyPoints})
             </button>
           </>
         )}
+      </div>
 
-        {gameStatus === 'COMPLETED' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ color: 'var(--gold-light)', fontWeight: 800, fontSize: 14 }}>
-              {gameState.winnerId === playerId ? (
-                <>Winner: You!</>
-              ) : (
-                <>
-                  Winner:{' '}
-                  {opponents.find((p) => p.playerId === gameState.winnerId)?.displayName ??
-                    'Opponent'}
-                </>
-              )}
-              {opponents.length > 0 && (
-                <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: 12, marginLeft: 8 }}>
-                  (
-                  {opponents
-                    .map((o) => `${o.displayName}: ${o.score} pts`)
-                    .join(' · ')}
-                  )
-                </span>
-              )}
-            </div>
-            <button
-              id="btn-play-again"
-              type="button"
-              className="btn-primary"
-              onClick={() => {
-                soundEngine.play('match');
-                clearSelection();
-                useGameStore.getState().setAutoMatchmakePending(true);
-                socketClient.disconnect();
-                useGameStore.getState().leaveTable();
+      {confirmDropOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.78)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100,
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '380px',
+              background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
+              borderRadius: '20px',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(239, 68, 68, 0.25)',
+              padding: '24px',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#f87171',
+                marginBottom: '14px',
               }}
             >
-              <Play size={15} />
-              Rematch same stake
-            </button>
+              <Flag size={24} />
+            </div>
+
+            <h3
+              style={{
+                margin: '0 0 8px',
+                fontSize: '18px',
+                fontWeight: 800,
+                color: '#ffffff',
+              }}
+            >
+              Confirm Drop ({dropPenaltyPoints} Pts)?
+            </h3>
+
+            <p
+              style={{
+                margin: '0 0 16px',
+                fontSize: '13px',
+                color: '#94a3b8',
+                lineHeight: 1.5,
+              }}
+            >
+              Are you sure you want to drop this hand?
+              <br />
+              <strong style={{ color: '#fca5a5' }}>
+                {isFirstTurn ? 'First Drop' : 'Middle Drop'}: {dropPenaltyPoints} penalty points
+              </strong>{' '}
+              will be added to your score.
+            </p>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setConfirmDropOpen(false)}
+                style={{ flex: 1, padding: '10px', fontSize: '13px' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-danger"
+                onClick={handleConfirmDrop}
+                style={{
+                  flex: 1.3,
+                  padding: '10px',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
+                }}
+              >
+                Confirm Drop
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

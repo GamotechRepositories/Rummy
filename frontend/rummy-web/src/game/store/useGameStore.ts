@@ -203,14 +203,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const hand = normalizeHand(view.hand || []);
     const cutJoker = view.cutJoker ? normalizeCard(view.cutJoker) : null;
     const topDiscard = view.topDiscard ? normalizeCard(view.topDiscard) : null;
+    const discardHistory = (view.discardHistory || []).map(normalizeCard);
     const normalizedView: PlayerGameView = {
       ...view,
       hand,
       cutJoker,
       topDiscard,
+      discardHistory,
       turnPhase: view.turnPhase,
     };
-    const updatedGroups = organizeHandIntoGroups(groups, hand, cutJoker);
+    const updatedGroups =
+      hand.length === 0 && view.gameStatus === 'COMPLETED' && groups.length > 0
+        ? groups
+        : organizeHandIntoGroups(groups, hand, cutJoker);
     const handIds = new Set(hand.map((c) => c.instanceId));
     const nextSelected = selectedCardIds.filter((id) => handIds.has(id));
     set({

@@ -27,8 +27,52 @@ public record PlayerGameView(
         String activePlayerId,
         TurnPhase turnPhase,
         Instant turnDeadline,
-        boolean isMyTurn
+        boolean isMyTurn,
+        String winnerId,
+        List<CardInstance> discardHistory,
+        int viewerScore,
+        PlayerStatus viewerStatus
 ) implements Serializable {
+
+    public PlayerGameView(
+            String tableId,
+            String gameId,
+            String viewerPlayerId,
+            GameStatus gameStatus,
+            long sequence,
+            List<CardInstance> hand,
+            List<OpponentView> opponents,
+            CardInstance topDiscard,
+            CardInstance cutJoker,
+            int closedDeckRemaining,
+            String activePlayerId,
+            TurnPhase turnPhase,
+            Instant turnDeadline,
+            boolean isMyTurn
+    ) {
+        this(tableId, gameId, viewerPlayerId, gameStatus, sequence, hand, opponents, topDiscard, cutJoker, closedDeckRemaining, activePlayerId, turnPhase, turnDeadline, isMyTurn, null, List.of(), 0, PlayerStatus.ACTIVE);
+    }
+
+    public PlayerGameView(
+            String tableId,
+            String gameId,
+            String viewerPlayerId,
+            GameStatus gameStatus,
+            long sequence,
+            List<CardInstance> hand,
+            List<OpponentView> opponents,
+            CardInstance topDiscard,
+            CardInstance cutJoker,
+            int closedDeckRemaining,
+            String activePlayerId,
+            TurnPhase turnPhase,
+            Instant turnDeadline,
+            boolean isMyTurn,
+            String winnerId,
+            List<CardInstance> discardHistory
+    ) {
+        this(tableId, gameId, viewerPlayerId, gameStatus, sequence, hand, opponents, topDiscard, cutJoker, closedDeckRemaining, activePlayerId, turnPhase, turnDeadline, isMyTurn, winnerId, discardHistory, 0, PlayerStatus.ACTIVE);
+    }
 
     public record OpponentView(
             String playerId,
@@ -85,7 +129,11 @@ public record PlayerGameView(
                 activePlayerId,
                 phase,
                 deadline,
-                isMyTurn
+                isMyTurn,
+                state.getWinnerPlayerId(),
+                state.getDiscardPile() != null ? new ArrayList<>(state.getDiscardPile()) : List.of(),
+                viewer.getScore(),
+                viewer.getStatus()
         );
     }
 }

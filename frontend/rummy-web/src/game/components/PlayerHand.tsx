@@ -5,6 +5,9 @@ import type { GroupValidationType } from '../types/game';
 import { Layers, ArrowUpDown, XCircle, Plus } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { socketClient } from '../websocket/GameSocketClient';
+import { calculateHandPenalty } from '../rules/clientValidator';
+import { TurnTimerRing } from './TurnTimerRing';
+import { getAvatarForPlayer } from '../utils/avatarUtils';
 
 const GROUP_LABELS: Record<GroupValidationType, { title: string; color: string; bg: string }> = {
   PURE_SEQUENCE: { title: '✓ Pure run', color: 'var(--color-pure)', bg: 'rgba(16,185,129,0.2)' },
@@ -20,6 +23,7 @@ export const PlayerHand: React.FC = () => {
     groups,
     selectedCardIds,
     gameState,
+    displayName,
     toggleSelectCard,
     groupSelectedCards,
     moveCardsToGroup,
@@ -30,9 +34,12 @@ export const PlayerHand: React.FC = () => {
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
+  const isMyTurn = gameState?.isMyTurn ?? false;
+  const myAvatar = getAvatarForPlayer(displayName);
   const wildJoker = gameState?.cutJoker ?? null;
   const hasPure = groups.some((g) => g.groupType === 'PURE_SEQUENCE');
   const totalCards = groups.reduce((n, g) => n + g.cards.length, 0);
+  const liveScore = calculateHandPenalty(groups, wildJoker);
 
   const resolveDragIds = (cardId: string): string[] => {
     if (selectedCardIds.includes(cardId) && selectedCardIds.length > 1) {
@@ -98,54 +105,121 @@ export const PlayerHand: React.FC = () => {
   return (
     <div className="player-hand">
       <div className="player-hand-toolbar">
-        <div className="player-hand-actions">
-          <button
-            id="btn-group-cards"
-            type="button"
-            className="btn-secondary"
-            onClick={() => {
-              soundEngine.play('group');
-              groupSelectedCards();
-            }}
-            disabled={selectedCardIds.length < 2}
-            style={{ padding: '5px 10px', fontSize: 12 }}
-          >
-            <Layers size={13} />
-            Group{selectedCardIds.length >= 2 ? ` (${selectedCardIds.length})` : ''}
-          </button>
-          <button
-            id="btn-sort-cards"
-            type="button"
-            className="btn-secondary"
-            onClick={() => {
-              soundEngine.play('sort');
-              autoSortHand();
-            }}
-            style={{ padding: '5px 10px', fontSize: 12 }}
-          >
-            <ArrowUpDown size={13} />
-            Sort
-          </button>
-          {selectedCardIds.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <div className="player-hand-user-pill">
+            <div style={{ position: 'relative', width: 26, height: 26, flexShrink: 0 }}>
+              {isMyTurn && (
+                <div style={{ position: 'absolute', top: -3, left: -3 }}>
+                  <TurnTimerRing turnDeadline={gameState?.turnDeadline ?? null} size={32} strokeWidth={2.5} />
+                </div>
+              )}
+              <div
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  overflow: 'hidden',
+                  border: isMyTurn ? '1.5px solid #fbbf24' : '1px solid rgba(212, 175, 55, 0.4)',
+                  boxShadow: isMyTurn ? '0 0 8px rgba(251, 191, 36, 0.5)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {myAvatar.renderSvg(26)}
+              </div>
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#f8fafc', whiteSpace: 'nowrap' }}>
+              {displayName}
+            </span>
+            <span
+              style={{
+                fontSize: 8,
+                fontWeight: 900,
+                color: '#fef08a',
+                background: 'linear-gradient(135deg, #78350f, #451a03)',
+                border: '1px solid #fbbf24',
+                padding: '0.5px 5px',
+                borderRadius: 6,
+                letterSpacing: '0.03em',
+              }}
+            >
+              {myAvatar.vipTier}
+            </span>
+          </div>
+
+          <div className="player-hand-actions">
             <button
+              id="btn-group-cards"
               type="button"
               className="btn-secondary"
-              onClick={clearSelection}
-              style={{ padding: '5px 8px', fontSize: 12 }}
+              onClick={() => {
+                soundEngine.play('group');
+                groupSelectedCards();
+              }}
+              disabled={selectedCardIds.length < 2}
+              style={{ padding: '5px 10px', fontSize: 12 }}
             >
-              <XCircle size={13} />
+              <Layers size={13} />
+              Group{selectedCardIds.length >= 2 ? ` (${selectedCardIds.length})` : ''}
             </button>
+            <button
+              id="btn-sort-cards"
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                soundEngine.play('sort');
+                autoSortHand();
+              }}
+              style={{ padding: '5px 10px', fontSize: 12 }}
+            >
+              <ArrowUpDown size={13} />
+              Sort
+            </button>
+            {selectedCardIds.length > 0 && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={clearSelection}
+                style={{ padding: '5px 8px', fontSize: 12 }}
+              >
+                <XCircle size={13} />
+              </button>
+            )}
+            <span className="player-hand-hint">
+              {dragging ? 'Drop on a group tray' : 'Drag cards onto a group · or select & Group'}
+            </span>
+            <span className="player-hand-hint player-hand-hint-short">
+              {dragging ? 'Drop here' : 'Drag to group'}
+            </span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {gameState?.gameStatus === 'IN_PROGRESS' && (
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 800,
+                padding: '3px 10px',
+                borderRadius: '14px',
+                background:
+                  liveScore === 0 && hasPure
+                    ? 'rgba(16, 185, 129, 0.25)'
+                    : 'rgba(239, 68, 68, 0.15)',
+                border:
+                  liveScore === 0 && hasPure
+                    ? '1px solid #10b981'
+                    : '1px solid rgba(239, 68, 68, 0.4)',
+                color: liveScore === 0 && hasPure ? '#86efac' : '#fca5a5',
+              }}
+            >
+              {liveScore === 0 && hasPure ? '✓ Score: 0 pts' : `Score: ${liveScore} pts`}
+            </span>
           )}
-          <span className="player-hand-hint">
-            {dragging ? 'Drop on a group tray' : 'Drag cards onto a group · or select & Group'}
-          </span>
-          <span className="player-hand-hint player-hand-hint-short">
-            {dragging ? 'Drop here' : 'Drag to group'}
+          <span className={`player-hand-pure${hasPure ? ' ok' : ''}`}>
+            {hasPure ? 'Pure run ✓' : 'Need pure run'}
           </span>
         </div>
-        <span className={`player-hand-pure${hasPure ? ' ok' : ''}`}>
-          {hasPure ? 'Pure run ✓' : 'Need pure run'}
-        </span>
       </div>
 
       <div className="player-hand-tray">
@@ -172,7 +246,25 @@ export const PlayerHand: React.FC = () => {
                   backgroundColor: label.bg,
                   borderColor: label.color,
                   color: label.color,
+                  cursor: selectedCardIds.length > 0 ? 'pointer' : 'default',
                 }}
+                onClick={(e) => {
+                  if (selectedCardIds.length > 0) {
+                    e.stopPropagation();
+                    const allInThisGroup = selectedCardIds.every((id) =>
+                      group.cards.some((c) => c.instanceId === id)
+                    );
+                    if (!allInThisGroup) {
+                      soundEngine.play('group');
+                      moveCardsToGroup(selectedCardIds, group.id);
+                    }
+                  }
+                }}
+                title={
+                  selectedCardIds.length > 0
+                    ? `Move ${selectedCardIds.length} selected card${selectedCardIds.length > 1 ? 's' : ''} into this group`
+                    : label.title
+                }
               >
                 {label.title}
               </div>
@@ -213,12 +305,26 @@ export const PlayerHand: React.FC = () => {
 
         {totalCards > 0 && (
           <div
-            className={`hand-new-group-zone${dropTargetId === 'NEW' ? ' drop-over' : ''}`}
+            id="btn-hand-new-group"
+            className={`hand-new-group-zone${dropTargetId === 'NEW' ? ' drop-over' : ''}${selectedCardIds.length > 0 ? ' has-selection' : ''}`}
+            onClick={() => {
+              if (selectedCardIds.length > 0) {
+                soundEngine.play('group');
+                moveCardsToGroup(selectedCardIds, 'NEW');
+              }
+            }}
             onDragOver={(e) => allowDrop(e, 'NEW')}
             onDragLeave={() => {
               if (dropTargetId === 'NEW') setDropTargetId(null);
             }}
             onDrop={(e) => handleDropOnGroup(e, 'NEW')}
+            role="button"
+            tabIndex={0}
+            title={
+              selectedCardIds.length > 0
+                ? `Move ${selectedCardIds.length} selected card${selectedCardIds.length > 1 ? 's' : ''} to new group`
+                : 'Drag cards or select cards and click here to create a new group'
+            }
           >
             <Plus size={18} />
             <span>New group</span>

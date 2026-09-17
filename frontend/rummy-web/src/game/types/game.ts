@@ -92,6 +92,9 @@ export interface PlayerGameView {
   turnDeadline: string | null;
   isMyTurn: boolean;
   winnerId?: string | null;
+  discardHistory?: CardInstance[];
+  viewerScore?: number;
+  viewerStatus?: PlayerStatus;
 }
 
 export type GroupValidationType = 'PURE_SEQUENCE' | 'IMPURE_SEQUENCE' | 'SET' | 'INVALID';

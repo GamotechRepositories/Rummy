@@ -1,16 +1,35 @@
 import React from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
-import { OpponentSeat } from './OpponentSeat';
+import { OpponentSeat, type SeatPosition } from './OpponentSeat';
 import { TableCenter } from './TableCenter';
 import { PlayerHand } from './PlayerHand';
 import { ActionControls } from './ActionControls';
 import { DeclareModal } from './DeclareModal';
-import { TurnTimerRing } from './TurnTimerRing';
-import { LogOut, Wifi, AlertCircle, Sparkles, User, HelpCircle } from 'lucide-react';
+import { LogOut, Wifi, AlertCircle, Sparkles, Menu, X, ShieldAlert, BookOpen } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { soundEngine } from '../audio/soundEngine';
 import { normalizeTurnPhase } from '../utils/turnPhase';
+import { GameResultModal } from './GameResultModal';
+
+function getPerimeterPosition(index: number, total: number): SeatPosition {
+  if (total === 1) return 'top-center';
+  if (total === 2) return index === 0 ? 'top-left' : 'top-right';
+  if (total === 3) {
+    if (index === 0) return 'left';
+    if (index === 1) return 'top-center';
+    return 'right';
+  }
+  if (total === 4) {
+    if (index === 0) return 'left';
+    if (index === 1) return 'top-left';
+    if (index === 2) return 'top-right';
+    return 'right';
+  }
+  // 5 or more opponents (6-max table)
+  const positions: SeatPosition[] = ['left', 'top-left', 'top-center', 'top-right', 'right'];
+  return positions[index % positions.length];
+}
 
 interface GameBoardProps {
   onOpenTutorial?: () => void;
@@ -22,10 +41,11 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
     connectionStatus,
     errorMessage,
     leaveTable,
-    displayName,
-    groups,
     playerId,
   } = useGameStore();
+
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = React.useState(false);
 
   const handleLeaveTable = () => {
     socketClient.disconnect();
@@ -34,7 +54,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
 
   const opponents = gameState?.opponents ?? [];
   const isMyTurn = gameState?.isMyTurn ?? false;
-  const estimatedHandPts = groups.reduce((sum, g) => sum + (g.deadwoodPoints || 0), 0);
 
   const turnLabel = !gameState
     ? 'Connecting…'
@@ -80,6 +99,26 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
           </span>
         </div>
 
+        <div
+          className="table-header-center"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 12px',
+            borderRadius: 20,
+            background: 'rgba(212, 175, 55, 0.12)',
+            border: '1px solid rgba(212, 175, 55, 0.3)',
+            color: 'var(--gold-light)',
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: '0.02em',
+          }}
+        >
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24' }} />
+          Point Rummy · ₹0.1/pt · 2 Players
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div
             style={{
@@ -101,35 +140,26 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
             {connectionStatus === 'CONNECTED' ? 'Live' : '…'}
           </div>
 
-          {onOpenTutorial && (
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.play('click');
-                onOpenTutorial();
-              }}
-              className="btn-secondary"
-              style={{ padding: '4px 8px', fontSize: 11 }}
-              title="How to play"
-            >
-              <HelpCircle size={14} />
-            </button>
-          )}
-
           <SoundToggle compact />
 
           <button
-            id="btn-leave-table"
+            id="btn-table-menu"
             type="button"
             onClick={() => {
               soundEngine.play('click');
-              handleLeaveTable();
+              setMenuOpen(true);
             }}
             className="btn-secondary"
-            style={{ padding: '4px 8px', fontSize: 11 }}
+            style={{
+              padding: '4px 8px',
+              fontSize: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            title="Table Menu"
           >
-            <LogOut size={13} />
-            Leave
+            <Menu size={16} />
           </button>
         </div>
       </header>
@@ -161,128 +191,296 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
 
       <main className="casino-table" id="game-felt-table">
         <div className="table-felt-pattern" />
+        <div className="casino-table-racetrack" />
 
-        <section
-          className="table-opponents"
-          aria-label="Opponents"
-          style={{
-            display: 'flex',
-            justifyContent: 'space-around',
-            width: '100%',
-            maxWidth: 850,
-            zIndex: 10,
-          }}
-        >
+        {/* Royal Center Felt Watermark */}
+        <div className="table-crest-watermark" aria-hidden="true">
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <path d="M50 14 C35 34 16 44 16 64 C16 78 30 84 45 79 C46 80 47 88 43 95 L57 95 C53 88 54 80 55 79 C70 84 84 78 84 64 C84 44 65 34 50 14 Z" />
+          </svg>
+          <div className="crest-brand">Royal Rummy</div>
+        </div>
+
+        {/* Perimeter Seating (Distributed around the oval table rail) */}
+        <div className="table-perimeter-seats" aria-label="Opponents">
           {opponents.length > 0 ? (
-            opponents.map((opp) => (
+            opponents.map((opp, idx) => (
               <OpponentSeat
                 key={opp.playerId}
                 player={opp}
                 activePlayerId={gameState?.activePlayerId}
                 turnDeadline={gameState?.turnDeadline}
                 seatNumber={opp.seatIndex}
+                gameStatus={gameState?.gameStatus}
+                position={getPerimeterPosition(idx, opponents.length)}
               />
             ))
           ) : (
-            <div
-              style={{
-                color: '#fef08a',
-                fontSize: 12,
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                background: 'rgba(15, 23, 42, 0.75)',
-                padding: '6px 14px',
-                borderRadius: 20,
-                border: '1px solid rgba(212, 175, 55, 0.4)',
-                boxShadow: '0 4px 15px rgba(0, 0, 0, 0.4)',
-              }}
-            >
-              <div
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: '#fbbf24',
-                  boxShadow: '0 0 8px #fbbf24',
-                  animation: 'pulse 1.5s infinite',
-                }}
-              />
-              Waiting for opponent…
+            <div className="opponent-waiting-pod">
+              <div className="opponent-waiting-dot" />
+              Waiting for opponents…
             </div>
           )}
-        </section>
+        </div>
 
-        <section className="table-center-wrap" aria-label="Table Center" style={{ zIndex: 10 }}>
+        {/* Table Center (Live Pot Badge, Closed Deck, Wild Joker, Discard Pile, Finish Slot) */}
+        <section className="table-center-wrap" aria-label="Table Center" style={{ zIndex: 10, margin: 'auto 0' }}>
+          <div className="table-pot-chip">
+            <span>🪙</span>
+            <span>POT: ₹{((opponents.length + 1) * 8).toFixed(2)}</span>
+            <span style={{ color: '#94a3b8', fontSize: '10px' }}>· ₹0.10/pt</span>
+          </div>
           <TableCenter />
         </section>
 
-        <section
-          aria-label="My status"
-          style={{ zIndex: 10, display: 'flex', justifyContent: 'center' }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              background: isMyTurn ? 'rgba(212,175,55,0.15)' : 'rgba(15,23,42,0.7)',
-              border: isMyTurn ? '1px solid var(--border-gold)' : '1px solid rgba(255,255,255,0.1)',
-              padding: '3px 12px',
-              borderRadius: 20,
-            }}
-          >
-            <div style={{ position: 'relative', width: 28, height: 28 }}>
-              {isMyTurn && (
-                <div style={{ position: 'absolute', top: -3, left: -3 }}>
-                  <TurnTimerRing turnDeadline={gameState?.turnDeadline ?? null} size={34} strokeWidth={3} />
-                </div>
-              )}
-              <div
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: '50%',
-                  background: 'var(--felt-green-center)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'var(--gold-light)',
-                }}
-              >
-                <User size={14} />
-              </div>
-            </div>
-            <span style={{ fontSize: 12, fontWeight: 800 }}>{displayName}</span>
-            {gameState?.gameStatus === 'IN_PROGRESS' && (
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: estimatedHandPts <= 40 ? '#86efac' : '#fde68a',
-                  background: 'rgba(0,0,0,0.25)',
-                  padding: '2px 8px',
-                  borderRadius: 10,
-                }}
-                title="Estimated ungrouped / deadwood points"
-              >
-                ~{estimatedHandPts} pts
-              </span>
-            )}
-          </div>
+        {/* Bottom Station: Action Controls & Player Hand */}
+        <section className="table-player-station" aria-label="Player Station">
+          <ActionControls />
+          <PlayerHand />
         </section>
       </main>
 
-      <section className="hand-area" aria-label="Player Hand">
-        <PlayerHand />
-      </section>
-
-      <section className="actions-area" aria-label="Actions">
-        <ActionControls />
-      </section>
-
       <DeclareModal />
+
+      <GameResultModal isOpen={gameState?.gameStatus === 'COMPLETED'} />
+
+      {/* Safe Table Menu (☰) Modal */}
+      {menuOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1050,
+            padding: '16px',
+          }}
+          onClick={() => setMenuOpen(false)}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '380px',
+              background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
+              borderRadius: '20px',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)',
+              overflow: 'hidden',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Menu size={18} color="var(--gold-accent)" />
+                <span style={{ fontWeight: 800, fontSize: '16px', color: '#ffffff' }}>Table Menu</span>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setMenuOpen(false)}
+                style={{ padding: '6px', borderRadius: '50%' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px' }}>
+              {/* Table Info Card */}
+              <div
+                style={{
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(212, 175, 55, 0.25)',
+                  borderRadius: '14px',
+                  padding: '14px 16px',
+                  marginBottom: '16px',
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--gold-light)', marginBottom: '8px' }}>
+                  Point Rummy · 2 Players
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>
+                  <span>Point Value:</span>
+                  <span style={{ color: '#ffffff', fontWeight: 600 }}>₹0.10 / pt</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>
+                  <span>Max Penalty:</span>
+                  <span style={{ color: '#ffffff', fontWeight: 600 }}>80 points (₹8.00)</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8' }}>
+                  <span>Table ID:</span>
+                  <span style={{ color: '#94a3b8', fontFamily: 'monospace' }}>{gameState?.tableId ?? 'T1'}</span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {onOpenTutorial && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onOpenTutorial();
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      justifyContent: 'flex-start',
+                    }}
+                  >
+                    <BookOpen size={16} color="var(--gold-accent)" />
+                    How to Play & Rummy Rules
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="btn-danger"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    if (gameState?.gameStatus === 'IN_PROGRESS') {
+                      setConfirmLeaveOpen(true);
+                    } else {
+                      handleLeaveTable();
+                    }
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    justifyContent: 'flex-start',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#f87171',
+                  }}
+                >
+                  <LogOut size={16} />
+                  Leave Table
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Safe Leave Confirmation Modal */}
+      {confirmLeaveOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100,
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '380px',
+              background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
+              borderRadius: '20px',
+              border: '1px solid rgba(239, 68, 68, 0.5)',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.8), 0 0 30px rgba(239, 68, 68, 0.25)',
+              padding: '24px',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#f87171',
+                marginBottom: '14px',
+              }}
+            >
+              <ShieldAlert size={26} />
+            </div>
+
+            <h3
+              style={{
+                margin: '0 0 8px',
+                fontSize: '18px',
+                fontWeight: 800,
+                color: '#ffffff',
+              }}
+            >
+              Leave Active Game?
+            </h3>
+
+            <p
+              style={{
+                margin: '0 0 20px',
+                fontSize: '13px',
+                color: '#94a3b8',
+                lineHeight: 1.5,
+              }}
+            >
+              The hand is currently in progress.
+              <br />
+              Leaving now will result in an immediate forfeit with{' '}
+              <strong style={{ color: '#fca5a5' }}>maximum penalty (80 points)</strong>.
+            </p>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setConfirmLeaveOpen(false)}
+                style={{ flex: 1.2, padding: '10px', fontSize: '13px' }}
+              >
+                Resume Game
+              </button>
+              <button
+                type="button"
+                className="btn-danger"
+                onClick={() => {
+                  setConfirmLeaveOpen(false);
+                  handleLeaveTable();
+                }}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
+                }}
+              >
+                Leave Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

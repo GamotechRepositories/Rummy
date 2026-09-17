@@ -241,37 +241,56 @@ public class MatchmakingService {
 
         // If AI fill requested, add AI bots to table
         if (fillWithAi) {
-            int neededBots = first.getMaxPlayers() - humanTickets.size();
-            Set<String> usedNames = new HashSet<>();
-            for (MatchmakingTicket humanTicket : humanTickets) {
-                if (humanTicket.getPlayerName() != null) {
-                    usedNames.add(humanTicket.getPlayerName());
+            int neededBots;
+            if (first.getMaxPlayers() == 6) {
+                // 6-player table dynamic rule:
+                // 1 real player  -> 2 bots (3 total players)
+                // 2 real players -> 1 bot  (3 total players)
+                // 3+ real players -> 0 bots (play with real players only)
+                if (humanTickets.size() == 1) {
+                    neededBots = 2;
+                } else if (humanTickets.size() == 2) {
+                    neededBots = 1;
+                } else {
+                    neededBots = 0;
                 }
+            } else {
+                // 2-player table: 1 real -> 1 bot, 2 real -> 0 bots
+                neededBots = Math.max(0, first.getMaxPlayers() - humanTickets.size());
             }
-            for (int i = 1; i <= neededBots; i++) {
-                String botId = "BOT_" + UUID.randomUUID().toString().substring(0, 4);
-                String botName = IndianBotNames.nextUnique(usedNames);
-                int seatIndex = humanTickets.size() + (i - 1);
-                
-                actor.registerBot(botId, botName, BotDifficulty.MEDIUM);
-                actor.processCommand(new JoinCommand(
-                        UUID.randomUUID().toString(),
-                        actor.getState().getGameId(),
-                        botId,
-                        botName,
-                        seatIndex,
-                        true,
-                        Instant.now()
-                ), "MM_BOT_JOIN");
 
-                actor.processCommand(new ReadyCommand(
-                        UUID.randomUUID().toString(),
-                        actor.getState().getGameId(),
-                        botId,
-                        Instant.now()
-                ), "MM_BOT_READY");
+            if (neededBots > 0) {
+                Set<String> usedNames = new HashSet<>();
+                for (MatchmakingTicket humanTicket : humanTickets) {
+                    if (humanTicket.getPlayerName() != null) {
+                        usedNames.add(humanTicket.getPlayerName());
+                    }
+                }
+                for (int i = 1; i <= neededBots; i++) {
+                    String botId = "BOT_" + UUID.randomUUID().toString().substring(0, 4);
+                    String botName = IndianBotNames.nextUnique(usedNames);
+                    int seatIndex = humanTickets.size() + (i - 1);
+                    
+                    actor.registerBot(botId, botName, BotDifficulty.MEDIUM);
+                    actor.processCommand(new JoinCommand(
+                            UUID.randomUUID().toString(),
+                            actor.getState().getGameId(),
+                            botId,
+                            botName,
+                            seatIndex,
+                            true,
+                            Instant.now()
+                    ), "MM_BOT_JOIN");
 
-                log.info("[Matchmaking] Added AI bot {} ({}) to table {}", botId, botName, tableId);
+                    actor.processCommand(new ReadyCommand(
+                            UUID.randomUUID().toString(),
+                            actor.getState().getGameId(),
+                            botId,
+                            Instant.now()
+                    ), "MM_BOT_READY");
+
+                    log.info("[Matchmaking] Added AI bot {} ({}) to table {}", botId, botName, tableId);
+                }
             }
         }
     }
