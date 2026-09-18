@@ -5,6 +5,7 @@ interface TurnTimerRingProps {
   size?: number;
   strokeWidth?: number;
   totalDurationSeconds?: number;
+  showText?: boolean;
 }
 
 export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
@@ -12,6 +13,7 @@ export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
   size = 72,
   strokeWidth = 4,
   totalDurationSeconds = 30,
+  showText = false,
 }) => {
   const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
 
@@ -97,17 +99,19 @@ export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
           style={{ transition: 'stroke-dashoffset 0.25s linear, stroke 0.3s ease' }}
         />
       </svg>
-      {/* Time Text */}
-      <span
-        style={{
-          fontSize: '13px',
-          fontWeight: 800,
-          color: strokeColor,
-          fontFamily: 'var(--font-display)',
-        }}
-      >
-        {secondsRemaining}s
-      </span>
+      {/* Time Text (optional, default false so it does not block the avatar icon) */}
+      {showText && (
+        <span
+          style={{
+            fontSize: '13px',
+            fontWeight: 800,
+            color: strokeColor,
+            fontFamily: 'var(--font-display)',
+          }}
+        >
+          {secondsRemaining}s
+        </span>
+      )}
     </div>
   );
 };

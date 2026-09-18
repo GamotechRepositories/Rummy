@@ -120,74 +120,20 @@ h1, h2, h3, h4, .font-display {
 .casino-table {
   position: relative;
   width: 100%;
-  max-width: 1280px;
+  max-width: 1440px;
   height: 100%;
   flex: 1;
   min-height: 0;
   margin: 0 auto;
-  border-radius: clamp(32px, 8vw, 130px);
-  background: radial-gradient(ellipse 95% 75% at 50% 42%, #0e633d 0%, #0a472c 45%, #062b1a 80%, #03170e 100%);
-  border: clamp(8px, 1.4vw, 16px) solid #1a0f0a;
-  outline: 1.5px solid rgba(212, 175, 55, 0.55);
-  box-shadow:
-    inset 0 0 0 2px rgba(212, 175, 55, 0.35),
-    inset 0 0 70px rgba(0, 0, 0, 0.85),
-    0 18px 45px rgba(0, 0, 0, 0.85);
+  border-radius: 24px;
+  background: #040c07 url('/eff3f577-e099-47bb-ad63-2ca51f8e94ea.jpg') no-repeat center center;
+  background-size: 100% 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 40px rgba(0, 0, 0, 0.7);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: clamp(8px, 1.2vh, 14px) clamp(12px, 2vw, 24px) 10px;
-}
-
-.table-felt-pattern {
-  position: absolute;
-  inset: 0;
-  opacity: 0.045;
-  background-image: radial-gradient(#ffffff 1.2px, transparent 1.2px);
-  background-size: 20px 20px;
-  pointer-events: none;
-}
-
-/* Luxury Casino Racetrack Inlay */
-.casino-table-racetrack {
-  position: absolute;
-  inset: clamp(10px, 1.8vw, 24px);
-  border-radius: clamp(24px, 7vw, 110px);
-  border: 1.5px dashed rgba(212, 175, 55, 0.22);
-  box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.5);
-  pointer-events: none;
-  z-index: 1;
-}
-
-/* Royal Rummy Center Watermark */
-.table-crest-watermark {
-  position: absolute;
-  top: 42%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  pointer-events: none;
-  opacity: 0.055;
-  user-select: none;
-  z-index: 1;
-}
-
-.table-crest-watermark svg {
-  width: clamp(90px, 15vw, 150px);
-  height: clamp(90px, 15vw, 150px);
-  fill: #ffd700;
-}
-
-.table-crest-watermark .crest-brand {
-  font-size: clamp(13px, 1.8vw, 20px);
-  font-weight: 900;
-  letter-spacing: 0.25em;
-  color: #ffd700;
-  text-transform: uppercase;
-  margin-top: 4px;
+  padding: clamp(6px, 1.2vh, 14px) clamp(12px, 2vw, 24px) 8px;
 }
 
 /* Center Table Pot Badge */
@@ -195,16 +141,16 @@ h1, h2, h3, h4, .font-display {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 14px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(30, 41, 59, 0.85), rgba(15, 23, 42, 0.95));
-  border: 1px solid rgba(212, 175, 55, 0.45);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55), inset 0 0 8px rgba(212, 175, 55, 0.15);
+  padding: 4px 16px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(20, 32, 24, 0.92), rgba(10, 18, 14, 0.96));
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.65), inset 0 0 10px rgba(212, 175, 55, 0.2);
   color: var(--gold-light);
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.02em;
-  margin: 0 auto 6px;
+  letter-spacing: 0.03em;
+  margin: 0 auto 10px;
   z-index: 10;
 }
 
@@ -217,6 +163,8 @@ h1, h2, h3, h4, .font-display {
   position: relative;
   z-index: 10;
   margin: auto 0;
+  padding-top: clamp(80px, 14vh, 130px);
+  padding-bottom: clamp(10px, 2vh, 24px);
 }
 
 /* Perimeter Seating Layout (Around the oval table) */
@@ -234,18 +182,18 @@ h1, h2, h3, h4, .font-display {
 }
 
 .opponent-seat-pod.pos-top-center {
-  top: clamp(8px, 1.8vh, 22px);
+  top: clamp(2px, 0.6vh, 8px);
   left: 50%;
   transform: translateX(-50%);
 }
 
 .opponent-seat-pod.pos-top-left {
-  top: clamp(8px, 1.8vh, 22px);
+  top: clamp(2px, 0.6vh, 8px);
   left: clamp(15%, 22vw, 26%);
 }
 
 .opponent-seat-pod.pos-top-right {
-  top: clamp(8px, 1.8vh, 22px);
+  top: clamp(2px, 0.6vh, 8px);
   right: clamp(15%, 22vw, 26%);
 }
 
@@ -506,6 +454,7 @@ h1, h2, h3, h4, .font-display {
 .player-hand-tray {
   display: flex;
   flex-wrap: nowrap;
+  justify-content: center;
   overflow-x: auto;
   overflow-y: visible;
   gap: 12px;
@@ -2258,9 +2207,8 @@ h1, h2, h3, h4, .font-display {
   }
 
   .casino-table {
-    border-radius: 22px;
-    border-width: 7px;
-    padding: 8px 10px;
+    border-radius: 18px;
+    padding: 6px 8px;
   }
 
   .table-opponents {
@@ -2329,9 +2277,8 @@ h1, h2, h3, h4, .font-display {
   }
 
   .casino-table {
-    border-radius: 18px;
-    border-width: 5px;
-    padding: 6px 8px;
+    border-radius: 14px;
+    padding: 4px 6px;
   }
 
   .table-opponents {

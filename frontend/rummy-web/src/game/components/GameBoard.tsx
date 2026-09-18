@@ -42,6 +42,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
     errorMessage,
     leaveTable,
     playerId,
+    lastGameConfig,
   } = useGameStore();
 
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -54,6 +55,39 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
 
   const opponents = gameState?.opponents ?? [];
   const isMyTurn = gameState?.isMyTurn ?? false;
+
+  // Dynamic Game Variant & Stake Details
+  const rawRulesetId = (lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
+  const entryFee = lastGameConfig?.entryFee ?? 8;
+  const maxSeats = lastGameConfig?.maxPlayers ?? Math.max(2, (gameState?.opponents?.length ?? 0) + 1);
+  const isPointsRummy = rawRulesetId.includes('POINT');
+
+  const variantName = React.useMemo(() => {
+    if (rawRulesetId.includes('POOL')) {
+      return rawRulesetId.includes('201') ? 'Pool 201' : 'Pool 101';
+    }
+    if (rawRulesetId.includes('DEAL')) {
+      return 'Deal Rummy';
+    }
+    if (rawRulesetId.includes('21')) {
+      return '21-Card Rummy';
+    }
+    return 'Point Rummy';
+  }, [rawRulesetId]);
+
+  const pointValue = React.useMemo(() => {
+    return entryFee / 80;
+  }, [entryFee]);
+
+  const stakeLabel = React.useMemo(() => {
+    if (isPointsRummy) {
+      return `₹${pointValue >= 1 ? pointValue.toFixed(0) : pointValue.toFixed(2)}/pt`;
+    }
+    return `Entry ₹${entryFee}`;
+  }, [isPointsRummy, pointValue, entryFee]);
+
+  const tableHeaderSubtitle = `${variantName} · ${stakeLabel} · ${maxSeats} Players`;
+  const totalPot = ((opponents.length + 1) * entryFee).toFixed(2);
 
   const turnLabel = !gameState
     ? 'Connecting…'
@@ -104,7 +138,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
+            gap: 8,
             padding: '4px 12px',
             borderRadius: 20,
             background: 'rgba(212, 175, 55, 0.12)',
@@ -116,7 +150,25 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
           }}
         >
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24' }} />
-          Point Rummy · ₹0.1/pt · 2 Players
+          <span>{tableHeaderSubtitle}</span>
+          <span style={{ width: 1, height: 12, background: 'rgba(212, 175, 55, 0.3)' }} />
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '2px 8px',
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(217, 119, 6, 0.3))',
+              border: '1px solid rgba(251, 191, 36, 0.5)',
+              color: '#fef08a',
+              fontWeight: 900,
+              fontSize: 11,
+            }}
+          >
+            <span>🪙</span>
+            <span>POT: ₹{totalPot}</span>
+          </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -190,17 +242,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
       )}
 
       <main className="casino-table" id="game-felt-table">
-        <div className="table-felt-pattern" />
-        <div className="casino-table-racetrack" />
-
-        {/* Royal Center Felt Watermark */}
-        <div className="table-crest-watermark" aria-hidden="true">
-          <svg viewBox="0 0 100 100" fill="currentColor">
-            <path d="M50 14 C35 34 16 44 16 64 C16 78 30 84 45 79 C46 80 47 88 43 95 L57 95 C53 88 54 80 55 79 C70 84 84 78 84 64 C84 44 65 34 50 14 Z" />
-          </svg>
-          <div className="crest-brand">Royal Rummy</div>
-        </div>
-
         {/* Perimeter Seating (Distributed around the oval table rail) */}
         <div className="table-perimeter-seats" aria-label="Opponents">
           {opponents.length > 0 ? (
@@ -223,20 +264,15 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
           )}
         </div>
 
-        {/* Table Center (Live Pot Badge, Closed Deck, Wild Joker, Discard Pile, Finish Slot) */}
-        <section className="table-center-wrap" aria-label="Table Center" style={{ zIndex: 10, margin: 'auto 0' }}>
-          <div className="table-pot-chip">
-            <span>🪙</span>
-            <span>POT: ₹{((opponents.length + 1) * 8).toFixed(2)}</span>
-            <span style={{ color: '#94a3b8', fontSize: '10px' }}>· ₹0.10/pt</span>
-          </div>
+        {/* Table Center (Closed Deck, Wild Joker, Discard Pile, Finish Slot) */}
+        <section className="table-center-wrap" aria-label="Table Center">
           <TableCenter />
         </section>
 
-        {/* Bottom Station: Action Controls & Player Hand */}
+        {/* Bottom Station: Player Hand & Action Controls */}
         <section className="table-player-station" aria-label="Player Station">
-          <ActionControls />
           <PlayerHand />
+          <ActionControls />
         </section>
       </main>
 
@@ -307,16 +343,25 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
                 }}
               >
                 <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--gold-light)', marginBottom: '8px' }}>
-                  Point Rummy · 2 Players
+                  {variantName} · {maxSeats} Players
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>
-                  <span>Point Value:</span>
-                  <span style={{ color: '#ffffff', fontWeight: 600 }}>₹0.10 / pt</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>
-                  <span>Max Penalty:</span>
-                  <span style={{ color: '#ffffff', fontWeight: 600 }}>80 points (₹8.00)</span>
-                </div>
+                {isPointsRummy ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>
+                      <span>Point Value:</span>
+                      <span style={{ color: '#ffffff', fontWeight: 600 }}>{stakeLabel}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>
+                      <span>Max Penalty:</span>
+                      <span style={{ color: '#ffffff', fontWeight: 600 }}>80 points (₹{entryFee.toFixed(2)})</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>
+                    <span>Entry Fee:</span>
+                    <span style={{ color: '#ffffff', fontWeight: 600 }}>₹{entryFee.toFixed(2)}</span>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8' }}>
                   <span>Table ID:</span>
                   <span style={{ color: '#94a3b8', fontFamily: 'monospace' }}>{gameState?.tableId ?? 'T1'}</span>
