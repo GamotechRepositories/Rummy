@@ -139,36 +139,17 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            padding: '4px 12px',
-            borderRadius: 20,
-            background: 'rgba(212, 175, 55, 0.12)',
-            border: '1px solid rgba(212, 175, 55, 0.3)',
             color: 'var(--gold-light)',
-            fontSize: 11,
-            fontWeight: 800,
+            fontSize: 12,
+            fontWeight: 700,
             letterSpacing: '0.02em',
+            fontFamily: 'var(--font-display)',
           }}
         >
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24' }} />
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24', opacity: 0.9 }} />
           <span>{tableHeaderSubtitle}</span>
-          <span style={{ width: 1, height: 12, background: 'rgba(212, 175, 55, 0.3)' }} />
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '2px 8px',
-              borderRadius: 12,
-              background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(217, 119, 6, 0.3))',
-              border: '1px solid rgba(251, 191, 36, 0.5)',
-              color: '#fef08a',
-              fontWeight: 900,
-              fontSize: 11,
-            }}
-          >
-            <span>🪙</span>
-            <span>POT: ₹{totalPot}</span>
-          </span>
+          <span style={{ color: 'rgba(212, 175, 55, 0.45)', margin: '0 2px' }}>·</span>
+          <span style={{ color: '#fbbf24', fontWeight: 800 }}>🪙 POT: ₹{totalPot}</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

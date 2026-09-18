@@ -40,7 +40,7 @@ const RANK_SHORT: Record<Rank, string> = {
   JOKER: 'JKR',
 };
 
-export const CardView: React.FC<CardViewProps> = ({
+export const CardView: React.FC<CardViewProps> = React.memo(({
   card,
   wildJoker,
   isSelected = false,
@@ -138,4 +138,6 @@ export const CardView: React.FC<CardViewProps> = ({
       </div>
     </div>
   );
-};
+});
+
+CardView.displayName = 'CardView';
