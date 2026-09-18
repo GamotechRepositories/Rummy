@@ -22,6 +22,7 @@ class GameSocketClient {
       return;
     }
 
+    this.url = getWsBaseUrl();
     this.isExplicitDisconnect = false;
     useGameStore.getState().setConnectionStatus(
       this.reconnectAttempts > 0 ? 'RECONNECTING' : 'CONNECTING'
