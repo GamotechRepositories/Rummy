@@ -516,36 +516,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
               <span className="stake-suit stake-suit-tr">♦</span>
               <span className="stake-suit stake-suit-bl">♠</span>
               <span className="stake-suit stake-suit-br">♥</span>
-
-              <div className="stake-corner-fan bl" aria-hidden>
-                <span className="stake-deco-card d1">♠</span>
-                <span className="stake-deco-card d2">♠</span>
-                <span className="stake-deco-card d3">♠</span>
-              </div>
-              <div className="stake-corner-fan br" aria-hidden>
-                <span className="stake-deco-card d1">♥</span>
-                <span className="stake-deco-card d2">♥</span>
-                <span className="stake-deco-card d3">♥</span>
-              </div>
-
               <div className="stake-emblem">
-                <div className="stake-fan">
-                  <div className="stake-mini-card left">
-                    <span className="rank">A</span>
-                    <span className="suit">♠</span>
-                  </div>
-                  <div className="stake-mini-card mid">
-                    <span className="rank">A</span>
-                    <span className="suit">♥</span>
-                  </div>
-                  <div className="stake-mini-card right">
-                    <span className="rank">A</span>
-                    <span className="suit">♣</span>
-                  </div>
-                  <div className="stake-crown">
-                    <Crown size={20} color="#3a2408" strokeWidth={2.2} />
-                  </div>
-                </div>
                 <div className="stake-ribbon">
                   <h2>{activeVariantTitle.toUpperCase()}</h2>
                   <p>PLAY WITH SKILL</p>
