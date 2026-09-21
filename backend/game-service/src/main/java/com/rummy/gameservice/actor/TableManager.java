@@ -8,6 +8,7 @@ import com.rummy.engine.rules.PointsRummyRules;
 import com.rummy.engine.rules.RummyRules;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -23,25 +24,28 @@ public class TableManager {
     private final ObjectMapper objectMapper;
     private final com.rummy.gameservice.persistence.GamePersistenceService persistenceService;
     private final com.rummy.gameservice.kafka.GameEventProducer eventProducer;
+    private final com.rummy.gameservice.session.PlayerSessionService sessionService;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final Map<String, TableActor> tables = new ConcurrentHashMap<>();
 
     @Autowired
     public TableManager(ObjectMapper objectMapper,
                         com.rummy.gameservice.persistence.GamePersistenceService persistenceService,
-                        @Autowired(required = false) com.rummy.gameservice.kafka.GameEventProducer eventProducer) {
+                        @Autowired(required = false) com.rummy.gameservice.kafka.GameEventProducer eventProducer,
+                        @Autowired(required = false) @Lazy com.rummy.gameservice.session.PlayerSessionService sessionService) {
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.persistenceService = persistenceService;
         this.eventProducer = eventProducer;
+        this.sessionService = sessionService;
     }
 
     public TableManager(ObjectMapper objectMapper,
                         com.rummy.gameservice.persistence.GamePersistenceService persistenceService) {
-        this(objectMapper, persistenceService, null);
+        this(objectMapper, persistenceService, null, null);
     }
 
     public TableManager(ObjectMapper objectMapper) {
-        this(objectMapper, null, null);
+        this(objectMapper, null, null, null);
     }
 
     public TableActor getOrCreateTable(String tableId, RummyRules rules) {
@@ -52,7 +56,8 @@ public class TableManager {
             GameState initialState = new GameState(gameId, id, activeRules.getRulesetId(),
                     activeRules.getRulesetVersion(), List.of(), deck);
 
-            return new TableActor(id, initialState, activeRules, engine, objectMapper, scheduler, persistenceService, eventProducer);
+            return new TableActor(id, initialState, activeRules, engine, objectMapper, scheduler,
+                    persistenceService, eventProducer, sessionService);
         });
     }
 

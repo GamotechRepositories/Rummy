@@ -8,6 +8,7 @@ import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
 import com.rummy.gameservice.security.RateLimitingService;
+import com.rummy.gameservice.session.PlayerSessionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,8 @@ class GameWebSocketHandlerTest {
         tableManager = new TableManager(objectMapper);
         RateLimitingService rateLimitingService = new RateLimitingService(100, 100.0);
         TableRoutingRegistry routingRegistry = new TableRoutingRegistry(null, "test-server");
-        handler = new GameWebSocketHandler(tableManager, objectMapper, rateLimitingService, routingRegistry);
+        PlayerSessionService sessionService = new PlayerSessionService(routingRegistry, tableManager);
+        handler = new GameWebSocketHandler(tableManager, objectMapper, rateLimitingService, routingRegistry, sessionService);
 
         session = mock(WebSocketSession.class);
         sessionAttributes = new HashMap<>();

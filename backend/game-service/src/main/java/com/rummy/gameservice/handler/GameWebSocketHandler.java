@@ -15,6 +15,7 @@ import com.rummy.gameservice.protocol.WsErrorMessage;
 import com.rummy.gameservice.protocol.WsServerMessage;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
 import com.rummy.gameservice.security.RateLimitingService;
+import com.rummy.gameservice.session.PlayerSessionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -37,16 +38,19 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final RateLimitingService rateLimitingService;
     private final TableRoutingRegistry routingRegistry;
+    private final PlayerSessionService sessionService;
 
     public GameWebSocketHandler(
             TableManager tableManager,
             ObjectMapper objectMapper,
             RateLimitingService rateLimitingService,
-            TableRoutingRegistry routingRegistry) {
+            TableRoutingRegistry routingRegistry,
+            PlayerSessionService sessionService) {
         this.tableManager = Objects.requireNonNull(tableManager);
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.rateLimitingService = Objects.requireNonNull(rateLimitingService);
         this.routingRegistry = Objects.requireNonNull(routingRegistry);
+        this.sessionService = Objects.requireNonNull(sessionService);
     }
 
     @Override
@@ -157,6 +161,9 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 // Reconnection: If player already seated, re-register session and view
                 if (tableActor.getState().getPlayer(targetPlayerId).isPresent()) {
                     tableActor.registerSession(targetPlayerId, session);
+                    if (!isBot) {
+                        sessionService.bindPlayerToTable(targetPlayerId, tableId);
+                    }
                     return;
                 }
 
@@ -182,6 +189,10 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 JoinCommand cmd = new JoinCommand(reqId, gameId, targetPlayerId, name, finalSeat, isBot, now);
                 tableActor.processCommand(cmd, reqId);
 
+                if (!isBot) {
+                    sessionService.bindPlayerToTable(targetPlayerId, tableId);
+                }
+
                 // Auto-mark joined player as READY
                 tableActor.processCommand(new ReadyCommand(UUID.randomUUID().toString(), gameId, targetPlayerId, now), "AUTO_READY");
 
@@ -191,6 +202,22 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     tableActor.processCommand(new StartGameCommand(UUID.randomUUID().toString(), gameId, targetPlayerId, now), "AUTO_START");
                     log.info("[GameWebSocketHandler] Auto-started table {} with {} players", tableId, tableActor.getState().getPlayers().size());
                 }
+            }
+            case "LEAVE_TABLE" -> {
+                // Voluntary leave — clear resume binding; drop if still active in hand
+                var playerOpt = tableActor.getState().getPlayer(playerId);
+                if (playerOpt.isPresent() && playerOpt.get().getStatus() == PlayerStatus.ACTIVE
+                        && tableActor.getState().getStatus() == GameStatus.IN_PROGRESS) {
+                    tableActor.processCommand(new DropCommand(reqId, gameId, playerId, now), "LEAVE_DROP");
+                }
+                sessionService.clearPlayerBinding(playerId);
+                tableActor.unregisterSession(playerId);
+                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(
+                        WsServerMessage.of("LEFT_TABLE", reqId, tableId, Map.of(
+                                "playerId", playerId,
+                                "tableId", tableId
+                        )))));
+                log.info("[WS] Player {} voluntarily left table {}", playerId, tableId);
             }
             case "READY" -> {
                 ReadyCommand cmd = new ReadyCommand(reqId, gameId, playerId, now);

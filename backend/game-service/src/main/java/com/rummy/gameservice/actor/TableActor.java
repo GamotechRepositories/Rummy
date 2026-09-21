@@ -39,6 +39,7 @@ public final class TableActor {
     private final ScheduledExecutorService scheduler;
     private final com.rummy.gameservice.persistence.GamePersistenceService persistenceService;
     private final com.rummy.gameservice.kafka.GameEventProducer eventProducer;
+    private final com.rummy.gameservice.session.PlayerSessionService sessionService;
 
     private GameState state;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
@@ -63,7 +64,8 @@ public final class TableActor {
                       ObjectMapper objectMapper,
                       ScheduledExecutorService scheduler,
                       com.rummy.gameservice.persistence.GamePersistenceService persistenceService,
-                      com.rummy.gameservice.kafka.GameEventProducer eventProducer) {
+                      com.rummy.gameservice.kafka.GameEventProducer eventProducer,
+                      com.rummy.gameservice.session.PlayerSessionService sessionService) {
         this.tableId = Objects.requireNonNull(tableId);
         this.state = Objects.requireNonNull(initialState);
         this.rules = Objects.requireNonNull(rules);
@@ -73,6 +75,18 @@ public final class TableActor {
         this.scheduler = Objects.requireNonNull(scheduler);
         this.persistenceService = persistenceService;
         this.eventProducer = eventProducer;
+        this.sessionService = sessionService;
+    }
+
+    public TableActor(String tableId,
+                      GameState initialState,
+                      RummyRules rules,
+                      GameEngine engine,
+                      ObjectMapper objectMapper,
+                      ScheduledExecutorService scheduler,
+                      com.rummy.gameservice.persistence.GamePersistenceService persistenceService,
+                      com.rummy.gameservice.kafka.GameEventProducer eventProducer) {
+        this(tableId, initialState, rules, engine, objectMapper, scheduler, persistenceService, eventProducer, null);
     }
 
     public TableActor(String tableId,
@@ -82,7 +96,7 @@ public final class TableActor {
                       ObjectMapper objectMapper,
                       ScheduledExecutorService scheduler,
                       com.rummy.gameservice.persistence.GamePersistenceService persistenceService) {
-        this(tableId, initialState, rules, engine, objectMapper, scheduler, persistenceService, null);
+        this(tableId, initialState, rules, engine, objectMapper, scheduler, persistenceService, null, null);
     }
 
     public TableActor(String tableId,
@@ -91,7 +105,7 @@ public final class TableActor {
                       GameEngine engine,
                       ObjectMapper objectMapper,
                       ScheduledExecutorService scheduler) {
-        this(tableId, initialState, rules, engine, objectMapper, scheduler, null, null);
+        this(tableId, initialState, rules, engine, objectMapper, scheduler, null, null, null);
     }
 
     public synchronized void registerSession(String playerId, WebSocketSession session) {
@@ -152,6 +166,11 @@ public final class TableActor {
                 } else if (event instanceof com.rummy.engine.event.GameFinishedEvent) {
                     persistenceService.recordGameFinished(state, tableId);
                 }
+            }
+            if (event instanceof com.rummy.engine.event.GameFinishedEvent && sessionService != null) {
+                // Match over — no more soft-reconnect into this table
+                sessionService.clearAllHumanBindings(tableId);
+                log.info("[TableActor:{}] Cleared player session bindings after game finish", tableId);
             }
         }
 

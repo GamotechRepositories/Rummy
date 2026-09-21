@@ -11,6 +11,7 @@ import { SoundToggle } from './SoundToggle';
 import { soundEngine } from '../audio/soundEngine';
 import { normalizeTurnPhase } from '../utils/turnPhase';
 import { GameResultModal } from './GameResultModal';
+import { clearActiveSessionRemote } from '../utils/sessionResume';
 
 function getPerimeterPosition(index: number, total: number): SeatPosition {
   if (total === 1) return 'top-center';
@@ -43,12 +44,32 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
     leaveTable,
     playerId,
     lastGameConfig,
+    resumePending,
   } = useGameStore();
 
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = React.useState(false);
+  const [resumeFailed, setResumeFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!resumePending || gameState) return;
+    socketClient.ensureTableJoined();
+    const t = window.setTimeout(() => {
+      if (!useGameStore.getState().gameState) {
+        setResumeFailed(true);
+      }
+    }, 8000);
+    return () => window.clearTimeout(t);
+  }, [resumePending, gameState]);
 
   const handleLeaveTable = () => {
+    const { playerId: pid } = useGameStore.getState();
+    try {
+      socketClient.leaveTable();
+    } catch {
+      // ignore
+    }
+    void clearActiveSessionRemote(pid);
     socketClient.disconnect();
     leaveTable();
   };
@@ -56,35 +77,25 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
   const opponents = gameState?.opponents ?? [];
   const isMyTurn = gameState?.isMyTurn ?? false;
 
-  // Dynamic Game Variant & Stake Details
+  // Derived labels — plain consts (not hooks) so early return below is safe
   const rawRulesetId = (lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
   const entryFee = lastGameConfig?.entryFee ?? 8;
-  const maxSeats = lastGameConfig?.maxPlayers ?? Math.max(2, (gameState?.opponents?.length ?? 0) + 1);
+  const maxSeats = lastGameConfig?.maxPlayers ?? Math.max(2, opponents.length + 1);
   const isPointsRummy = rawRulesetId.includes('POINT');
 
-  const variantName = React.useMemo(() => {
-    if (rawRulesetId.includes('POOL')) {
-      return rawRulesetId.includes('201') ? 'Pool 201' : 'Pool 101';
-    }
-    if (rawRulesetId.includes('DEAL')) {
-      return 'Deal Rummy';
-    }
-    if (rawRulesetId.includes('21')) {
-      return '21-Card Rummy';
-    }
-    return 'Point Rummy';
-  }, [rawRulesetId]);
+  let variantName = 'Point Rummy';
+  if (rawRulesetId.includes('POOL')) {
+    variantName = rawRulesetId.includes('201') ? 'Pool 201' : 'Pool 101';
+  } else if (rawRulesetId.includes('DEAL')) {
+    variantName = 'Deal Rummy';
+  } else if (rawRulesetId.includes('21')) {
+    variantName = '21-Card Rummy';
+  }
 
-  const pointValue = React.useMemo(() => {
-    return entryFee / 80;
-  }, [entryFee]);
-
-  const stakeLabel = React.useMemo(() => {
-    if (isPointsRummy) {
-      return `₹${pointValue >= 1 ? pointValue.toFixed(0) : pointValue.toFixed(2)}/pt`;
-    }
-    return `Entry ₹${entryFee}`;
-  }, [isPointsRummy, pointValue, entryFee]);
+  const pointValue = entryFee / 80;
+  const stakeLabel = isPointsRummy
+    ? `₹${pointValue >= 1 ? pointValue.toFixed(0) : pointValue.toFixed(2)}/pt`
+    : `Entry ₹${entryFee}`;
 
   const tableHeaderSubtitle = `${variantName} · ${stakeLabel} · ${maxSeats} Players`;
   const totalPot = ((opponents.length + 1) * entryFee).toFixed(2);
@@ -104,6 +115,41 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
               ? 'Your turn — discard'
               : 'Your turn'
           : 'Opponent’s turn';
+
+  if (!gameState) {
+    return (
+      <div className="game-frame" style={{ display: 'grid', placeItems: 'center' }}>
+        <div style={{ textAlign: 'center', color: '#e2e8f0', maxWidth: 360, padding: 16 }}>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>
+            {resumeFailed ? 'Could not rejoin table' : resumePending ? 'Rejoining your table…' : 'Loading table…'}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 13, color: '#94a3b8' }}>
+            {resumeFailed
+              ? 'The table may have ended, or the connection dropped. Return to lobby to play again.'
+              : 'Restoring your active hand — hang tight.'}
+          </div>
+          {resumeFailed && (
+            <button
+              type="button"
+              onClick={handleLeaveTable}
+              style={{
+                marginTop: 16,
+                padding: '10px 18px',
+                borderRadius: 12,
+                border: '1px solid rgba(251,191,36,0.45)',
+                background: 'linear-gradient(135deg,#f59e0b,#d97706)',
+                color: '#111',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Back to lobby
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="game-frame">

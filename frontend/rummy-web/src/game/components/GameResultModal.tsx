@@ -18,6 +18,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
+import { clearActiveSessionRemote } from '../utils/sessionResume';
 import { CardView } from './CardView';
 import type { CardInstance, GroupValidationType } from '../types/game';
 import { evaluateCardGroup, getCardScore } from '../rules/clientValidator';
@@ -368,12 +369,14 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
     soundEngine.play('match');
     clearSelection();
     setAutoMatchmakePending(true);
+    void clearActiveSessionRemote(playerId);
     socketClient.disconnect();
     leaveTable();
   };
 
   const handleLeave = () => {
     soundEngine.play('click');
+    void clearActiveSessionRemote(playerId);
     socketClient.disconnect();
     leaveTable();
   };

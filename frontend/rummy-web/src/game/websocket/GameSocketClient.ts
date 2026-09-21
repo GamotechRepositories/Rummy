@@ -10,6 +10,8 @@ class GameSocketClient {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private isExplicitDisconnect = false;
+  private socketGeneration = 0;
+  private resumeJoinTimer: number | null = null;
 
   private url: string;
 
@@ -18,7 +20,12 @@ class GameSocketClient {
   }
 
   public connect(): void {
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      // Already connected (Strict Mode / late resume flags) — rejoin if needed
+      this.ensureTableJoined();
+      return;
+    }
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
       return;
     }
 
@@ -27,6 +34,8 @@ class GameSocketClient {
     useGameStore.getState().setConnectionStatus(
       this.reconnectAttempts > 0 ? 'RECONNECTING' : 'CONNECTING'
     );
+
+    const generation = ++this.socketGeneration;
 
     try {
       // Check for stored or query token
@@ -40,6 +49,7 @@ class GameSocketClient {
     }
 
     this.ws.onopen = () => {
+      if (generation !== this.socketGeneration) return;
       console.log('[WS] Connected to game gateway:', this.url);
       useGameStore.getState().setConnectionStatus('CONNECTED');
       this.reconnectAttempts = 0;
@@ -55,6 +65,7 @@ class GameSocketClient {
     };
 
     this.ws.onmessage = (event) => {
+      if (generation !== this.socketGeneration) return;
       try {
         const msg: WsServerMessage = JSON.parse(event.data);
         this.handleMessage(msg);
@@ -64,6 +75,7 @@ class GameSocketClient {
     };
 
     this.ws.onclose = (event) => {
+      if (generation !== this.socketGeneration) return;
       console.warn('[WS] Disconnected (code: ' + event.code + ', reason: ' + event.reason + ')');
       this.stopHeartbeat();
       useGameStore.getState().setConnectionStatus('DISCONNECTED');
@@ -73,13 +85,27 @@ class GameSocketClient {
     };
 
     this.ws.onerror = (err) => {
+      if (generation !== this.socketGeneration) return;
       console.error('[WS] Error:', err);
     };
   }
 
+  /** Call after setting hasJoinedTable / on AUTH — safe if already joined. */
+  public ensureTableJoined(): void {
+    const { hasJoinedTable, gameState, tableId } = useGameStore.getState();
+    if (!hasJoinedTable || !tableId) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    this.joinTable();
+    if (!gameState) {
+      this.scheduleResumeJoinRetry();
+    }
+  }
+
   public disconnect(): void {
     this.isExplicitDisconnect = true;
+    this.socketGeneration++;
     this.stopHeartbeat();
+    this.clearResumeJoinTimer();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -112,13 +138,12 @@ class GameSocketClient {
 
       case 'AUTH_SUCCESS':
         console.log('[WS] Authenticated successfully');
-        // Rejoin only after the player left the lobby (or after an in-game reconnect)
-        if (useGameStore.getState().hasJoinedTable) {
-          this.joinTable();
-        }
+        // Rejoin after lobby match or soft-reconnect / page resume
+        this.ensureTableJoined();
         break;
 
       case 'GAME_VIEW':
+        this.clearResumeJoinTimer();
         if (msg.payload) {
           const prev = useGameStore.getState().gameState;
           const next = msg.payload as PlayerGameView;
@@ -183,6 +208,35 @@ class GameSocketClient {
       default:
         console.log('[WS] Unhandled message:', msg.type, msg.payload);
     }
+  }
+
+  private clearResumeJoinTimer(): void {
+    if (this.resumeJoinTimer) {
+      clearTimeout(this.resumeJoinTimer);
+      this.resumeJoinTimer = null;
+    }
+  }
+
+  /** If GAME_VIEW never arrives after refresh, retry JOIN a couple of times. */
+  private scheduleResumeJoinRetry(): void {
+    this.clearResumeJoinTimer();
+    let attempts = 0;
+    const tick = () => {
+      const { resumePending, gameState, hasJoinedTable } = useGameStore.getState();
+      if (!resumePending || gameState || !hasJoinedTable) {
+        this.resumeJoinTimer = null;
+        return;
+      }
+      attempts += 1;
+      console.log(`[WS] Resume join retry #${attempts}`);
+      this.joinTable();
+      if (attempts < 3) {
+        this.resumeJoinTimer = window.setTimeout(tick, 1200);
+      } else {
+        this.resumeJoinTimer = null;
+      }
+    };
+    this.resumeJoinTimer = window.setTimeout(tick, 1200);
   }
 
   private startHeartbeat(): void {
@@ -280,6 +334,16 @@ class GameSocketClient {
 
   public drop(): void {
     this.sendMessage({ type: 'DROP' });
+  }
+
+  /** Voluntary leave — clears server resume binding (and drops if still active). */
+  public leaveTable(): void {
+    const { tableId, playerId } = useGameStore.getState();
+    this.sendMessage({
+      type: 'LEAVE_TABLE',
+      tableId,
+      payload: { playerId },
+    });
   }
 }
 

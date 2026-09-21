@@ -329,7 +329,16 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
       }, 1000);
     } catch (err: unknown) {
       setIsMatchmaking(false);
-      setErrorMsg(err instanceof Error ? err.message : 'Could not join table.');
+      setMmTicketId(null);
+      const raw = err instanceof Error ? err.message : String(err ?? '');
+      const isNetwork =
+        err instanceof TypeError ||
+        /failed to fetch|networkerror|load failed|err_connection|econnrefused/i.test(raw);
+      setErrorMsg(
+        isNetwork
+          ? 'Network error — game server is offline or unreachable. Start the backend and try again.'
+          : raw || 'Could not join table.'
+      );
     } finally {
       isEnqueuingRef.current = false;
     }

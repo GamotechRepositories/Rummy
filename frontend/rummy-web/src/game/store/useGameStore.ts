@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import type { CardInstance, PlayerGameView, VisualCardGroup } from '../types/game';
 import { evaluateCardGroup, getCardScore } from '../rules/clientValidator';
+import {
+  clearActiveSessionLocal,
+  getOrCreatePlayerId,
+  persistActiveSession,
+  readPersistedDisplayName,
+  readPersistedLastConfig,
+} from '../utils/sessionResume';
 
 interface GameStoreState {
   tableId: string;
@@ -21,6 +28,8 @@ interface GameStoreState {
   } | null;
   autoMatchmakePending: boolean;
   lastKnownHand: CardInstance[];
+  /** Soft-reconnect in progress (waiting for first GAME_VIEW). */
+  resumePending: boolean;
 
   // Actions
   setConnectionStatus: (status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING') => void;
@@ -28,6 +37,8 @@ interface GameStoreState {
   setDisplayName: (displayName: string) => void;
   setHasJoinedTable: (joined: boolean) => void;
   leaveTable: () => void;
+  setResumePending: (pending: boolean) => void;
+  clearResumeOnGameOver: () => void;
   setLastGameConfig: (config: { rulesetId: string; entryFee: number; maxPlayers: number } | null) => void;
   setAutoMatchmakePending: (pending: boolean) => void;
   updateGameState: (view: PlayerGameView) => void;
@@ -130,20 +141,22 @@ function organizeHandIntoGroups(
       ];
 }
 
-const getStoredPlayerId = (): string => {
-  try {
-    const existing = sessionStorage.getItem('rummy_player_id');
-    if (existing) return existing;
-    const newId = 'PLAYER_' + Math.floor(1000 + Math.random() * 9000);
-    sessionStorage.setItem('rummy_player_id', newId);
-    return newId;
-  } catch {
-    return 'PLAYER_' + Math.floor(1000 + Math.random() * 9000);
-  }
-};
+const getStoredPlayerId = (): string => getOrCreatePlayerId();
+
+const initialDisplayName = readPersistedDisplayName() || 'RoyalAce';
+const initialLastConfig = readPersistedLastConfig();
 
 /** Backend CardInstance may nest suit/rank under `card` and use `deckNumber`. */
 function normalizeCard(raw: unknown): CardInstance {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      instanceId: '',
+      suit: 'NONE',
+      rank: 'JOKER',
+      deckIndex: 1,
+      printedJoker: false,
+    };
+  }
   const c = raw as Record<string, unknown>;
   const nested = (c.card as Record<string, unknown> | undefined) ?? {};
   return {
@@ -163,7 +176,7 @@ function normalizeHand(hand: unknown[] | undefined | null): CardInstance[] {
 export const useGameStore = create<GameStoreState>((set, get) => ({
   tableId: 'TBL_ROYAL_01',
   playerId: getStoredPlayerId(),
-  displayName: 'RoyalAce',
+  displayName: initialDisplayName,
   connectionStatus: 'DISCONNECTED',
   hasJoinedTable: false,
   gameState: null,
@@ -172,26 +185,56 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   isDeclareModalOpen: false,
   errorMessage: null,
   lastEventMessage: null,
-  lastGameConfig: null,
+  lastGameConfig: initialLastConfig,
   autoMatchmakePending: false,
   lastKnownHand: [],
+  resumePending: false,
 
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 
-  setSession: (tableId, playerId, displayName) =>
-    set({ tableId, playerId, displayName }),
+  setSession: (tableId, playerId, displayName) => {
+    const { lastGameConfig } = get();
+    persistActiveSession({ tableId, playerId, displayName, lastGameConfig });
+    set({ tableId, playerId, displayName });
+  },
 
-  setDisplayName: (displayName) => set({ displayName }),
+  setDisplayName: (displayName) => {
+    try {
+      localStorage.setItem('rummy_display_name', displayName);
+      sessionStorage.setItem('rummy_display_name', displayName);
+    } catch {
+      // ignore
+    }
+    set({ displayName });
+  },
 
   setHasJoinedTable: (joined) => set({ hasJoinedTable: joined }),
 
-  setLastGameConfig: (config) => set({ lastGameConfig: config }),
+  setResumePending: (pending) => set({ resumePending: pending }),
+
+  clearResumeOnGameOver: () => {
+    clearActiveSessionLocal();
+  },
+
+  setLastGameConfig: (config) => {
+    if (config) {
+      try {
+        localStorage.setItem('rummy_last_game_config', JSON.stringify(config));
+        sessionStorage.setItem('rummy_last_game_config', JSON.stringify(config));
+      } catch {
+        // ignore
+      }
+    }
+    set({ lastGameConfig: config });
+  },
 
   setAutoMatchmakePending: (pending) => set({ autoMatchmakePending: pending }),
 
-  leaveTable: () =>
+  leaveTable: () => {
+    clearActiveSessionLocal();
     set({
       hasJoinedTable: false,
+      resumePending: false,
       gameState: null,
       groups: [],
       selectedCardIds: [],
@@ -199,7 +242,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       errorMessage: null,
       lastEventMessage: null,
       lastKnownHand: [],
-    }),
+    });
+  },
 
   updateGameState: (view) => {
     const { groups, selectedCardIds, lastKnownHand } = get();
@@ -244,11 +288,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     const handIds = new Set(effectiveHand.map((c) => c.instanceId));
     const nextSelected = selectedCardIds.filter((id) => handIds.has(id));
+
+    if (view.gameStatus === 'COMPLETED' || view.gameStatus === 'ABORTED') {
+      clearActiveSessionLocal();
+    }
+
     set({
       gameState: normalizedView,
       groups: updatedGroups,
       selectedCardIds: nextSelected,
       lastKnownHand: nextLastKnown,
+      resumePending: false,
     });
   },
 

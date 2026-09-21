@@ -65,8 +65,13 @@ public class TableRoutingRegistry {
 
     /**
      * Look up which game server owns the given table.
+     * Prefer local map first so a down/slow Redis cannot block single-node resume.
      */
     public Optional<String> getServerForTable(String tableId) {
+        String local = localTableServerMap.get(tableId);
+        if (local != null) {
+            return Optional.of(local);
+        }
         if (redisTemplate != null) {
             try {
                 String server = redisTemplate.opsForValue().get(TABLE_PREFIX + tableId);
@@ -75,7 +80,7 @@ public class TableRoutingRegistry {
                 log.warn("[Routing] Redis lookup failed for table {}: {}", tableId, e.getMessage());
             }
         }
-        return Optional.ofNullable(localTableServerMap.get(tableId));
+        return Optional.empty();
     }
 
     /**
@@ -94,8 +99,13 @@ public class TableRoutingRegistry {
 
     /**
      * Look up the active table for a player.
+     * Local first — critical for soft-reconnect when Redis is unreachable.
      */
     public Optional<String> getTableForPlayer(String playerId) {
+        String local = localPlayerTableMap.get(playerId);
+        if (local != null) {
+            return Optional.of(local);
+        }
         if (redisTemplate != null) {
             try {
                 String tableId = redisTemplate.opsForValue().get(PLAYER_PREFIX + playerId);
@@ -104,7 +114,7 @@ public class TableRoutingRegistry {
                 log.warn("[Routing] Redis lookup failed for player {}: {}", playerId, e.getMessage());
             }
         }
-        return Optional.ofNullable(localPlayerTableMap.get(playerId));
+        return Optional.empty();
     }
 
     /**

@@ -8,15 +8,13 @@ import { isDiscardPhase, isDrawPhase, normalizeTurnPhase } from '../utils/turnPh
 export const ActionControls: React.FC = () => {
   const { gameState, selectedCardIds, setDeclareModalOpen, playerId, clearSelection } =
     useGameStore();
+  const [confirmDropOpen, setConfirmDropOpen] = React.useState(false);
 
-  if (!gameState) return null;
-
-  const { gameStatus, isMyTurn, turnPhase, opponents, activePlayerId } = gameState;
-  const drawPhase = isDrawPhase(isMyTurn, turnPhase);
-  const discardPhase = isDiscardPhase(isMyTurn, turnPhase);
-  const uiPhase = normalizeTurnPhase(turnPhase);
-  const opponentName =
-    opponents.find((p) => p.playerId === activePlayerId)?.displayName ?? 'Opponent';
+  const gameStatus = gameState?.gameStatus;
+  const isMyTurn = gameState?.isMyTurn ?? false;
+  const turnPhase = gameState?.turnPhase;
+  const opponents = gameState?.opponents ?? [];
+  const activePlayerId = gameState?.activePlayerId;
 
   React.useEffect(() => {
     if (gameStatus === 'WAITING_FOR_PLAYERS') {
@@ -25,6 +23,14 @@ export const ActionControls: React.FC = () => {
       return () => clearTimeout(t);
     }
   }, [gameStatus]);
+
+  if (!gameState) return null;
+
+  const drawPhase = isDrawPhase(isMyTurn, turnPhase);
+  const discardPhase = isDiscardPhase(isMyTurn, turnPhase);
+  const uiPhase = normalizeTurnPhase(turnPhase);
+  const opponentName =
+    opponents.find((p) => p.playerId === activePlayerId)?.displayName ?? 'Opponent';
 
   const handleDiscard = () => {
     if (selectedCardIds.length !== 1) return;
@@ -38,7 +44,6 @@ export const ActionControls: React.FC = () => {
     socketClient.discard(cardId);
   };
 
-  const [confirmDropOpen, setConfirmDropOpen] = React.useState(false);
   const isFirstTurn = (gameState.discardHistory?.length ?? 0) <= 1;
   const dropPenaltyPoints = isFirstTurn ? 20 : 40;
 
