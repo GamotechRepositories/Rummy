@@ -13,6 +13,7 @@ import com.rummy.gameservice.actor.TableManager;
 import com.rummy.gameservice.protocol.WsClientMessage;
 import com.rummy.gameservice.protocol.WsErrorMessage;
 import com.rummy.gameservice.protocol.WsServerMessage;
+import com.rummy.gameservice.routing.TableRoutingRegistry;
 import com.rummy.gameservice.security.RateLimitingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,11 +36,17 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     private final TableManager tableManager;
     private final ObjectMapper objectMapper;
     private final RateLimitingService rateLimitingService;
+    private final TableRoutingRegistry routingRegistry;
 
-    public GameWebSocketHandler(TableManager tableManager, ObjectMapper objectMapper, RateLimitingService rateLimitingService) {
+    public GameWebSocketHandler(
+            TableManager tableManager,
+            ObjectMapper objectMapper,
+            RateLimitingService rateLimitingService,
+            TableRoutingRegistry routingRegistry) {
         this.tableManager = Objects.requireNonNull(tableManager);
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.rateLimitingService = Objects.requireNonNull(rateLimitingService);
+        this.routingRegistry = Objects.requireNonNull(routingRegistry);
     }
 
     @Override
@@ -50,7 +57,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             session.getAttributes().put("playerId", authPlayerId);
         }
         WsServerMessage connectedMsg = WsServerMessage.of("CONNECTED", UUID.randomUUID().toString(), null,
-                Map.of("sessionId", session.getId(), "serverTime", Instant.now().toString()));
+                Map.of(
+                        "sessionId", session.getId(),
+                        "serverTime", Instant.now().toString(),
+                        "serverInstanceId", routingRegistry.getServerInstanceId()
+                ));
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(connectedMsg)));
     }
 
@@ -108,7 +119,25 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
+        // Multi-node: refuse to create a ghost table when Redis says another server owns it
+        if (routingRegistry.isOwnedByRemoteServer(tableId)) {
+            String owner = routingRegistry.getServerForTable(tableId).orElse("unknown");
+            log.warn("[WS] Table {} owned by remote server {} — rejecting on {}", tableId, owner, routingRegistry.getServerInstanceId());
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(
+                    WsServerMessage.of("ERROR", reqId, tableId, Map.of(
+                            "code", "TABLE_NOT_ON_THIS_SERVER",
+                            "message", "This table is hosted on another game server. Reconnect using matchedServerId.",
+                            "ownerServerId", owner,
+                            "localServerId", routingRegistry.getServerInstanceId()
+                    )))));
+            return;
+        }
+
         TableActor tableActor = tableManager.getOrCreateTable(tableId, null);
+        if (!routingRegistry.isOwnedByThisServer(tableId)) {
+            // First touch on this node for a brand-new private table — claim ownership
+            routingRegistry.registerTableOwnership(tableId);
+        }
         tableActor.registerSession(playerId, session);
         session.getAttributes().put("tableId", tableId);
 

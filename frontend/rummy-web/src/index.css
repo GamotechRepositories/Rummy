@@ -2549,3 +2549,196 @@ h1, h2, h3, h4, .font-display {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ==========================================================================
+   Showdown & Result Modal Premium Responsive Styles
+   ========================================================================== */
+.showdown-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(3, 7, 18, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: clamp(8px, 2.5vw, 20px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.showdown-modal-container {
+  width: min(96vw, 860px);
+  max-height: 94vh;
+  background: linear-gradient(180deg, #111827 0%, #080c14 100%);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.95), 0 0 40px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  animation: modalPopIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.showdown-modal-container.is-winner-modal {
+  border-color: rgba(251, 191, 36, 0.6);
+  box-shadow: 0 0 50px rgba(251, 191, 36, 0.25), 0 25px 60px rgba(0, 0, 0, 0.95);
+}
+
+@keyframes modalPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.showdown-header {
+  padding: 18px 20px 14px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+}
+
+.showdown-header.winner-header {
+  background: radial-gradient(ellipse at top, rgba(251, 191, 36, 0.25) 0%, rgba(15, 23, 42, 0) 75%);
+}
+
+.showdown-header.regular-header {
+  background: radial-gradient(ellipse at top, rgba(56, 189, 248, 0.15) 0%, rgba(15, 23, 42, 0) 75%);
+}
+
+.showdown-scoreboard-body {
+  padding: 14px 18px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.showdown-player-pod {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: all 0.15s ease;
+}
+
+.showdown-player-pod.winner {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.12) 0%, rgba(15, 23, 42, 0.85) 100%);
+  border: 1.5px solid rgba(251, 191, 36, 0.55);
+  box-shadow: 0 0 24px rgba(251, 191, 36, 0.18), 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+.showdown-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.showdown-group-pod {
+  background: rgba(15, 23, 42, 0.95);
+  border-radius: 10px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  min-width: 0;
+  position: relative;
+}
+
+.showdown-cards-tray {
+  display: flex;
+  align-items: center;
+  padding: 2px 0;
+  overflow-x: visible;
+}
+
+.showdown-card-wrapper {
+  position: relative;
+  transition: transform 0.15s ease;
+}
+
+.showdown-card-wrapper:not(:first-child) {
+  margin-left: -14px;
+}
+
+.showdown-card-wrapper:hover {
+  transform: translateY(-4px);
+  z-index: 20 !important;
+}
+
+/* Tablet & Mobile Breakpoints */
+@media (max-width: 768px) {
+  .showdown-modal-container {
+    width: 96vw;
+    max-height: 96vh;
+    border-radius: 18px;
+  }
+
+  .showdown-scoreboard-body {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .showdown-player-pod {
+    padding: 10px 12px;
+  }
+
+  .showdown-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+
+  .showdown-card-wrapper:not(:first-child) {
+    margin-left: -12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .showdown-modal-container {
+    width: 98vw;
+    border-radius: 14px;
+  }
+
+  .showdown-header {
+    padding: 12px 14px 10px;
+  }
+
+  .showdown-header-title {
+    font-size: 17px !important;
+  }
+
+  .showdown-scoreboard-body {
+    padding: 8px 8px;
+    gap: 8px;
+  }
+
+  .showdown-player-pod {
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+
+  .showdown-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+  }
+
+  .showdown-group-pod {
+    padding: 5px 6px;
+  }
+
+  .showdown-card-wrapper:not(:first-child) {
+    margin-left: -10px;
+  }
+}
+

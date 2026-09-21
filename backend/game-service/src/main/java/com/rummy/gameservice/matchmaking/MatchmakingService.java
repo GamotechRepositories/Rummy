@@ -11,6 +11,7 @@ import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
 import com.rummy.gameservice.routing.PlayerPresenceService;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
+import com.rummy.gameservice.wallet.WalletService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -19,15 +20,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import com.rummy.gameservice.wallet.WalletService;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
- * Phase 18: Real-time Stake & Variant Matchmaking Engine with AI Fallback.
+ * Phase 18: Stake & variant matchmaking with AI fallback.
+ * Uses {@link MatchmakingStore} — Redis when {@code rummy.redis.enabled=true}, else in-memory.
  */
 @Service
 public class MatchmakingService {
@@ -38,12 +41,10 @@ public class MatchmakingService {
     private final TableRoutingRegistry routingRegistry;
     private final PlayerPresenceService presenceService;
     private final WalletService walletService;
+    private final MatchmakingStore store;
 
     private final long aiFallbackTimeoutMs;
     private final long maxQueueTimeoutMs;
-
-    private final Map<String, MatchmakingTicket> tickets = new ConcurrentHashMap<>();
-    private final Map<String, ConcurrentLinkedQueue<MatchmakingTicket>> queues = new ConcurrentHashMap<>();
 
     private final ScheduledExecutorService matchingScheduler = Executors.newSingleThreadScheduledExecutor();
 
@@ -52,43 +53,39 @@ public class MatchmakingService {
             TableManager tableManager,
             TableRoutingRegistry routingRegistry,
             PlayerPresenceService presenceService,
+            MatchmakingStore store,
             @Autowired(required = false) WalletService walletService,
             @Value("${matchmaking.ai-fallback-timeout-ms:15000}") long aiFallbackTimeoutMs,
             @Value("${matchmaking.max-queue-timeout-ms:45000}") long maxQueueTimeoutMs) {
         this.tableManager = Objects.requireNonNull(tableManager);
         this.routingRegistry = Objects.requireNonNull(routingRegistry);
         this.presenceService = Objects.requireNonNull(presenceService);
+        this.store = Objects.requireNonNull(store);
         this.walletService = walletService;
         this.aiFallbackTimeoutMs = aiFallbackTimeoutMs;
         this.maxQueueTimeoutMs = maxQueueTimeoutMs;
     }
 
+    /** Test helper constructor. */
     public MatchmakingService(
             TableManager tableManager,
             TableRoutingRegistry routingRegistry,
             PlayerPresenceService presenceService,
             long aiFallbackTimeoutMs,
             long maxQueueTimeoutMs) {
-        this(tableManager, routingRegistry, presenceService, null, aiFallbackTimeoutMs, maxQueueTimeoutMs);
+        this(tableManager, routingRegistry, presenceService, new InMemoryMatchmakingStore(),
+                null, aiFallbackTimeoutMs, maxQueueTimeoutMs);
     }
 
     @PostConstruct
     public void startMatchingLoop() {
         matchingScheduler.scheduleWithFixedDelay(this::processQueues, 250, 250, TimeUnit.MILLISECONDS);
-        log.info("[Matchmaking] Matchmaking service loop started with AI fallback timeout: {}ms", aiFallbackTimeoutMs);
+        log.info("[Matchmaking] Loop started (store={}, aiFallback={}ms)",
+                store.getClass().getSimpleName(), aiFallbackTimeoutMs);
     }
 
-    /**
-     * Submit a player into the matchmaking queue.
-     */
     public MatchmakingTicket enqueue(MatchmakingRequest request) {
-        // Cancel any previous queued ticket for the same player to prevent duplicate self-matching
-        for (MatchmakingTicket existing : tickets.values()) {
-            if (existing.getPlayerId().equals(request.getPlayerId()) && existing.getStatus() == MatchmakingTicket.Status.QUEUED) {
-                existing.setStatus(MatchmakingTicket.Status.CANCELLED);
-                log.info("[Matchmaking] Cancelled previous queued ticket {} for player {}", existing.getTicketId(), request.getPlayerId());
-            }
-        }
+        store.cancelActiveTicketsForPlayer(request.getPlayerId());
 
         String ticketId = "TKT_" + UUID.randomUUID().toString().substring(0, 8);
         MatchmakingTicket ticket = new MatchmakingTicket(
@@ -102,52 +99,52 @@ public class MatchmakingService {
         );
 
         presenceService.updatePresence(request.getPlayerId());
-        tickets.put(ticketId, ticket);
+        store.saveTicket(ticket);
+        store.enqueue(ticket.getQueueKey(), ticket.getTicketId());
 
-        String queueKey = ticket.getQueueKey();
-        queues.computeIfAbsent(queueKey, k -> new ConcurrentLinkedQueue<>()).add(ticket);
-
-        log.info("[Matchmaking] Enqueued player {} for queueKey={}", request.getPlayerId(), queueKey);
+        log.info("[Matchmaking] Enqueued player {} for queueKey={} ticket={}",
+                request.getPlayerId(), ticket.getQueueKey(), ticketId);
         return ticket;
     }
 
     public Optional<MatchmakingTicket> getTicket(String ticketId) {
-        return Optional.ofNullable(tickets.get(ticketId));
+        return store.findTicket(ticketId);
     }
 
     public boolean cancelTicket(String ticketId) {
-        MatchmakingTicket ticket = tickets.get(ticketId);
-        if (ticket != null && ticket.getStatus() == MatchmakingTicket.Status.QUEUED) {
-            ticket.setStatus(MatchmakingTicket.Status.CANCELLED);
-            log.info("[Matchmaking] Cancelled ticket {}", ticketId);
-            return true;
-        }
-        return false;
+        Optional<MatchmakingTicket> opt = store.findTicket(ticketId);
+        if (opt.isEmpty()) return false;
+        MatchmakingTicket ticket = opt.get();
+        if (ticket.getStatus() != MatchmakingTicket.Status.QUEUED) return false;
+        ticket.setStatus(MatchmakingTicket.Status.CANCELLED);
+        store.saveTicket(ticket);
+        log.info("[Matchmaking] Cancelled ticket {}", ticketId);
+        return true;
     }
 
     void processQueues() {
         try {
             processQueuesUnsafe();
         } catch (Exception e) {
-            // Single-thread scheduler dies forever if an unchecked exception escapes.
             log.error("[Matchmaking] processQueues failed — will retry next tick", e);
         }
     }
 
     private void processQueuesUnsafe() {
-        for (Map.Entry<String, ConcurrentLinkedQueue<MatchmakingTicket>> entry : queues.entrySet()) {
-            ConcurrentLinkedQueue<MatchmakingTicket> queue = entry.getValue();
+        for (String queueKey : store.listQueueKeys()) {
+            Optional<MatchmakingStore.QueueSnapshot> claimed = store.claimQueue(queueKey, 2000);
+            if (claimed.isEmpty()) {
+                continue;
+            }
 
             List<MatchmakingTicket> validWaiting = new ArrayList<>();
-            MatchmakingTicket candidate;
-
-            while ((candidate = queue.poll()) != null) {
+            for (MatchmakingTicket candidate : claimed.get().tickets()) {
                 if (candidate.getStatus() != MatchmakingTicket.Status.QUEUED) {
-                    continue; // Skip cancelled or already matched
+                    continue;
                 }
-                // Also check if candidate player is still online
                 if (presenceService != null && !presenceService.isPlayerOnline(candidate.getPlayerId())) {
                     candidate.setStatus(MatchmakingTicket.Status.CANCELLED);
+                    store.saveTicket(candidate);
                     log.info("[Matchmaking] Skipped offline player ticket {}", candidate.getTicketId());
                     continue;
                 }
@@ -155,18 +152,19 @@ public class MatchmakingService {
             }
 
             if (validWaiting.isEmpty()) {
+                store.releaseQueue(queueKey, List.of());
                 continue;
             }
 
-            // Check if we can form full human player groups of DISTINCT players
             int targetSize = validWaiting.get(0).getMaxPlayers();
             List<MatchmakingTicket> matchedGroup = new ArrayList<>();
             Set<String> groupedPlayerIds = new HashSet<>();
+            List<String> leftovers = new ArrayList<>();
 
             for (MatchmakingTicket ticket : validWaiting) {
                 if (groupedPlayerIds.contains(ticket.getPlayerId())) {
-                    // Duplicate ticket for same player, mark cancelled
                     ticket.setStatus(MatchmakingTicket.Status.CANCELLED);
+                    store.saveTicket(ticket);
                     continue;
                 }
                 matchedGroup.add(ticket);
@@ -178,29 +176,29 @@ public class MatchmakingService {
                 }
             }
 
-            // For remaining players in queue (e.g. 1 player in a 2-player table, or 2 players in a 6-player table):
             if (!matchedGroup.isEmpty()) {
                 boolean anyTimedOut = matchedGroup.stream().anyMatch(t ->
-                        t.isAllowAiFallback() && Duration.between(t.getCreatedAt(), Instant.now()).toMillis() >= aiFallbackTimeoutMs
+                        t.isAllowAiFallback()
+                                && Duration.between(t.getCreatedAt(), Instant.now()).toMillis() >= aiFallbackTimeoutMs
                 );
 
                 if (anyTimedOut) {
-                    // Group ALL waiting real players together into 1 shared table, and fill remaining seats with bots!
                     createAndAssignTable(new ArrayList<>(matchedGroup), true);
-                    matchedGroup.clear();
-                    groupedPlayerIds.clear();
                 } else {
                     for (MatchmakingTicket leftover : matchedGroup) {
                         long elapsed = Duration.between(leftover.getCreatedAt(), Instant.now()).toMillis();
                         if (elapsed >= maxQueueTimeoutMs) {
                             leftover.setStatus(MatchmakingTicket.Status.EXPIRED);
+                            store.saveTicket(leftover);
                             log.info("[Matchmaking] Ticket {} expired after {}ms", leftover.getTicketId(), elapsed);
                         } else {
-                            queue.add(leftover);
+                            leftovers.add(leftover.getTicketId());
                         }
                     }
                 }
             }
+
+            store.releaseQueue(queueKey, leftovers);
         }
     }
 
@@ -212,12 +210,12 @@ public class MatchmakingService {
         TableActor actor = tableManager.getOrCreateTable(tableId, rules);
         routingRegistry.registerTableOwnership(tableId);
 
-        // Register all human players and debit stake
         for (MatchmakingTicket ticket : humanTickets) {
             routingRegistry.registerPlayerTable(ticket.getPlayerId(), tableId);
             ticket.setMatchedTableId(tableId);
             ticket.setMatchedServerId(routingRegistry.getServerInstanceId());
             ticket.setStatus(MatchmakingTicket.Status.MATCHED);
+            store.saveTicket(ticket);
 
             if (walletService != null && ticket.getStakeTier() > 0) {
                 try {
@@ -236,17 +234,13 @@ public class MatchmakingService {
                 }
             }
 
-            log.info("[Matchmaking] Matched human player {} into table {}", ticket.getPlayerId(), tableId);
+            log.info("[Matchmaking] Matched human player {} into table {} on {}",
+                    ticket.getPlayerId(), tableId, routingRegistry.getServerInstanceId());
         }
 
-        // If AI fill requested, add AI bots to table
         if (fillWithAi) {
             int neededBots;
             if (first.getMaxPlayers() == 6) {
-                // 6-player table dynamic rule:
-                // 1 real player  -> 2 bots (3 total players)
-                // 2 real players -> 1 bot  (3 total players)
-                // 3+ real players -> 0 bots (play with real players only)
                 if (humanTickets.size() == 1) {
                     neededBots = 2;
                 } else if (humanTickets.size() == 2) {
@@ -255,7 +249,6 @@ public class MatchmakingService {
                     neededBots = 0;
                 }
             } else {
-                // 2-player table: 1 real -> 1 bot, 2 real -> 0 bots
                 neededBots = Math.max(0, first.getMaxPlayers() - humanTickets.size());
             }
 
@@ -270,7 +263,7 @@ public class MatchmakingService {
                     String botId = "BOT_" + UUID.randomUUID().toString().substring(0, 4);
                     String botName = IndianBotNames.nextUnique(usedNames);
                     int seatIndex = humanTickets.size() + (i - 1);
-                    
+
                     actor.registerBot(botId, botName, BotDifficulty.MEDIUM);
                     actor.processCommand(new JoinCommand(
                             UUID.randomUUID().toString(),
@@ -296,9 +289,7 @@ public class MatchmakingService {
     }
 
     public int getQueuedPlayerCount() {
-        return (int) tickets.values().stream()
-                .filter(t -> t.getStatus() == MatchmakingTicket.Status.QUEUED)
-                .count();
+        return store.countQueued();
     }
 
     @PreDestroy

@@ -11,8 +11,7 @@ import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Phase 17: Real-time Player Presence & Session Heartbeat Tracker.
- * Local map is authoritative for this JVM so matchmaking never blocks on a dead Redis.
+ * Phase 17: Player presence. Prefer Redis when enabled so all nodes share online state.
  */
 @Service
 public class PlayerPresenceService {
@@ -35,7 +34,8 @@ public class PlayerPresenceService {
         localPresenceMap.put(playerId, now);
         if (redisTemplate != null) {
             try {
-                redisTemplate.opsForValue().set(PRESENCE_PREFIX + playerId, String.valueOf(now.toEpochMilli()), PRESENCE_TTL);
+                redisTemplate.opsForValue().set(
+                        PRESENCE_PREFIX + playerId, String.valueOf(now.toEpochMilli()), PRESENCE_TTL);
             } catch (Exception e) {
                 log.warn("[Presence] Redis presence update failed for {}: {}", playerId, e.getMessage());
             }
@@ -43,17 +43,11 @@ public class PlayerPresenceService {
     }
 
     public boolean isPlayerOnline(String playerId) {
-        // Prefer in-memory presence so a down/slow Redis cannot stall matchmaking.
-        Instant lastSeen = localPresenceMap.get(playerId);
-        if (lastSeen != null && Duration.between(lastSeen, Instant.now()).compareTo(PRESENCE_TTL) <= 0) {
-            return true;
-        }
-
+        // Cross-node: Redis first when coordination is enabled
         if (redisTemplate != null) {
             try {
                 Boolean hasKey = redisTemplate.hasKey(PRESENCE_PREFIX + playerId);
                 if (Boolean.TRUE.equals(hasKey)) {
-                    localPresenceMap.put(playerId, Instant.now());
                     return true;
                 }
             } catch (Exception e) {
@@ -61,7 +55,9 @@ public class PlayerPresenceService {
             }
         }
 
-        return false;
+        Instant lastSeen = localPresenceMap.get(playerId);
+        if (lastSeen == null) return false;
+        return Duration.between(lastSeen, Instant.now()).compareTo(PRESENCE_TTL) <= 0;
     }
 
     public void removePresence(String playerId) {

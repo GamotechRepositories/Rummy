@@ -297,6 +297,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
             soundEngine.play('deal');
             setSession(ticketData.matchedTableId, playerId, name);
             setHasJoinedTable(true);
+            // matchedServerId is set by the owning game node (multi-node / Redis routing)
+            if (ticketData.matchedServerId) {
+              try {
+                sessionStorage.setItem('rummy_matched_server', ticketData.matchedServerId);
+              } catch {
+                // ignore
+              }
+            }
             if (connectionStatus === 'CONNECTED') {
               socketClient.joinTable(0);
             } else {

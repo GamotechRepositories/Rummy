@@ -136,6 +136,25 @@ public class TableRoutingRegistry {
     }
 
     public boolean isTableHostedLocally(String tableId) {
-        return localTableServerMap.containsKey(tableId);
+        return isOwnedByThisServer(tableId);
+    }
+
+    /**
+     * True if this JVM owns the table (local map or Redis owner == this instance).
+     */
+    public boolean isOwnedByThisServer(String tableId) {
+        if (localTableServerMap.containsKey(tableId)) {
+            return true;
+        }
+        Optional<String> owner = getServerForTable(tableId);
+        return owner.isPresent() && serverInstanceId.equals(owner.get());
+    }
+
+    /**
+     * True when Redis (or local) says another instance owns this table.
+     */
+    public boolean isOwnedByRemoteServer(String tableId) {
+        Optional<String> owner = getServerForTable(tableId);
+        return owner.isPresent() && !serverInstanceId.equals(owner.get());
     }
 }

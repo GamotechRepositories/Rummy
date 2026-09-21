@@ -1,0 +1,16 @@
+# Activate with: SPRING_PROFILES_ACTIVE=prod
+# Requires REDIS_URL (or REDIS_HOST) for shared matchmaking + table routing.
+
+rummy:
+  redis:
+    enabled: true
+
+management:
+  health:
+    redis:
+      enabled: true
+
+matchmaking:
+  # Slightly longer window for real players to find each other in production
+  ai-fallback-timeout-ms: ${MATCHMAKING_AI_FALLBACK_MS:30000}
+  max-queue-timeout-ms: ${MATCHMAKING_MAX_QUEUE_MS:90000}

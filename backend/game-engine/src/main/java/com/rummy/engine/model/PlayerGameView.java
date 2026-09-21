@@ -131,21 +131,22 @@ public record PlayerGameView(
         Objects.requireNonNull(state, "state must not be null");
         Objects.requireNonNull(viewerPlayerId, "viewerPlayerId must not be null");
 
-        PlayerState viewer = state.requirePlayer(viewerPlayerId);
-        List<CardInstance> viewerHand = viewer.getHandSnapshot();
-
         boolean isCompleted = state.getStatus() == GameStatus.COMPLETED;
+
+        PlayerState viewer = state.requirePlayer(viewerPlayerId);
+        List<CardInstance> viewerHand = isCompleted ? viewer.getShowdownHand() : viewer.getHandSnapshot();
 
         List<OpponentView> opponents = new ArrayList<>();
         for (PlayerState player : state.getPlayers()) {
             if (!player.getPlayerId().equals(viewerPlayerId)) {
                 List<CardInstance> opponentHand = isCompleted ? player.getShowdownHand() : List.of();
+                int opponentCardCount = isCompleted ? opponentHand.size() : player.getHandSize();
                 opponents.add(new OpponentView(
                         player.getPlayerId(),
                         player.getDisplayName(),
                         player.getSeatIndex(),
                         player.getStatus(),
-                        player.getHandSize(),
+                        opponentCardCount,
                         player.getScore(),
                         player.isBot(),
                         opponentHand

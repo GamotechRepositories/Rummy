@@ -26,6 +26,20 @@ public class MatchmakingTicket {
 
     public MatchmakingTicket(String ticketId, String playerId, String playerName,
                              String rulesetId, int stakeTier, int maxPlayers, boolean allowAiFallback) {
+        this(ticketId, playerId, playerName, rulesetId, stakeTier, maxPlayers, allowAiFallback, Instant.now());
+    }
+
+    /** Restore a ticket from durable store (Redis) without resetting createdAt. */
+    public static MatchmakingTicket rehydrate(String ticketId, String playerId, String playerName,
+                                              String rulesetId, int stakeTier, int maxPlayers,
+                                              boolean allowAiFallback, Instant createdAt) {
+        return new MatchmakingTicket(ticketId, playerId, playerName, rulesetId, stakeTier, maxPlayers,
+                allowAiFallback, createdAt != null ? createdAt : Instant.now());
+    }
+
+    private MatchmakingTicket(String ticketId, String playerId, String playerName,
+                              String rulesetId, int stakeTier, int maxPlayers, boolean allowAiFallback,
+                              Instant createdAt) {
         this.ticketId = ticketId;
         this.playerId = playerId;
         this.playerName = playerName;
@@ -33,7 +47,7 @@ public class MatchmakingTicket {
         this.stakeTier = stakeTier;
         this.maxPlayers = maxPlayers;
         this.allowAiFallback = allowAiFallback;
-        this.createdAt = Instant.now();
+        this.createdAt = createdAt;
         this.status = Status.QUEUED;
     }
 

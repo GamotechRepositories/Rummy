@@ -30,7 +30,18 @@ Render Dashboard → **New** → **Web Service** → connect your GitHub repo.
 SPRING_DATA_MONGODB_URI=mongodb+srv://USER:PASS@CLUSTER/rummy_db?retryWrites=true&w=majority
 SERVER_PORT=8081
 JAVA_OPTS=-XX:MaxRAMPercentage=70.0 -XX:+UseG1GC
+
+# Single instance (default): leave Redis off
+RUMMY_REDIS_ENABLED=false
+
+# Multi-instance / production scale — shared matchmaking + table routing (master Phase 17/18):
+# SPRING_PROFILES_ACTIVE=prod
+# RUMMY_REDIS_ENABLED=true
+# REDIS_URL=redis://default:PASSWORD@YOUR_REDIS_HOST:6379
+# SERVER_INSTANCE_ID=game-node-1
 ```
+
+> **Scale note:** Keep **1 backend instance** until Redis is enabled. With Redis + `prod` profile, multiple game nodes share the matchmaking queue and `table → server` ownership. WebSocket joins to the wrong node return `TABLE_NOT_ON_THIS_SERVER` (use sticky sessions or one public WS URL + sticky LB).
 
 ### Health check
 
@@ -102,6 +113,7 @@ Frontend URL example:
 - Do **not** put Mongo password in Git — only Render env vars.
 - If matchmaking/API fails in browser: check DevTools → Network (CORS / wrong `VITE_API_BASE_URL`).
 - If WS fails: confirm `VITE_WS_URL` uses `wss://.../ws/game`.
+- **Redis (optional):** `RUMMY_REDIS_ENABLED=true` + `REDIS_URL` enables shared matchmaking queues and table→server routing (see master README Phase 17–19). Without Redis, use a **single** game-service instance.
 
 ---
 

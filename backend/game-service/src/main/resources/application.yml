@@ -1,5 +1,6 @@
 server:
-  port: 8081
+  port: ${PORT:8081}
+  instance-id: ${SERVER_INSTANCE_ID:}
 
 spring:
   application:
@@ -7,6 +8,7 @@ spring:
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+      # Redis is wired manually via RedisConfig when rummy.redis.enabled=true
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
   main:
@@ -15,6 +17,12 @@ spring:
     mongodb:
       uri: ${SPRING_DATA_MONGODB_URI:${MONGODB_URI:mongodb://localhost:27017/rummy_db}}
       auto-index-creation: true
+    redis:
+      # Used only when rummy.redis.enabled=true
+      url: ${REDIS_URL:}
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
 
 management:
   endpoints:
@@ -37,6 +45,9 @@ management:
 rummy:
   kafka:
     enabled: false
+  redis:
+    # Set true in production multi-node (REDIS_URL required)
+    enabled: ${RUMMY_REDIS_ENABLED:false}
   websocket:
     endpoint: /ws/game
     allowed-origins: "*"
@@ -45,5 +56,5 @@ rummy:
     auto-drop-missed-turns: 3
 
 matchmaking:
-  ai-fallback-timeout-ms: 15000
-  max-queue-timeout-ms: 45000
+  ai-fallback-timeout-ms: ${MATCHMAKING_AI_FALLBACK_MS:15000}
+  max-queue-timeout-ms: ${MATCHMAKING_MAX_QUEUE_MS:45000}

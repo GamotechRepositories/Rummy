@@ -20,6 +20,7 @@ interface GameStoreState {
     maxPlayers: number;
   } | null;
   autoMatchmakePending: boolean;
+  lastKnownHand: CardInstance[];
 
   // Actions
   setConnectionStatus: (status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING') => void;
@@ -173,6 +174,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   lastEventMessage: null,
   lastGameConfig: null,
   autoMatchmakePending: false,
+  lastKnownHand: [],
 
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 
@@ -196,10 +198,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       isDeclareModalOpen: false,
       errorMessage: null,
       lastEventMessage: null,
+      lastKnownHand: [],
     }),
 
   updateGameState: (view) => {
-    const { groups, selectedCardIds } = get();
+    const { groups, selectedCardIds, lastKnownHand } = get();
     const hand = normalizeHand(view.hand || []);
     const cutJoker = view.cutJoker ? normalizeCard(view.cutJoker) : null;
     const topDiscard = view.topDiscard ? normalizeCard(view.topDiscard) : null;
@@ -212,9 +215,20 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ...wg,
       cards: normalizeHand(wg.cards || []),
     }));
+
+    // Cache the most recent valid hand (>= 10 cards) so drops/showdown never lose cards
+    const currentLastKnown = lastKnownHand || [];
+    const nextLastKnown = hand.length >= 10 ? hand : currentLastKnown;
+
+    // If viewer hand is cleared (e.g. dropped), recover cards at showdown
+    const effectiveHand =
+      hand.length === 0 && view.gameStatus === 'COMPLETED' && nextLastKnown.length > 0
+        ? nextLastKnown
+        : hand;
+
     const normalizedView: PlayerGameView = {
       ...view,
-      hand,
+      hand: effectiveHand,
       opponents,
       winningGroups,
       cutJoker,
@@ -222,16 +236,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       discardHistory,
       turnPhase: view.turnPhase,
     };
+
     const updatedGroups =
-      hand.length === 0 && view.gameStatus === 'COMPLETED' && groups.length > 0
-        ? groups
+      hand.length === 0
+        ? (groups.length > 0 ? groups : organizeHandIntoGroups([], nextLastKnown, cutJoker))
         : organizeHandIntoGroups(groups, hand, cutJoker);
-    const handIds = new Set(hand.map((c) => c.instanceId));
+
+    const handIds = new Set(effectiveHand.map((c) => c.instanceId));
     const nextSelected = selectedCardIds.filter((id) => handIds.has(id));
     set({
       gameState: normalizedView,
       groups: updatedGroups,
       selectedCardIds: nextSelected,
+      lastKnownHand: nextLastKnown,
     });
   },
 
