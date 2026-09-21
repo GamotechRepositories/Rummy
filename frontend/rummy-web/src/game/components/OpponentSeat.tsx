@@ -194,7 +194,33 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
     </div>
   );
 
-  const cardFanElement = (
+  const hasRevealedCards = gameStatus === 'COMPLETED' && player.hand && player.hand.length > 0;
+
+  const cardFanElement = hasRevealedCards ? (
+    <div
+      className="opponent-card-fan"
+      title={`${player.displayName}'s cards revealed for showdown`}
+      style={{
+        margin: position === 'left' || position === 'right' ? '0' : '0 2px',
+      }}
+    >
+      <div
+        style={{
+          background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.3), rgba(15, 23, 42, 0.85))',
+          border: '1.5px solid #fbbf24',
+          borderRadius: '8px',
+          padding: '4px 6px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          boxShadow: '0 0 10px rgba(251, 191, 36, 0.4)',
+        }}
+      >
+        <span style={{ fontSize: '11px' }}>🎴</span>
+        <span style={{ fontSize: '9px', fontWeight: 900, color: '#fef08a' }}>SHOWDOWN</span>
+      </div>
+    </div>
+  ) : (
     <div
       className="opponent-card-fan"
       title={`${player.cardCount} cards in hand`}

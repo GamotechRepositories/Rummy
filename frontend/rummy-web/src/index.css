@@ -600,21 +600,8 @@ h1, h2, h3, h4, .font-display {
   box-shadow: 0 0 24px rgba(251, 191, 36, 0.6);
 }
 
-/* During HTML5 drag: hit-test trays only — cards don't steal dragOver / cause leave thrash */
-.player-hand.is-dnd-active .hand-card-slot,
-.player-hand.is-dnd-active .rummy-card {
+.hand-new-group-zone > * {
   pointer-events: none;
-}
-
-.player-hand.is-dnd-active .rummy-card:hover {
-  transform: none;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.15);
-  z-index: auto;
-}
-
-.player-hand.is-dnd-active .hand-group,
-.player-hand.is-dnd-active .hand-new-group-zone {
-  transition: none;
 }
 
 .coach-banner {

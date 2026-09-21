@@ -74,6 +74,7 @@ export interface OpponentView {
   cardCount: number;
   score: number;
   isBot: boolean;
+  hand?: CardInstance[];
 }
 
 export interface PlayerGameView {
@@ -95,6 +96,7 @@ export interface PlayerGameView {
   discardHistory?: CardInstance[];
   viewerScore?: number;
   viewerStatus?: PlayerStatus;
+  winningGroups?: { cards: CardInstance[] }[];
 }
 
 export type GroupValidationType = 'PURE_SEQUENCE' | 'IMPURE_SEQUENCE' | 'SET' | 'INVALID';

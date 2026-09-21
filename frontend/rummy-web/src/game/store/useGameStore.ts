@@ -204,9 +204,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const cutJoker = view.cutJoker ? normalizeCard(view.cutJoker) : null;
     const topDiscard = view.topDiscard ? normalizeCard(view.topDiscard) : null;
     const discardHistory = (view.discardHistory || []).map(normalizeCard);
+    const opponents = (view.opponents || []).map((opp) => ({
+      ...opp,
+      hand: normalizeHand(opp.hand || []),
+    }));
+    const winningGroups = (view.winningGroups || []).map((wg) => ({
+      ...wg,
+      cards: normalizeHand(wg.cards || []),
+    }));
     const normalizedView: PlayerGameView = {
       ...view,
       hand,
+      opponents,
+      winningGroups,
       cutJoker,
       topDiscard,
       discardHistory,

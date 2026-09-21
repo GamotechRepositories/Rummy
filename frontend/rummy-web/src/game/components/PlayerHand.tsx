@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { CardView } from './CardView';
 import type { GroupValidationType } from '../types/game';
@@ -18,6 +18,9 @@ const GROUP_LABELS: Record<GroupValidationType, { title: string; color: string; 
 
 const DND_MIME = 'application/x-rummy-cards';
 
+// In-memory fallback if browser dataTransfer payload is restricted
+let activeDragCardIds: string[] = [];
+
 export const PlayerHand: React.FC = () => {
   const {
     groups,
@@ -31,9 +34,7 @@ export const PlayerHand: React.FC = () => {
     clearSelection,
   } = useGameStore();
 
-  const handRef = useRef<HTMLDivElement>(null);
-  const dragIdsRef = useRef<string[]>([]);
-  const dropTargetRef = useRef<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
   const isMyTurn = gameState?.isMyTurn ?? false;
   const myAvatar = getAvatarForPlayer(displayName);
@@ -41,28 +42,6 @@ export const PlayerHand: React.FC = () => {
   const hasPure = groups.some((g) => g.groupType === 'PURE_SEQUENCE');
   const totalCards = groups.reduce((n, g) => n + g.cards.length, 0);
   const liveScore = calculateHandPenalty(groups, wildJoker);
-
-  const clearDropHighlight = useCallback(() => {
-    const root = handRef.current;
-    if (!root) return;
-    root.querySelectorAll('.drop-over').forEach((el) => el.classList.remove('drop-over'));
-    dropTargetRef.current = null;
-  }, []);
-
-  const setDropHighlight = useCallback((targetId: string | null) => {
-    if (dropTargetRef.current === targetId) return;
-    clearDropHighlight();
-    if (!targetId || !handRef.current) return;
-    const el = handRef.current.querySelector(`[data-drop-id="${targetId}"]`);
-    if (el) el.classList.add('drop-over');
-    dropTargetRef.current = targetId;
-  }, [clearDropHighlight]);
-
-  const endDragSession = useCallback(() => {
-    dragIdsRef.current = [];
-    handRef.current?.classList.remove('is-dnd-active');
-    clearDropHighlight();
-  }, [clearDropHighlight]);
 
   const resolveDragIds = (cardId: string): string[] => {
     const selected = useGameStore.getState().selectedCardIds;
@@ -74,51 +53,56 @@ export const PlayerHand: React.FC = () => {
 
   const handleCardDragStart = (e: React.DragEvent, cardId: string) => {
     const ids = resolveDragIds(cardId);
-    dragIdsRef.current = ids;
+    activeDragCardIds = ids;
     const payload = JSON.stringify(ids);
     try {
       e.dataTransfer.setData(DND_MIME, payload);
       e.dataTransfer.setData('text/plain', payload);
     } catch {
-      // Some browsers restrict custom MIME mid-drag; ref is the fallback.
+      // Ignore browsers/WebViews with restricted custom MIME
     }
     e.dataTransfer.effectAllowed = 'move';
-    handRef.current?.classList.add('is-dnd-active');
     (e.currentTarget as HTMLElement).classList.add('dragging');
   };
 
   const handleCardDragEnd = (e: React.DragEvent) => {
     (e.currentTarget as HTMLElement).classList.remove('dragging');
-    endDragSession();
+    setDropTargetId(null);
+    setTimeout(() => {
+      activeDragCardIds = [];
+    }, 250);
   };
 
   const parseDragIds = (e: React.DragEvent): string[] => {
-    if (dragIdsRef.current.length) return dragIdsRef.current;
     try {
       const raw = e.dataTransfer.getData(DND_MIME) || e.dataTransfer.getData('text/plain');
-      if (!raw) return [];
-      const parsed = JSON.parse(raw) as unknown;
-      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+      if (raw) {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) {
+          const res = parsed.filter((x): x is string => typeof x === 'string');
+          if (res.length > 0) return res;
+        }
+      }
     } catch {
-      return [];
+      // fallback to activeDragCardIds
     }
+    return activeDragCardIds.length > 0 ? [...activeDragCardIds] : [];
   };
 
   const allowDrop = (e: React.DragEvent, targetId: string) => {
     e.preventDefault();
-    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
-    setDropHighlight(targetId);
+    if (dropTargetId !== targetId) {
+      setDropTargetId(targetId);
+    }
   };
 
   const handleDragLeave = (e: React.DragEvent, targetId: string) => {
     const related = e.relatedTarget as Node | null;
     const current = e.currentTarget as HTMLElement;
-    // Ignore leave events that bubble from children into the same drop zone.
     if (related && current.contains(related)) return;
-    if (dropTargetRef.current === targetId) {
-      current.classList.remove('drop-over');
-      dropTargetRef.current = null;
+    if (dropTargetId === targetId) {
+      setDropTargetId(null);
     }
   };
 
@@ -126,14 +110,15 @@ export const PlayerHand: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
     const ids = parseDragIds(e);
-    endDragSession();
+    setDropTargetId(null);
+    activeDragCardIds = [];
+
     if (!ids.length) return;
 
-    const currentGroups = useGameStore.getState().groups;
     if (targetGroupId !== 'NEW') {
+      const currentGroups = useGameStore.getState().groups;
       const target = currentGroups.find((g) => g.id === targetGroupId);
-      // Already entirely in this tray — no-op (avoids useless re-render / freeze feel)
-      if (target && ids.every((id) => target.cards.some((c) => c.instanceId === id))) {
+      if (target && ids.every((id) => target.cards.some((c) => c.instanceId === id)) && ids.length === target.cards.length) {
         return;
       }
     }
@@ -143,7 +128,7 @@ export const PlayerHand: React.FC = () => {
   };
 
   return (
-    <div className="player-hand" ref={handRef}>
+    <div className="player-hand">
       <div className="player-hand-toolbar">
         <div className="player-hand-actions">
           <button
@@ -248,12 +233,13 @@ export const PlayerHand: React.FC = () => {
 
         {groups.map((group) => {
           const label = GROUP_LABELS[group.groupType] ?? GROUP_LABELS.INVALID;
+          const isOver = dropTargetId === group.id;
           return (
             <div
               key={group.id}
-              data-drop-id={group.id}
-              className={`hand-group hand-group--${group.groupType.toLowerCase()}`}
+              className={`hand-group${isOver ? ' drop-over' : ''} hand-group--${group.groupType.toLowerCase()}`}
               onDragOver={(e) => allowDrop(e, group.id)}
+              onDragEnter={(e) => allowDrop(e, group.id)}
               onDragLeave={(e) => handleDragLeave(e, group.id)}
               onDrop={(e) => handleDropOnGroup(e, group.id)}
             >
@@ -323,8 +309,7 @@ export const PlayerHand: React.FC = () => {
         {totalCards > 0 && (
           <div
             id="btn-hand-new-group"
-            data-drop-id="NEW"
-            className={`hand-new-group-zone${selectedCardIds.length > 0 ? ' has-selection' : ''}`}
+            className={`hand-new-group-zone${dropTargetId === 'NEW' ? ' drop-over' : ''}${selectedCardIds.length > 0 ? ' has-selection' : ''}`}
             onClick={() => {
               if (selectedCardIds.length > 0) {
                 soundEngine.play('group');
@@ -332,6 +317,7 @@ export const PlayerHand: React.FC = () => {
               }
             }}
             onDragOver={(e) => allowDrop(e, 'NEW')}
+            onDragEnter={(e) => allowDrop(e, 'NEW')}
             onDragLeave={(e) => handleDragLeave(e, 'NEW')}
             onDrop={(e) => handleDropOnGroup(e, 'NEW')}
             role="button"

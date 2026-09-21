@@ -5,6 +5,7 @@ import com.rummy.engine.EngineResult;
 import com.rummy.engine.GameEngine;
 import com.rummy.engine.bot.BotDifficulty;
 import com.rummy.engine.bot.BotPlayerAgent;
+import com.rummy.engine.bot.HandEvaluator;
 import com.rummy.engine.bot.IndianBotNames;
 import com.rummy.engine.command.*;
 import com.rummy.engine.event.GameEvent;
@@ -44,6 +45,16 @@ public final class TableActor {
     private final Map<String, BotPlayerAgent> botAgents = new ConcurrentHashMap<>();
     private ScheduledFuture<?> turnTimeoutFuture;
     private ScheduledFuture<?> autoStartFallbackFuture;
+    private ScheduledFuture<?> botTurnFuture;
+
+    /**
+     * After the last human drops, bots keep playing for a few rounds then drop one-by-one
+     * so a spectating human still sees a natural table instead of an instant end.
+     */
+    private boolean botsOnlyWindDown;
+    private int turnsSinceLastBotDrop;
+    private int turnsUntilNextBotDrop;
+    private int lastWindDownTurnCounted = -1;
 
     public TableActor(String tableId,
                       GameState initialState,
@@ -244,22 +255,160 @@ public final class TableActor {
 
         String activePlayerId = turn.getCurrentPlayerId();
         BotPlayerAgent bot = botAgents.get(activePlayerId);
+        if (bot == null) {
+            return;
+        }
 
-        if (bot != null) {
-            // Schedule bot move with a realistic 100ms thinking delay
-            scheduler.schedule(() -> {
-                synchronized (this) {
-                    if (state.getStatus() == GameStatus.IN_PROGRESS &&
-                            state.getTurnState() != null &&
-                            state.getTurnState().getCurrentPlayerId().equals(activePlayerId)) {
+        refreshBotsOnlyWindDown();
 
-                        PlayerGameView botView = PlayerGameView.from(state, activePlayerId);
-                        GameCommand botAction = bot.decideAction(botView, rules);
-                        processCommand(botAction, "BOT_ACTION_" + UUID.randomUUID());
+        // Random 3–6s think time so the seat feels like a human, not an instant AI.
+        long thinkSeconds = ThreadLocalRandom.current().nextInt(3, 7);
+        log.info("[TableActor:{}] Bot {} thinking for {}s before acting", tableId, activePlayerId, thinkSeconds);
+
+        if (botTurnFuture != null && !botTurnFuture.isDone()) {
+            botTurnFuture.cancel(false);
+        }
+
+        botTurnFuture = scheduler.schedule(() -> {
+            synchronized (this) {
+                if (state.getStatus() != GameStatus.IN_PROGRESS
+                        || state.getTurnState() == null
+                        || !state.getTurnState().getCurrentPlayerId().equals(activePlayerId)) {
+                    return;
+                }
+
+                refreshBotsOnlyWindDown();
+
+                TurnState currentTurn = state.getTurnState();
+                if (botsOnlyWindDown
+                        && currentTurn.getPhase() == TurnPhase.AWAITING_DRAW
+                        && countActiveBots() > 1) {
+
+                    if (currentTurn.getTurnNumber() != lastWindDownTurnCounted) {
+                        lastWindDownTurnCounted = currentTurn.getTurnNumber();
+                        turnsSinceLastBotDrop++;
+                    }
+
+                    if (turnsSinceLastBotDrop >= turnsUntilNextBotDrop) {
+                        String weakestBotId = findWeakestActiveBotId();
+                        // Only the weakest bot drops — wait until their turn so it looks natural.
+                        if (weakestBotId != null && weakestBotId.equals(activePlayerId)) {
+                            log.info(
+                                    "[TableActor:{}] Bots-only wind-down: weakest bot {} drops after {} turns (threshold {})",
+                                    tableId, activePlayerId, turnsSinceLastBotDrop, turnsUntilNextBotDrop
+                            );
+                            processCommand(new DropCommand(
+                                    UUID.randomUUID().toString(),
+                                    state.getGameId(),
+                                    activePlayerId,
+                                    Instant.now()
+                            ), "BOT_WINDDOWN_DROP");
+
+                            if (state.getStatus() == GameStatus.IN_PROGRESS && countActiveBots() > 1) {
+                                armNextBotDropThreshold();
+                            }
+                            return;
+                        }
+                        log.debug(
+                                "[TableActor:{}] Wind-down threshold reached; waiting for weakest bot {} (current {})",
+                                tableId, weakestBotId, activePlayerId
+                        );
                     }
                 }
-            }, 100, TimeUnit.MILLISECONDS);
+
+                PlayerGameView botView = PlayerGameView.from(state, activePlayerId);
+                GameCommand botAction = bot.decideAction(botView, rules);
+                processCommand(botAction, "BOT_ACTION_" + UUID.randomUUID());
+            }
+        }, thinkSeconds, TimeUnit.SECONDS);
+    }
+
+    private void refreshBotsOnlyWindDown() {
+        if (state.getStatus() != GameStatus.IN_PROGRESS) {
+            botsOnlyWindDown = false;
+            return;
         }
+
+        long activeHumans = countActiveHumans();
+        long activeBots = countActiveBots();
+
+        if (activeHumans > 0) {
+            if (botsOnlyWindDown) {
+                log.info("[TableActor:{}] Exiting bots-only wind-down — human still active", tableId);
+            }
+            botsOnlyWindDown = false;
+            return;
+        }
+
+        // Need at least 2 bots to stage a natural wind-down; 1 bot already ends via engine drop rules.
+        if (activeBots < 2) {
+            botsOnlyWindDown = false;
+            return;
+        }
+
+        if (!botsOnlyWindDown) {
+            botsOnlyWindDown = true;
+            armNextBotDropThreshold();
+            log.info(
+                    "[TableActor:{}] Entered bots-only wind-down ({} bots). Next drop after ~{} full rounds ({} turns)",
+                    tableId,
+                    activeBots,
+                    Math.max(1, turnsUntilNextBotDrop / (int) activeBots),
+                    turnsUntilNextBotDrop
+            );
+        }
+    }
+
+    private void armNextBotDropThreshold() {
+        int rounds = ThreadLocalRandom.current().nextInt(4, 7); // 4–6 full rounds between bot drops
+        int activeBots = (int) Math.max(1, countActiveBots());
+        turnsSinceLastBotDrop = 0;
+        lastWindDownTurnCounted = -1;
+        turnsUntilNextBotDrop = rounds * activeBots;
+        log.info(
+                "[TableActor:{}] Next bot drop armed: {} rounds × {} bots = {} turns",
+                tableId, rounds, activeBots, turnsUntilNextBotDrop
+        );
+    }
+
+    private long countActiveHumans() {
+        return state.getPlayers().stream()
+                .filter(p -> !p.isBot() && p.getStatus() == PlayerStatus.ACTIVE)
+                .count();
+    }
+
+    private long countActiveBots() {
+        return state.getPlayers().stream()
+                .filter(p -> p.isBot() && p.getStatus() == PlayerStatus.ACTIVE)
+                .count();
+    }
+
+    /**
+     * Picks the active bot most likely to lose (highest deadwood). Ties break by playerId for stability.
+     */
+    private String findWeakestActiveBotId() {
+        Card cut = state.getCutJoker() != null ? state.getCutJoker().getCard() : null;
+        String weakestId = null;
+        int worstDeadwood = Integer.MIN_VALUE;
+
+        for (PlayerState player : state.getPlayers()) {
+            if (!player.isBot() || player.getStatus() != PlayerStatus.ACTIVE) {
+                continue;
+            }
+            HandEvaluator.EvaluationResult eval = HandEvaluator.evaluateDeadwood(player.getHandSnapshot(), cut);
+            int deadwood = eval.deadwoodPoints();
+            if (deadwood > worstDeadwood
+                    || (deadwood == worstDeadwood && (weakestId == null || player.getPlayerId().compareTo(weakestId) < 0))) {
+                worstDeadwood = deadwood;
+                weakestId = player.getPlayerId();
+            }
+        }
+
+        if (weakestId != null) {
+            log.info("[TableActor:{}] Weakest active bot for wind-down drop: {} (deadwood={})",
+                    tableId, weakestId, worstDeadwood);
+        }
+        return weakestId;
     }
 
     public synchronized GameState getState() {
@@ -372,7 +521,11 @@ public final class TableActor {
         if (turnTimeoutFuture != null) {
             turnTimeoutFuture.cancel(true);
         }
+        if (botTurnFuture != null) {
+            botTurnFuture.cancel(true);
+        }
         cancelAutoBotFallback();
+        botsOnlyWindDown = false;
         sessions.clear();
         botAgents.clear();
     }

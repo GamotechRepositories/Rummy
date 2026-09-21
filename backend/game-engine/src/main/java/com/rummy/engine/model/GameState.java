@@ -3,6 +3,7 @@ package com.rummy.engine.model;
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.*;
+import com.rummy.engine.rules.CardGroup;
 
 /**
  * Server-authoritative in-memory state of a Rummy table.
@@ -25,6 +26,7 @@ public final class GameState implements Serializable {
     private long sequence;
     private GameStatus status;
     private String winnerPlayerId;
+    private List<CardGroup> winningGroups;
     private final Instant createdAt;
     private Instant finishedAt;
 
@@ -47,6 +49,7 @@ public final class GameState implements Serializable {
         this.sequence = 0L;
         this.status = GameStatus.WAITING_FOR_PLAYERS;
         this.winnerPlayerId = null;
+        this.winningGroups = null;
         this.createdAt = Instant.now();
         this.finishedAt = null;
     }
@@ -96,6 +99,7 @@ public final class GameState implements Serializable {
         this.finishCard = null;
         this.turnState = null;
         this.winnerPlayerId = null;
+        this.winningGroups = null;
         this.finishedAt = null;
         this.status = GameStatus.WAITING_FOR_PLAYERS;
         for (PlayerState player : players) {
@@ -225,6 +229,14 @@ public final class GameState implements Serializable {
 
     public void setWinnerPlayerId(String winnerPlayerId) {
         this.winnerPlayerId = winnerPlayerId;
+    }
+
+    public List<CardGroup> getWinningGroups() {
+        return winningGroups != null ? Collections.unmodifiableList(winningGroups) : null;
+    }
+
+    public void setWinningGroups(List<CardGroup> winningGroups) {
+        this.winningGroups = winningGroups != null ? new ArrayList<>(winningGroups) : null;
     }
 
     public Instant getCreatedAt() {

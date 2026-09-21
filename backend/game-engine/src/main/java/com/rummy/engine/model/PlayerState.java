@@ -14,6 +14,7 @@ public final class PlayerState implements Serializable {
     private final int seatIndex;
     private final boolean isBot;
     private final List<CardInstance> hand;
+    private List<CardInstance> lastHand;
 
     private PlayerStatus status;
     private int score;
@@ -31,6 +32,7 @@ public final class PlayerState implements Serializable {
         this.seatIndex = seatIndex;
         this.isBot = isBot;
         this.hand = new ArrayList<>();
+        this.lastHand = new ArrayList<>();
         this.status = PlayerStatus.WAITING;
         this.score = 0;
         this.cumulativeScore = 0;
@@ -117,6 +119,7 @@ public final class PlayerState implements Serializable {
         this.hasDropped = true;
         this.score = penaltyPoints;
         this.cumulativeScore += penaltyPoints;
+        this.lastHand = new ArrayList<>(this.hand);
         this.hand.clear();
         this.lastActionAt = Instant.now();
     }
@@ -133,6 +136,7 @@ public final class PlayerState implements Serializable {
      */
     public void prepareForNewDeal() {
         this.hand.clear();
+        this.lastHand.clear();
         this.status = PlayerStatus.READY;
         this.score = 0;
         this.hasDeclared = false;
@@ -140,6 +144,18 @@ public final class PlayerState implements Serializable {
         this.consecutiveMissedTurns = 0;
         this.turnsCompleted = 0;
         this.lastActionAt = Instant.now();
+    }
+
+    /**
+     * Retrieves the player hand for post-game showdown / review.
+     * For active players, returns their current hand; for dropped players,
+     * returns the hand held at the moment of dropping.
+     */
+    public List<CardInstance> getShowdownHand() {
+        if (!hand.isEmpty()) {
+            return Collections.unmodifiableList(hand);
+        }
+        return Collections.unmodifiableList(lastHand);
     }
 
     public void markEliminated() {

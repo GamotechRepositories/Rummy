@@ -285,6 +285,7 @@ public final class GameEngine {
             player.setScore(0);
             state.setStatus(GameStatus.COMPLETED);
             state.setWinnerPlayerId(cmd.playerId());
+            state.setWinningGroups(cmd.groups());
 
             // Score opponents
             Map<String, Integer> scoreMap = new HashMap<>();
@@ -460,6 +461,9 @@ public final class GameEngine {
         state.setStatus(GameStatus.COMPLETED);
         state.setWinnerPlayerId(winner.getPlayerId());
         winner.setScore(0);
+        if (!winner.getHandSnapshot().isEmpty()) {
+            state.setWinningGroups(List.of(com.rummy.engine.rules.CardGroup.of(winner.getHandSnapshot())));
+        }
 
         Map<String, Integer> scoreMap = new HashMap<>();
         for (PlayerState p : state.getPlayers()) {
