@@ -6,14 +6,12 @@ import {
   Award,
   Flag,
   ArrowDownToLine,
-  Loader2,
-  Hand,
   Layers,
   ArrowUpDown,
   XCircle,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
-import { isDiscardPhase, isDrawPhase, normalizeTurnPhase } from '../utils/turnPhase';
+import { isDiscardPhase, isDrawPhase } from '../utils/turnPhase';
 import { calculateHandPenalty } from '../rules/clientValidator';
 import { TurnTimerRing } from './TurnTimerRing';
 import { getAvatarForPlayer } from '../utils/avatarUtils';
@@ -23,7 +21,6 @@ export const ActionControls: React.FC = () => {
     gameState,
     selectedCardIds,
     setDeclareModalOpen,
-    playerId,
     clearSelection,
     displayName,
     groups,
@@ -35,8 +32,6 @@ export const ActionControls: React.FC = () => {
   const gameStatus = gameState?.gameStatus;
   const isMyTurn = gameState?.isMyTurn ?? false;
   const turnPhase = gameState?.turnPhase;
-  const opponents = gameState?.opponents ?? [];
-  const activePlayerId = gameState?.activePlayerId;
 
   React.useEffect(() => {
     if (gameStatus === 'WAITING_FOR_PLAYERS') {
@@ -50,9 +45,6 @@ export const ActionControls: React.FC = () => {
 
   const drawPhase = isDrawPhase(isMyTurn, turnPhase);
   const discardPhase = isDiscardPhase(isMyTurn, turnPhase);
-  const uiPhase = normalizeTurnPhase(turnPhase);
-  const opponentName =
-    opponents.find((p) => p.playerId === activePlayerId)?.displayName ?? 'Opponent';
   const myAvatar = getAvatarForPlayer(displayName);
   const wildJoker = gameState.cutJoker ?? null;
   const hasPure = groups.some((g) => g.groupType === 'PURE_SEQUENCE');
@@ -99,178 +91,139 @@ export const ActionControls: React.FC = () => {
     socketClient.draw(source);
   };
 
-  let coachTitle = '';
-  let coachHint = '';
-  if (gameStatus === 'WAITING_FOR_PLAYERS') {
-    coachTitle = 'Waiting for opponent…';
-    coachHint = 'Game starts automatically once matched.';
-  } else if (gameStatus === 'DEALING') {
-    coachTitle = 'Dealing cards…';
-    coachHint = 'Game starts automatically.';
-  } else if (gameStatus === 'COMPLETED') {
-    const iWon = gameState.winnerId === playerId;
-    coachTitle = iWon ? 'You won this hand!' : 'Hand finished';
-    coachHint = iWon
-      ? 'Nice declare. Rematch with the same stake anytime.'
-      : 'Tap Rematch for the same table stake, or Leave.';
-  } else if (drawPhase) {
-    coachTitle = 'Step 1 — Draw a card';
-    coachHint = 'Mystery pile or open pile.';
-  } else if (discardPhase) {
-    coachTitle = 'Step 2 — Throw one card';
-    coachHint =
-      selectedCardIds.length === 1
-        ? 'Tap Discard, or Declare if you won.'
-        : 'Tap exactly one card in your hand, then Discard.';
-  } else if (!isMyTurn) {
-    coachTitle = `Waiting for ${opponentName}`;
-    coachHint = 'Arrange your groups.';
-  } else if (isMyTurn && uiPhase == null) {
-    coachTitle = 'Your turn';
-    coachHint = 'Waiting for table sync…';
-  }
-
   return (
     <div className="table-action-controls">
-      {coachTitle && (
-        <div className="action-bar-coach">
-          <div className="action-coach-pill">
-            {gameStatus === 'WAITING_FOR_PLAYERS' ? (
-              <Loader2 size={13} className="spinner" color="#fbbf24" />
-            ) : (
-              <Hand size={13} color={isMyTurn ? '#fef08a' : '#94a3b8'} />
-            )}
-            <span className="action-coach-title">{coachTitle}</span>
-            <span className="action-coach-hint">• {coachHint}</span>
-          </div>
-        </div>
-      )}
-
       <div className="bottom-control-bar">
-        <button
-          id="btn-group-cards"
-          type="button"
-          className="btn-secondary bottom-bar-btn"
-          onClick={() => {
-            soundEngine.play('group');
-            groupSelectedCards();
-          }}
-          disabled={selectedCardIds.length < 2}
-        >
-          <Layers size={13} />
-          Group{selectedCardIds.length >= 2 ? ` (${selectedCardIds.length})` : ''}
-        </button>
-        <button
-          id="btn-sort-cards"
-          type="button"
-          className="btn-secondary bottom-bar-btn"
-          onClick={() => {
-            soundEngine.play('sort');
-            autoSortHand();
-          }}
-        >
-          <ArrowUpDown size={13} />
-          Sort
-        </button>
+        <div className="bcb-tools">
+          <button
+            id="btn-group-cards"
+            type="button"
+            className="bcb-tool"
+            onClick={() => {
+              soundEngine.play('group');
+              groupSelectedCards();
+            }}
+            disabled={selectedCardIds.length < 2}
+          >
+            <Layers size={15} />
+            Group{selectedCardIds.length >= 2 ? ` ${selectedCardIds.length}` : ''}
+          </button>
+          <button
+            id="btn-sort-cards"
+            type="button"
+            className="bcb-tool"
+            onClick={() => {
+              soundEngine.play('sort');
+              autoSortHand();
+            }}
+          >
+            <ArrowUpDown size={15} />
+            Sort
+          </button>
+          {selectedCardIds.length > 0 && (
+            <button
+              type="button"
+              className="bcb-tool"
+              onClick={clearSelection}
+              aria-label="Clear selection"
+            >
+              <XCircle size={15} />
+            </button>
+          )}
+        </div>
 
-        <div className="player-hand-user-pill">
-          <div className="bottom-bar-avatar-wrap">
+        <div className="bcb-player">
+          <div className="bcb-avatar-wrap">
             {isMyTurn && (
-              <div className="bottom-bar-timer">
-                <TurnTimerRing turnDeadline={gameState.turnDeadline ?? null} size={30} strokeWidth={2.5} />
+              <div className="bcb-timer">
+                <TurnTimerRing turnDeadline={gameState.turnDeadline ?? null} size={34} strokeWidth={2.5} />
               </div>
             )}
-            <div className={`bottom-bar-avatar${isMyTurn ? ' on' : ''}`}>
-              {myAvatar.renderSvg(24)}
-            </div>
+            <div className={`bcb-avatar${isMyTurn ? ' on' : ''}`}>{myAvatar.renderSvg(28)}</div>
           </div>
-          <span className="bottom-bar-name">{displayName}</span>
-          <span className="bottom-bar-vip">{myAvatar.vipTier}</span>
+          <div className="bcb-player-meta">
+            <div className="bcb-player-name">
+              {displayName}
+              <span className="bcb-vip">{myAvatar.vipTier}</span>
+            </div>
+            {gameStatus === 'IN_PROGRESS' && (
+              <div className="bcb-player-stats">
+                <span className={`bcb-score${liveScore === 0 && hasPure ? ' ok' : ''}`}>
+                  {liveScore} pts
+                </span>
+                <span className="bcb-dot" aria-hidden />
+                <span className={`bcb-pure${hasPure ? ' ok' : ''}`}>
+                  {hasPure ? 'Pure run ready' : 'Need pure run'}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
-        {gameStatus === 'IN_PROGRESS' && (
-          <span className={`player-hand-score${liveScore === 0 && hasPure ? ' ok' : ''}`}>
-            {liveScore === 0 && hasPure ? '✓ Score: 0 pts' : `Score: ${liveScore} pts`}
-          </span>
-        )}
-        <span className={`player-hand-pure${hasPure ? ' ok' : ''}`}>
-          {hasPure ? 'Pure run ✓' : 'Need pure run'}
-        </span>
+        <div className="bcb-actions">
+          {gameStatus === 'IN_PROGRESS' && !discardPhase && (
+            <>
+              <button
+                id="btn-action-draw-deck"
+                type="button"
+                className="bcb-action bcb-action--primary"
+                onClick={() => handleDraw('CLOSED_DECK')}
+                disabled={!drawPhase}
+              >
+                <ArrowDownToLine size={16} />
+                Draw
+              </button>
+              <button
+                id="btn-action-draw-discard"
+                type="button"
+                className="bcb-action"
+                onClick={() => handleDraw('DISCARD_PILE')}
+                disabled={!drawPhase || !gameState.topDiscard}
+              >
+                <ArrowDownToLine size={16} />
+                Open
+              </button>
+            </>
+          )}
 
-        {selectedCardIds.length > 0 && (
-          <button
-            type="button"
-            className="btn-secondary bottom-bar-btn"
-            onClick={clearSelection}
-            aria-label="Clear selection"
-          >
-            <XCircle size={13} />
-          </button>
-        )}
+          {gameStatus === 'IN_PROGRESS' && discardPhase && (
+            <>
+              <button
+                id="btn-action-discard"
+                type="button"
+                className="bcb-action bcb-action--danger"
+                onClick={handleDiscard}
+                disabled={selectedCardIds.length !== 1}
+              >
+                <Trash2 size={16} />
+                {selectedCardIds.length === 1 ? 'Discard' : 'Select 1'}
+              </button>
+              <button
+                id="btn-action-declare"
+                type="button"
+                className="bcb-action bcb-action--primary"
+                onClick={handleOpenDeclare}
+                disabled={selectedCardIds.length !== 1}
+              >
+                <Award size={16} />
+                Declare
+              </button>
+            </>
+          )}
 
-        <div className="bottom-bar-spacer" />
-
-        {gameStatus === 'IN_PROGRESS' && drawPhase && (
-          <>
+          {gameStatus === 'IN_PROGRESS' && (
             <button
-              id="btn-action-draw-deck"
+              id="btn-action-drop"
               type="button"
-              className="btn-primary bottom-bar-btn bottom-bar-btn-primary"
-              onClick={() => handleDraw('CLOSED_DECK')}
+              className="bcb-action bcb-action--danger"
+              onClick={() => setConfirmDropOpen(true)}
+              disabled={!isMyTurn || !drawPhase}
             >
-              <ArrowDownToLine size={14} />
-              Draw from Deck
+              <Flag size={15} />
+              Drop {dropPenaltyPoints}
             </button>
-            <button
-              id="btn-action-draw-discard"
-              type="button"
-              className="btn-secondary bottom-bar-btn"
-              onClick={() => handleDraw('DISCARD_PILE')}
-              disabled={!gameState.topDiscard}
-            >
-              <ArrowDownToLine size={14} />
-              Take Open Card
-            </button>
-          </>
-        )}
-
-        {gameStatus === 'IN_PROGRESS' && discardPhase && (
-          <>
-            <button
-              id="btn-action-discard"
-              type="button"
-              className="btn-danger bottom-bar-btn"
-              onClick={handleDiscard}
-              disabled={selectedCardIds.length !== 1}
-            >
-              <Trash2 size={14} />
-              {selectedCardIds.length === 1 ? 'Discard' : 'Select 1 Card'}
-            </button>
-            <button
-              id="btn-action-declare"
-              type="button"
-              className="btn-primary bottom-bar-btn bottom-bar-btn-primary"
-              onClick={handleOpenDeclare}
-              disabled={selectedCardIds.length !== 1}
-            >
-              <Award size={14} />
-              Declare Win
-            </button>
-          </>
-        )}
-
-        {gameStatus === 'IN_PROGRESS' && (
-          <button
-            id="btn-action-drop"
-            type="button"
-            className="btn-danger bottom-bar-btn"
-            onClick={() => setConfirmDropOpen(true)}
-            disabled={!isMyTurn || !drawPhase}
-          >
-            <Flag size={14} />
-            Drop ({dropPenaltyPoints})
-          </button>
-        )}
+          )}
+        </div>
       </div>
 
       {confirmDropOpen && (

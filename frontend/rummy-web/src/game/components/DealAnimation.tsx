@@ -28,7 +28,7 @@ type Props = {
 const FLIGHT_MS = 720;
 const STAGGER_MS = 62;
 /** Dealer hands on wood rim (BG cover top) — not face/neck */
-const HANDS_Y = 0.385;
+const HANDS_Y = 0.36;
 const HANDS_X = 0.5;
 
 function measurePoint(

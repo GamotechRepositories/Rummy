@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { CardView } from './CardView';
 import type { GroupValidationType } from '../types/game';
@@ -18,6 +18,9 @@ const DND_MIME = 'application/x-rummy-cards';
 // In-memory fallback if browser dataTransfer payload is restricted
 let activeDragCardIds: string[] = [];
 
+/** Visible fraction of each overlapped card (0.52 ≈ show half+ of face). */
+const SHOW_RATIO = 0.52;
+
 export const PlayerHand: React.FC = () => {
   const {
     groups,
@@ -28,8 +31,50 @@ export const PlayerHand: React.FC = () => {
   } = useGameStore();
 
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const trayRef = useRef<HTMLDivElement>(null);
 
   const wildJoker = gameState?.cutJoker ?? null;
+
+  // Fit card size so the largest group (often all 13) stays fully readable
+  useLayoutEffect(() => {
+    const tray = trayRef.current;
+    if (!tray) return;
+
+    const fit = () => {
+      const trayW = tray.clientWidth;
+      if (trayW < 40) return;
+
+      const counts = groups.map((g) => g.cards.length);
+      const maxInGroup = Math.max(1, ...counts, 0);
+      const groupCount = Math.max(1, groups.length);
+      const newZoneW = 68;
+      const gaps = groupCount * 10 + 8;
+      const groupChrome = groupCount * 20; // padding/borders
+      const avail = Math.max(180, trayW - newZoneW - gaps - groupChrome);
+
+      // Weight width by largest group when multiple groups share the row
+      const totalCards = counts.reduce((a, b) => a + b, 0) || maxInGroup;
+      const share =
+        groupCount <= 1 ? 1 : Math.min(1, (maxInGroup / totalCards) * 1.15 + 0.15);
+      const groupAvail = avail * share;
+
+      const n = Math.max(maxInGroup, 1);
+      // width = cardW + (n-1) * cardW * SHOW_RATIO
+      let cardW = groupAvail / (1 + (n - 1) * SHOW_RATIO);
+      cardW = Math.min(58, Math.max(34, cardW));
+      const cardH = Math.round(cardW * 1.4);
+      const overlap = -(cardW * (1 - SHOW_RATIO));
+
+      tray.style.setProperty('--hand-card-w', `${Math.round(cardW)}px`);
+      tray.style.setProperty('--hand-card-h', `${cardH}px`);
+      tray.style.setProperty('--card-overlap', `${Math.round(overlap)}px`);
+    };
+
+    fit();
+    const ro = new ResizeObserver(() => fit());
+    ro.observe(tray);
+    return () => ro.disconnect();
+  }, [groups]);
 
   const resolveDragIds = (cardId: string): string[] => {
     const selected = useGameStore.getState().selectedCardIds;
@@ -119,7 +164,7 @@ export const PlayerHand: React.FC = () => {
 
   return (
     <div className="player-hand">
-      <div className="player-hand-tray" id="seat-self">
+      <div className="player-hand-tray" id="seat-self" ref={trayRef}>
         {totalCards === 0 && (
           <div className="player-hand-empty">Your cards will appear here after the deal.</div>
         )}

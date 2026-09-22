@@ -7,17 +7,16 @@ import { PlayerHand } from './PlayerHand';
 import { ActionControls } from './ActionControls';
 import { DealAnimation, type DealTarget } from './DealAnimation';
 import { DeclareModal } from './DeclareModal';
-import { LogOut, Wifi, AlertCircle, Sparkles, Menu, X, ShieldAlert, BookOpen } from 'lucide-react';
+import { LogOut, Wifi, AlertCircle, Menu, X, ShieldAlert, BookOpen } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { soundEngine } from '../audio/soundEngine';
-import { normalizeTurnPhase } from '../utils/turnPhase';
 import { GameResultModal } from './GameResultModal';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
 
 function getPerimeterPosition(index: number, total: number): SeatPosition {
-  // Arc seats around the oval wood rim (dealer keeps top-center face clear)
+  // Opponents sit on the wood rail — not stacked in the HUD
   if (total === 1) return 'left';
-  if (total === 2) return index === 0 ? 'top-left' : 'top-right';
+  if (total === 2) return index === 0 ? 'left' : 'right';
   if (total === 3) {
     if (index === 0) return 'left';
     if (index === 1) return 'top-left';
@@ -29,7 +28,6 @@ function getPerimeterPosition(index: number, total: number): SeatPosition {
     if (index === 2) return 'top-right';
     return 'right';
   }
-  // 5 opponents (6-max): oval arc on wood rim — top-center under dealer arms
   const positions: SeatPosition[] = [
     'left',
     'top-left',
@@ -140,7 +138,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
   };
 
   const opponents = gameState?.opponents ?? [];
-  const isMyTurn = gameState?.isMyTurn ?? false;
 
   // Derived labels — plain consts (not hooks) so early return below is safe
   const rawRulesetId = (lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
@@ -164,22 +161,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
 
   const tableHeaderSubtitle = `${variantName} · ${stakeLabel} · ${maxSeats} Players`;
   const totalPot = ((opponents.length + 1) * entryFee).toFixed(2);
-
-  const turnLabel = !gameState
-    ? 'Connecting…'
-    : gameState.gameStatus === 'WAITING_FOR_PLAYERS'
-      ? 'Getting ready…'
-      : gameState.gameStatus === 'COMPLETED'
-        ? gameState.winnerId === playerId
-          ? 'You won'
-          : 'Finished'
-        : isMyTurn
-          ? normalizeTurnPhase(gameState.turnPhase) === 'DRAW'
-            ? 'Your turn — draw'
-            : normalizeTurnPhase(gameState.turnPhase) === 'DISCARD'
-              ? 'Your turn — discard'
-              : 'Your turn'
-          : 'Opponent’s turn';
 
   if (!gameState) {
     return (
@@ -217,165 +198,90 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
   }
 
   return (
-    <div className="game-frame">
-      <header className="game-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <Sparkles size={16} color="var(--gold-accent)" />
-          <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--gold-light)' }}>
-            Royal Rummy
-          </span>
-          <span
-            className={isMyTurn ? 'my-turn-pulse' : undefined}
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              padding: '3px 8px',
-              borderRadius: 16,
-              background: isMyTurn ? 'rgba(212,175,55,0.2)' : 'rgba(255,255,255,0.06)',
-              color: isMyTurn ? '#fef08a' : '#94a3b8',
-              border: isMyTurn ? '1px solid rgba(212,175,55,0.5)' : '1px solid transparent',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: 160,
-            }}
-          >
-            {turnLabel}
-          </span>
-        </div>
-
-        <div
-          className="table-header-center"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            color: 'var(--gold-light)',
-            fontSize: 12,
-            fontWeight: 700,
-            letterSpacing: '0.02em',
-            fontFamily: 'var(--font-display)',
-          }}
-        >
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24', opacity: 0.9 }} />
-          <span>{tableHeaderSubtitle}</span>
-          <span style={{ color: 'rgba(212, 175, 55, 0.45)', margin: '0 2px' }}>·</span>
-          <span style={{ color: '#fbbf24', fontWeight: 800 }}>🪙 POT: ₹{totalPot}</span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              fontSize: 10,
-              fontWeight: 700,
-              padding: '3px 8px',
-              borderRadius: 16,
-              background:
-                connectionStatus === 'CONNECTED'
-                  ? 'rgba(16, 185, 129, 0.15)'
-                  : 'rgba(245, 158, 11, 0.15)',
-              color: connectionStatus === 'CONNECTED' ? 'var(--color-pure)' : 'var(--color-impure)',
-            }}
-          >
-            <Wifi size={11} />
-            {connectionStatus === 'CONNECTED' ? 'Live' : '…'}
-          </div>
-
-          <SoundToggle compact />
-
-          <button
-            id="btn-table-menu"
-            type="button"
-            onClick={() => {
-              soundEngine.play('click');
-              setMenuOpen(true);
-            }}
-            className="btn-secondary"
-            style={{
-              padding: '4px 8px',
-              fontSize: 12,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-            title="Table Menu"
-          >
-            <Menu size={16} />
-          </button>
-        </div>
-      </header>
-
+    <div className="game-frame game-frame--board-only">
       {errorMessage && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 56,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            background: 'rgba(239, 68, 68, 0.95)',
-            color: '#fff',
-            padding: '8px 14px',
-            borderRadius: 8,
-            fontSize: 12,
-            fontWeight: 600,
-            zIndex: 50,
-            maxWidth: '90%',
-          }}
-        >
+        <div className="board-error-toast">
           <AlertCircle size={16} />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      <main
-        className={`casino-table${dealPlaying ? ' deal-in-progress' : ''}`}
-        id="game-felt-table"
-      >
-        {/* Perimeter Seating (Distributed around the oval table rail) */}
-        <div className="table-perimeter-seats" aria-label="Opponents">
-          {opponents.length > 0 ? (
-            opponents.map((opp, idx) => (
-              <OpponentSeat
-                key={opp.playerId}
-                player={opp}
-                activePlayerId={gameState?.activePlayerId}
-                turnDeadline={gameState?.turnDeadline}
-                seatNumber={opp.seatIndex}
-                gameStatus={gameState?.gameStatus}
-                position={getPerimeterPosition(idx, opponents.length)}
-              />
-            ))
-          ) : (
-            <div className="opponent-waiting-pod">
-              <div className="opponent-waiting-dot" />
-              Waiting for opponents…
+      <main className={`casino-table${dealPlaying ? ' deal-in-progress' : ''}`}>
+        <div className="casino-table-stage" id="game-felt-table">
+          {/* Top table plate — stake / pot / live (no turn pill, no joker here) */}
+          <div className="board-hud" aria-label="Table status">
+            <div className="board-info-plate">
+              <div className="board-info-row">
+                <span className="board-info-variant">{tableHeaderSubtitle}</span>
+                <span className="board-info-sep" aria-hidden />
+                <span className="board-info-pot">POT ₹{totalPot}</span>
+                <span
+                  className={`board-info-live${
+                    connectionStatus === 'CONNECTED' ? ' ok' : ''
+                  }`}
+                >
+                  <Wifi size={10} />
+                  {connectionStatus === 'CONNECTED' ? 'Live' : '…'}
+                </span>
+              </div>
             </div>
-          )}
+            <div className="board-hud-right">
+              <SoundToggle compact />
+              <button
+                id="btn-table-menu"
+                type="button"
+                onClick={() => {
+                  soundEngine.play('click');
+                  setMenuOpen(true);
+                }}
+                className="board-hud-menu"
+                title="Table Menu"
+              >
+                <Menu size={16} />
+              </button>
+            </div>
+          </div>
+
+          {/* Perimeter Seating (Distributed around the oval table rail) */}
+          <div className="table-perimeter-seats" aria-label="Opponents">
+            {opponents.length > 0 ? (
+              opponents.map((opp, idx) => (
+                <OpponentSeat
+                  key={opp.playerId}
+                  player={opp}
+                  activePlayerId={gameState?.activePlayerId}
+                  turnDeadline={gameState?.turnDeadline}
+                  seatNumber={opp.seatIndex}
+                  gameStatus={gameState?.gameStatus}
+                  position={getPerimeterPosition(idx, opponents.length)}
+                />
+              ))
+            ) : (
+              <div className="opponent-waiting-pod">
+                <div className="opponent-waiting-dot" />
+                Waiting for opponents…
+              </div>
+            )}
+          </div>
+
+          {/* Table Center (Closed Deck, Wild Joker, Discard Pile, Finish Slot) */}
+          <section className="table-center-wrap" aria-label="Table Center">
+            <TableCenter />
+          </section>
+
+          {/* Bottom Station: Player Hand & Action Controls */}
+          <section className="table-player-station" aria-label="Player Station">
+            <PlayerHand />
+            <ActionControls />
+          </section>
+
+          <DealAnimation
+            active={dealPlaying}
+            targets={dealTargets}
+            cardsPerPlayer={13}
+            onComplete={() => setDealPlaying(false)}
+          />
         </div>
-
-        {/* Table Center (Closed Deck, Wild Joker, Discard Pile, Finish Slot) */}
-        <section className="table-center-wrap" aria-label="Table Center">
-          <TableCenter />
-        </section>
-
-        {/* Bottom Station: Player Hand & Action Controls */}
-        <section className="table-player-station" aria-label="Player Station">
-          <PlayerHand />
-          <ActionControls />
-        </section>
-
-        <DealAnimation
-          active={dealPlaying}
-          targets={dealTargets}
-          cardsPerPlayer={13}
-          onComplete={() => setDealPlaying(false)}
-        />
       </main>
 
       <DeclareModal />
