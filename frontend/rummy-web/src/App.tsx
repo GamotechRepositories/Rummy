@@ -8,6 +8,7 @@ import {
   shouldShowTutorial,
 } from './game/components/HowToPlayTutorial';
 import { AppErrorBoundary } from './game/components/AppErrorBoundary';
+import { LandscapeGate } from './game/components/LandscapeGate';
 import { installSoundUnlock, soundEngine } from './game/audio/soundEngine';
 import {
   clearActiveSessionLocal,
@@ -133,7 +134,9 @@ export function App() {
     <AppErrorBoundary>
       <div className="app-frame">
         {inGame ? (
-          <GameBoard onOpenTutorial={openTutorial} />
+          <LandscapeGate enabled>
+            <GameBoard onOpenTutorial={openTutorial} />
+          </LandscapeGate>
         ) : (
           <LobbyScreen onOpenTutorial={openTutorial} />
         )}

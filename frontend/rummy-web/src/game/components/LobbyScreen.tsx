@@ -16,8 +16,10 @@ import {
   Target,
 } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
+import { LandscapeGate } from './LandscapeGate';
 import { soundEngine } from '../audio/soundEngine';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { tryLockLandscape } from '../hooks/useRequiresLandscape';
 
 export type VariantType = 'POINTS' | 'POOL' | 'DEALS' | 'RUMMY_21';
 
@@ -224,10 +226,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
     soundEngine.play('click');
     setSelectedVariant(variant);
     setCurrentPage('CONFIGURE_TABLE');
+    void tryLockLandscape();
   };
 
   const handlePlay = async (customConfig?: { rulesetId: string; entryFee: number; maxPlayers: number }) => {
     if (isEnqueuingRef.current || isMatchmaking) return;
+    void tryLockLandscape();
     isEnqueuingRef.current = true;
 
     const name = localName.trim() || 'Player';
@@ -358,6 +362,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
   };
 
   return (
+    <LandscapeGate enabled={currentPage !== 'SELECT_VARIANT' || isMatchmaking}>
     <div className="lobby-frame" style={{ color: '#f8fafc' }}>
       {/* Top Header Bar */}
       <header className="lobby-topbar" style={{ display: currentPage === 'CONFIGURE_TABLE' ? 'none' : undefined }}>
@@ -931,5 +936,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
         }}
       />
     </div>
+    </LandscapeGate>
   );
 };

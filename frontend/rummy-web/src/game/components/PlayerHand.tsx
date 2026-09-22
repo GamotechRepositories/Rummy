@@ -2,12 +2,9 @@ import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { CardView } from './CardView';
 import type { GroupValidationType } from '../types/game';
-import { Layers, ArrowUpDown, XCircle, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { socketClient } from '../websocket/GameSocketClient';
-import { calculateHandPenalty } from '../rules/clientValidator';
-import { TurnTimerRing } from './TurnTimerRing';
-import { getAvatarForPlayer } from '../utils/avatarUtils';
 
 const GROUP_LABELS: Record<GroupValidationType, { title: string; color: string; bg: string }> = {
   PURE_SEQUENCE: { title: '✓ Pure run', color: 'var(--color-pure)', bg: 'rgba(16,185,129,0.2)' },
@@ -26,22 +23,13 @@ export const PlayerHand: React.FC = () => {
     groups,
     selectedCardIds,
     gameState,
-    displayName,
     toggleSelectCard,
-    groupSelectedCards,
     moveCardsToGroup,
-    autoSortHand,
-    clearSelection,
   } = useGameStore();
 
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
-  const isMyTurn = gameState?.isMyTurn ?? false;
-  const myAvatar = getAvatarForPlayer(displayName);
   const wildJoker = gameState?.cutJoker ?? null;
-  const hasPure = groups.some((g) => g.groupType === 'PURE_SEQUENCE');
-  const totalCards = groups.reduce((n, g) => n + g.cards.length, 0);
-  const liveScore = calculateHandPenalty(groups, wildJoker);
 
   const resolveDragIds = (cardId: string): string[] => {
     const selected = useGameStore.getState().selectedCardIds;
@@ -127,106 +115,11 @@ export const PlayerHand: React.FC = () => {
     moveCardsToGroup(ids, targetGroupId);
   };
 
+  const totalCards = groups.reduce((n, g) => n + g.cards.length, 0);
+
   return (
     <div className="player-hand">
-      <div className="player-hand-toolbar">
-        <div className="player-hand-actions">
-          <button
-            id="btn-group-cards"
-            type="button"
-            className="btn-secondary"
-            onClick={() => {
-              soundEngine.play('group');
-              groupSelectedCards();
-            }}
-            disabled={selectedCardIds.length < 2}
-            style={{ padding: '5px 12px', fontSize: 12 }}
-          >
-            <Layers size={13} />
-            Group{selectedCardIds.length >= 2 ? ` (${selectedCardIds.length})` : ''}
-          </button>
-          <button
-            id="btn-sort-cards"
-            type="button"
-            className="btn-secondary"
-            onClick={() => {
-              soundEngine.play('sort');
-              autoSortHand();
-            }}
-            style={{ padding: '5px 12px', fontSize: 12 }}
-          >
-            <ArrowUpDown size={13} />
-            Sort
-          </button>
-
-          {/* User Icon & VIP badge beside Sort in the center */}
-          <div className="player-hand-user-pill">
-            <div style={{ position: 'relative', width: 26, height: 26, flexShrink: 0 }}>
-              {isMyTurn && (
-                <div style={{ position: 'absolute', top: -3, left: -3 }}>
-                  <TurnTimerRing turnDeadline={gameState?.turnDeadline ?? null} size={32} strokeWidth={2.5} />
-                </div>
-              )}
-              <div
-                style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: '50%',
-                  overflow: 'hidden',
-                  border: isMyTurn ? '1.5px solid #fbbf24' : '1px solid rgba(212, 175, 55, 0.4)',
-                  boxShadow: isMyTurn ? '0 0 8px rgba(251, 191, 36, 0.5)' : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                {myAvatar.renderSvg(26)}
-              </div>
-            </div>
-            <span style={{ fontSize: 11, fontWeight: 800, color: '#f8fafc', whiteSpace: 'nowrap' }}>
-              {displayName}
-            </span>
-            <span
-              style={{
-                fontSize: 8,
-                fontWeight: 900,
-                color: '#fef08a',
-                background: 'linear-gradient(135deg, #78350f, #451a03)',
-                border: '1px solid #fbbf24',
-                padding: '0.5px 5px',
-                borderRadius: 6,
-                letterSpacing: '0.03em',
-              }}
-            >
-              {myAvatar.vipTier}
-            </span>
-          </div>
-
-          {selectedCardIds.length > 0 && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={clearSelection}
-              style={{ padding: '5px 8px', fontSize: 12 }}
-            >
-              <XCircle size={13} />
-            </button>
-          )}
-        </div>
-
-        <div className="player-hand-status">
-          {gameState?.gameStatus === 'IN_PROGRESS' && (
-            <span className={`player-hand-score${liveScore === 0 && hasPure ? ' ok' : ''}`}>
-              {liveScore === 0 && hasPure ? '✓ Score: 0 pts' : `Score: ${liveScore} pts`}
-            </span>
-          )}
-          <span className={`player-hand-pure${hasPure ? ' ok' : ''}`}>
-            {hasPure ? 'Pure run ✓' : 'Need pure run'}
-          </span>
-        </div>
-      </div>
-
-      <div className="player-hand-tray">
+      <div className="player-hand-tray" id="seat-self">
         {totalCards === 0 && (
           <div className="player-hand-empty">Your cards will appear here after the deal.</div>
         )}

@@ -4,7 +4,15 @@ import { TurnTimerRing } from './TurnTimerRing';
 import { getAvatarForPlayer } from '../utils/avatarUtils';
 import { Crown } from 'lucide-react';
 
-export type SeatPosition = 'left' | 'right' | 'top' | 'top-left' | 'top-right' | 'top-center';
+export type SeatPosition =
+  | 'left'
+  | 'right'
+  | 'top'
+  | 'top-left'
+  | 'top-right'
+  | 'top-center'
+  | 'bottom-left'
+  | 'bottom-right';
 
 interface OpponentSeatProps {
   player?: OpponentView;
@@ -62,7 +70,8 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   const avatar = getAvatarForPlayer(player.displayName || player.playerId);
 
   // Inward card fan orientation
-  const isRightSide = position === 'right';
+  const isRightSide =
+    position === 'right' || position === 'top-right' || position === 'bottom-right';
 
   const avatarElement = (
     <div style={{ position: 'relative', width: '56px', height: '56px', flexShrink: 0 }}>

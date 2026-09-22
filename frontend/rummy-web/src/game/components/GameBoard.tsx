@@ -5,6 +5,7 @@ import { OpponentSeat, type SeatPosition } from './OpponentSeat';
 import { TableCenter } from './TableCenter';
 import { PlayerHand } from './PlayerHand';
 import { ActionControls } from './ActionControls';
+import { DealAnimation, type DealTarget } from './DealAnimation';
 import { DeclareModal } from './DeclareModal';
 import { LogOut, Wifi, AlertCircle, Sparkles, Menu, X, ShieldAlert, BookOpen } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
@@ -14,12 +15,13 @@ import { GameResultModal } from './GameResultModal';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
 
 function getPerimeterPosition(index: number, total: number): SeatPosition {
-  if (total === 1) return 'top-center';
+  // Arc seats around the oval wood rim (dealer keeps top-center face clear)
+  if (total === 1) return 'left';
   if (total === 2) return index === 0 ? 'top-left' : 'top-right';
   if (total === 3) {
     if (index === 0) return 'left';
-    if (index === 1) return 'top-center';
-    return 'right';
+    if (index === 1) return 'top-left';
+    return 'top-right';
   }
   if (total === 4) {
     if (index === 0) return 'left';
@@ -27,8 +29,14 @@ function getPerimeterPosition(index: number, total: number): SeatPosition {
     if (index === 2) return 'top-right';
     return 'right';
   }
-  // 5 or more opponents (6-max table)
-  const positions: SeatPosition[] = ['left', 'top-left', 'top-center', 'top-right', 'right'];
+  // 5 opponents (6-max): oval arc on wood rim — top-center under dealer arms
+  const positions: SeatPosition[] = [
+    'left',
+    'top-left',
+    'top-center',
+    'top-right',
+    'right',
+  ];
   return positions[index % positions.length];
 }
 
@@ -50,6 +58,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = React.useState(false);
   const [resumeFailed, setResumeFailed] = React.useState(false);
+  const [dealPlaying, setDealPlaying] = React.useState(false);
+  const [dealTargets, setDealTargets] = React.useState<DealTarget[]>([]);
+  const dealPlayedKeyRef = React.useRef<string | null>(null);
+  const prevStatusRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (!resumePending || gameState) return;
@@ -61,6 +73,59 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
     }, 8000);
     return () => window.clearTimeout(t);
   }, [resumePending, gameState]);
+
+  // Fresh deal → play dealer flight once per table; skip mid-hand reconnect
+  React.useEffect(() => {
+    if (!gameState) {
+      prevStatusRef.current = null;
+      return;
+    }
+
+    const status = gameState.gameStatus;
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = status;
+
+    if (status === 'WAITING_FOR_PLAYERS') {
+      dealPlayedKeyRef.current = null;
+      setDealPlaying(false);
+      setDealTargets([]);
+      return;
+    }
+
+    const key = gameState.tableId;
+    if (dealPlayedKeyRef.current === key) return;
+
+    const handLen = gameState.hand?.length ?? 0;
+    const freshPile = (gameState.discardHistory?.length ?? 0) <= 1;
+    const comingFromLobby =
+      prev === 'WAITING_FOR_PLAYERS' ||
+      prev === 'DEALING' ||
+      prev == null;
+
+    if (status === 'IN_PROGRESS' && handLen > 0 && freshPile && comingFromLobby) {
+      dealPlayedKeyRef.current = key;
+      const seats: DealTarget[] = (gameState.opponents ?? []).map((o) => ({
+        id: o.playerId,
+      }));
+      seats.push({ id: 'self', selector: '#seat-self' });
+      setDealTargets(seats);
+      setDealPlaying(true);
+      return;
+    }
+
+    if (status === 'IN_PROGRESS' && handLen > 0 && !freshPile) {
+      dealPlayedKeyRef.current = key;
+      setDealPlaying(false);
+    }
+  }, [gameState]);
+
+  React.useEffect(() => {
+    if (!gameState?.tableId) {
+      dealPlayedKeyRef.current = null;
+      setDealPlaying(false);
+      setDealTargets([]);
+    }
+  }, [gameState?.tableId]);
 
   const handleLeaveTable = () => {
     const { playerId: pid } = useGameStore.getState();
@@ -268,7 +333,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
         </div>
       )}
 
-      <main className="casino-table" id="game-felt-table">
+      <main
+        className={`casino-table${dealPlaying ? ' deal-in-progress' : ''}`}
+        id="game-felt-table"
+      >
         {/* Perimeter Seating (Distributed around the oval table rail) */}
         <div className="table-perimeter-seats" aria-label="Opponents">
           {opponents.length > 0 ? (
@@ -301,6 +369,13 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
           <PlayerHand />
           <ActionControls />
         </section>
+
+        <DealAnimation
+          active={dealPlaying}
+          targets={dealTargets}
+          cardsPerPlayer={13}
+          onComplete={() => setDealPlaying(false)}
+        />
       </main>
 
       <DeclareModal />

@@ -61,26 +61,16 @@ export const TableCenter: React.FC = () => {
 
   return (
     <>
-      <div
-        className="table-center-felt"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 'clamp(24px, 5vw, 54px)',
-          padding: '4px 10px',
-          position: 'relative',
-        }}
-      >
+      <div className="table-center-felt">
         {/* 1. Closed Draw Deck + Wild Joker */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
             {/* Wild Joker Card Underneath */}
             {cutJoker && (
               <div
                 style={{
                   position: 'absolute',
-                  left: '-44px',
+                  left: '-40px',
                   transform: 'rotate(-24deg)',
                   zIndex: 1,
                   filter: 'drop-shadow(0 6px 12px rgba(0,0,0,0.65))',
@@ -193,7 +183,7 @@ export const TableCenter: React.FC = () => {
         </div>
 
         {/* 2. Open Discard Pile */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
           <div style={{ position: 'relative' }}>
             <div
               id="pile-discard"
@@ -286,7 +276,7 @@ export const TableCenter: React.FC = () => {
         </div>
 
         {/* 3. Finish / Declare Target Slot */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
           <div
             id="slot-finish"
             onClick={handleFinishSlotClick}

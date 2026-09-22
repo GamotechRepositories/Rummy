@@ -1,13 +1,35 @@
 import React from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
-import { Trash2, Award, Flag, ArrowDownToLine, Loader2, Hand } from 'lucide-react';
+import {
+  Trash2,
+  Award,
+  Flag,
+  ArrowDownToLine,
+  Loader2,
+  Hand,
+  Layers,
+  ArrowUpDown,
+  XCircle,
+} from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { isDiscardPhase, isDrawPhase, normalizeTurnPhase } from '../utils/turnPhase';
+import { calculateHandPenalty } from '../rules/clientValidator';
+import { TurnTimerRing } from './TurnTimerRing';
+import { getAvatarForPlayer } from '../utils/avatarUtils';
 
 export const ActionControls: React.FC = () => {
-  const { gameState, selectedCardIds, setDeclareModalOpen, playerId, clearSelection } =
-    useGameStore();
+  const {
+    gameState,
+    selectedCardIds,
+    setDeclareModalOpen,
+    playerId,
+    clearSelection,
+    displayName,
+    groups,
+    groupSelectedCards,
+    autoSortHand,
+  } = useGameStore();
   const [confirmDropOpen, setConfirmDropOpen] = React.useState(false);
 
   const gameStatus = gameState?.gameStatus;
@@ -31,6 +53,10 @@ export const ActionControls: React.FC = () => {
   const uiPhase = normalizeTurnPhase(turnPhase);
   const opponentName =
     opponents.find((p) => p.playerId === activePlayerId)?.displayName ?? 'Opponent';
+  const myAvatar = getAvatarForPlayer(displayName);
+  const wildJoker = gameState.cutJoker ?? null;
+  const hasPure = groups.some((g) => g.groupType === 'PURE_SEQUENCE');
+  const liveScore = calculateHandPenalty(groups, wildJoker);
 
   const handleDiscard = () => {
     if (selectedCardIds.length !== 1) return;
@@ -105,280 +131,172 @@ export const ActionControls: React.FC = () => {
   }
 
   return (
-    <div
-      className="table-action-controls"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 6,
-        width: '100%',
-        maxWidth: 1000,
-        margin: '0 auto',
-        flexShrink: 0,
-      }}
-    >
+    <div className="table-action-controls">
       {coachTitle && (
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            padding: '4px 16px',
-            borderRadius: 20,
-            background: isMyTurn
-              ? 'linear-gradient(135deg, rgba(212,175,55,0.25), rgba(15,23,42,0.85))'
-              : 'rgba(10, 25, 18, 0.75)',
-            border: isMyTurn
-              ? '1px solid rgba(251, 191, 36, 0.6)'
-              : '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: isMyTurn ? '0 0 16px rgba(251, 191, 36, 0.35)' : 'none',
-            backdropFilter: 'blur(10px)',
-            margin: '0 auto',
-            maxWidth: '90%',
-          }}
-        >
-          {gameStatus === 'WAITING_FOR_PLAYERS' ? (
-            <Loader2 size={14} className="spinner" color="#fbbf24" />
-          ) : (
-            <Hand size={14} color={isMyTurn ? '#fef08a' : '#94a3b8'} />
-          )}
-          <span style={{ fontWeight: 800, fontSize: '12px', color: isMyTurn ? '#fef08a' : '#e2e8f0' }}>
-            {coachTitle}
-          </span>
-          <span style={{ fontSize: '11px', color: isMyTurn ? '#fef08a' : '#94a3b8' }}>• {coachHint}</span>
+        <div className="action-bar-coach">
+          <div className="action-coach-pill">
+            {gameStatus === 'WAITING_FOR_PLAYERS' ? (
+              <Loader2 size={13} className="spinner" color="#fbbf24" />
+            ) : (
+              <Hand size={13} color={isMyTurn ? '#fef08a' : '#94a3b8'} />
+            )}
+            <span className="action-coach-title">{coachTitle}</span>
+            <span className="action-coach-hint">• {coachHint}</span>
+          </div>
         </div>
       )}
 
-      <div
-        className="action-bar"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexWrap: 'wrap',
-          gap: 12,
-          padding: '2px 8px',
-          background: 'transparent',
-          border: 'none',
-        }}
-      >
+      <div className="bottom-control-bar">
+        <button
+          id="btn-group-cards"
+          type="button"
+          className="btn-secondary bottom-bar-btn"
+          onClick={() => {
+            soundEngine.play('group');
+            groupSelectedCards();
+          }}
+          disabled={selectedCardIds.length < 2}
+        >
+          <Layers size={13} />
+          Group{selectedCardIds.length >= 2 ? ` (${selectedCardIds.length})` : ''}
+        </button>
+        <button
+          id="btn-sort-cards"
+          type="button"
+          className="btn-secondary bottom-bar-btn"
+          onClick={() => {
+            soundEngine.play('sort');
+            autoSortHand();
+          }}
+        >
+          <ArrowUpDown size={13} />
+          Sort
+        </button>
+
+        <div className="player-hand-user-pill">
+          <div className="bottom-bar-avatar-wrap">
+            {isMyTurn && (
+              <div className="bottom-bar-timer">
+                <TurnTimerRing turnDeadline={gameState.turnDeadline ?? null} size={30} strokeWidth={2.5} />
+              </div>
+            )}
+            <div className={`bottom-bar-avatar${isMyTurn ? ' on' : ''}`}>
+              {myAvatar.renderSvg(24)}
+            </div>
+          </div>
+          <span className="bottom-bar-name">{displayName}</span>
+          <span className="bottom-bar-vip">{myAvatar.vipTier}</span>
+        </div>
+
         {gameStatus === 'IN_PROGRESS' && (
+          <span className={`player-hand-score${liveScore === 0 && hasPure ? ' ok' : ''}`}>
+            {liveScore === 0 && hasPure ? '✓ Score: 0 pts' : `Score: ${liveScore} pts`}
+          </span>
+        )}
+        <span className={`player-hand-pure${hasPure ? ' ok' : ''}`}>
+          {hasPure ? 'Pure run ✓' : 'Need pure run'}
+        </span>
+
+        {selectedCardIds.length > 0 && (
+          <button
+            type="button"
+            className="btn-secondary bottom-bar-btn"
+            onClick={clearSelection}
+            aria-label="Clear selection"
+          >
+            <XCircle size={13} />
+          </button>
+        )}
+
+        <div className="bottom-bar-spacer" />
+
+        {gameStatus === 'IN_PROGRESS' && drawPhase && (
           <>
-            {drawPhase && (
-              <>
-                <button
-                  id="btn-action-draw-deck"
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => handleDraw('CLOSED_DECK')}
-                  style={{
-                    padding: '9px 18px',
-                    fontSize: '13px',
-                    fontWeight: 800,
-                    borderRadius: '12px',
-                    boxShadow: '0 4px 14px rgba(251, 191, 36, 0.4)',
-                  }}
-                >
-                  <ArrowDownToLine size={15} />
-                  Draw from Deck
-                </button>
-                <button
-                  id="btn-action-draw-discard"
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => handleDraw('DISCARD_PILE')}
-                  disabled={!gameState.topDiscard}
-                  style={{
-                    padding: '9px 18px',
-                    fontSize: '13px',
-                    fontWeight: 800,
-                    borderRadius: '12px',
-                  }}
-                >
-                  <ArrowDownToLine size={15} />
-                  Take Open Card
-                </button>
-              </>
-            )}
-
-            {discardPhase && (
-              <>
-                <button
-                  id="btn-action-discard"
-                  type="button"
-                  className="btn-danger"
-                  onClick={handleDiscard}
-                  disabled={selectedCardIds.length !== 1}
-                  style={{
-                    padding: '9px 20px',
-                    fontSize: '13px',
-                    fontWeight: 800,
-                    borderRadius: '12px',
-                    background: selectedCardIds.length === 1
-                      ? 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)'
-                      : 'rgba(239, 68, 68, 0.25)',
-                    border: '1px solid rgba(239, 68, 68, 0.5)',
-                    color: '#ffffff',
-                    cursor: selectedCardIds.length === 1 ? 'pointer' : 'not-allowed',
-                    boxShadow: selectedCardIds.length === 1 ? '0 4px 16px rgba(239, 68, 68, 0.5)' : 'none',
-                  }}
-                >
-                  <Trash2 size={15} />
-                  {selectedCardIds.length === 1 ? 'Discard' : 'Select 1 Card'}
-                </button>
-                <button
-                  id="btn-action-declare"
-                  type="button"
-                  className="btn-primary"
-                  onClick={handleOpenDeclare}
-                  disabled={selectedCardIds.length !== 1}
-                  style={{
-                    padding: '9px 22px',
-                    fontSize: '13px',
-                    fontWeight: 800,
-                    borderRadius: '12px',
-                    background: selectedCardIds.length === 1
-                      ? 'linear-gradient(135deg, #10b981 0%, #047857 100%)'
-                      : 'rgba(16, 185, 129, 0.25)',
-                    border: '1px solid rgba(16, 185, 129, 0.5)',
-                    color: '#ffffff',
-                    boxShadow: selectedCardIds.length === 1 ? '0 4px 18px rgba(16, 185, 129, 0.6)' : 'none',
-                    cursor: selectedCardIds.length === 1 ? 'pointer' : 'not-allowed',
-                  }}
-                >
-                  <Award size={16} />
-                  Declare Win
-                </button>
-              </>
-            )}
-
             <button
-              id="btn-action-drop"
+              id="btn-action-draw-deck"
               type="button"
-              className="btn-danger"
-              onClick={() => setConfirmDropOpen(true)}
-              disabled={!isMyTurn || !drawPhase}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 16px',
-                fontSize: '13px',
-                fontWeight: 800,
-                borderRadius: '10px',
-                background:
-                  !isMyTurn || !drawPhase
-                    ? 'rgba(239, 68, 68, 0.2)'
-                    : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                border: '1px solid rgba(239, 68, 68, 0.5)',
-                color: '#ffffff',
-                cursor: !isMyTurn || !drawPhase ? 'not-allowed' : 'pointer',
-                boxShadow:
-                  isMyTurn && drawPhase
-                    ? '0 0 14px rgba(239, 68, 68, 0.35)'
-                    : 'none',
-              }}
+              className="btn-primary bottom-bar-btn bottom-bar-btn-primary"
+              onClick={() => handleDraw('CLOSED_DECK')}
             >
-              <Flag size={14} />
-              Drop ({dropPenaltyPoints})
+              <ArrowDownToLine size={14} />
+              Draw from Deck
+            </button>
+            <button
+              id="btn-action-draw-discard"
+              type="button"
+              className="btn-secondary bottom-bar-btn"
+              onClick={() => handleDraw('DISCARD_PILE')}
+              disabled={!gameState.topDiscard}
+            >
+              <ArrowDownToLine size={14} />
+              Take Open Card
             </button>
           </>
+        )}
+
+        {gameStatus === 'IN_PROGRESS' && discardPhase && (
+          <>
+            <button
+              id="btn-action-discard"
+              type="button"
+              className="btn-danger bottom-bar-btn"
+              onClick={handleDiscard}
+              disabled={selectedCardIds.length !== 1}
+            >
+              <Trash2 size={14} />
+              {selectedCardIds.length === 1 ? 'Discard' : 'Select 1 Card'}
+            </button>
+            <button
+              id="btn-action-declare"
+              type="button"
+              className="btn-primary bottom-bar-btn bottom-bar-btn-primary"
+              onClick={handleOpenDeclare}
+              disabled={selectedCardIds.length !== 1}
+            >
+              <Award size={14} />
+              Declare Win
+            </button>
+          </>
+        )}
+
+        {gameStatus === 'IN_PROGRESS' && (
+          <button
+            id="btn-action-drop"
+            type="button"
+            className="btn-danger bottom-bar-btn"
+            onClick={() => setConfirmDropOpen(true)}
+            disabled={!isMyTurn || !drawPhase}
+          >
+            <Flag size={14} />
+            Drop ({dropPenaltyPoints})
+          </button>
         )}
       </div>
 
       {confirmDropOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.78)',
-            backdropFilter: 'blur(6px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1100,
-            padding: '16px',
-          }}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: '380px',
-              background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
-              borderRadius: '20px',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
-              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(239, 68, 68, 0.25)',
-              padding: '24px',
-              textAlign: 'center',
-            }}
-          >
-            <div
-              style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '50%',
-                background: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid rgba(239, 68, 68, 0.4)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#f87171',
-                marginBottom: '14px',
-              }}
-            >
+        <div className="drop-confirm-overlay">
+          <div className="drop-confirm-card">
+            <div className="drop-confirm-icon">
               <Flag size={24} />
             </div>
-
-            <h3
-              style={{
-                margin: '0 0 8px',
-                fontSize: '18px',
-                fontWeight: 800,
-                color: '#ffffff',
-              }}
-            >
-              Confirm Drop ({dropPenaltyPoints} Pts)?
-            </h3>
-
-            <p
-              style={{
-                margin: '0 0 16px',
-                fontSize: '13px',
-                color: '#94a3b8',
-                lineHeight: 1.5,
-              }}
-            >
+            <h3>Confirm Drop ({dropPenaltyPoints} Pts)?</h3>
+            <p>
               Are you sure you want to drop this hand?
               <br />
-              <strong style={{ color: '#fca5a5' }}>
+              <strong>
                 {isFirstTurn ? 'First Drop' : 'Middle Drop'}: {dropPenaltyPoints} penalty points
               </strong>{' '}
               will be added to your score.
             </p>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div className="drop-confirm-actions">
               <button
                 type="button"
                 className="btn-secondary"
                 onClick={() => setConfirmDropOpen(false)}
-                style={{ flex: 1, padding: '10px', fontSize: '13px' }}
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                className="btn-danger"
-                onClick={handleConfirmDrop}
-                style={{
-                  flex: 1.3,
-                  padding: '10px',
-                  fontSize: '13px',
-                  fontWeight: 800,
-                  background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
-                }}
-              >
+              <button type="button" className="btn-danger" onClick={handleConfirmDrop}>
                 Confirm Drop
               </button>
             </div>
