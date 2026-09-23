@@ -93,7 +93,11 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
       {/* Turn Timer Ring */}
       {isCurrentTurn && (
         <div className="opponent-avatar-timer">
-          <TurnTimerRing turnDeadline={turnDeadline ?? null} strokeWidth={3.5} />
+          <TurnTimerRing
+            turnDeadline={turnDeadline ?? null}
+            strokeWidth={4.5}
+            showBadge={false}
+          />
         </div>
       )}
 

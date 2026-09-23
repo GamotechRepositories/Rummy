@@ -137,7 +137,12 @@ export const ActionControls: React.FC = () => {
           <div className="bcb-avatar-wrap">
             {isMyTurn && (
               <div className="bcb-timer">
-                <TurnTimerRing turnDeadline={gameState.turnDeadline ?? null} strokeWidth={3.5} />
+                <TurnTimerRing
+                  turnDeadline={gameState.turnDeadline ?? null}
+                  strokeWidth={4.5}
+                  showBadge={false}
+                  enableTickSound={true}
+                />
               </div>
             )}
             <div className={`bcb-avatar${isMyTurn ? ' on' : ''}`}>{myAvatar.renderSvg(40)}</div>

@@ -80,6 +80,7 @@ export const DealAnimation: React.FC<Props> = ({
 
     let finishTimer = 0;
     let cancelled = false;
+    const soundTimeouts: number[] = [];
     const frozenTargets = targets;
 
     const start = () => {
@@ -120,13 +121,23 @@ export const DealAnimation: React.FC<Props> = ({
         }
       }
       setCards(next);
-      soundEngine.play('deal');
+
+      // Play authentic card flick sound for every single card as it leaves dealer's deck
+      next.forEach((card, i) => {
+        const t = window.setTimeout(() => {
+          if (!cancelled) {
+            soundEngine.playCardDeal(i);
+          }
+        }, card.delayMs);
+        soundTimeouts.push(t);
+      });
 
       const flights = frozenTargets.length * cardsPerPlayer;
       const totalMs = Math.max(0, flights - 1) * STAGGER_MS + FLIGHT_MS + 280;
       finishTimer = window.setTimeout(() => {
         if (!doneRef.current) {
           doneRef.current = true;
+          soundEngine.playCardFan();
           onCompleteRef.current();
         }
       }, totalMs);
@@ -137,6 +148,7 @@ export const DealAnimation: React.FC<Props> = ({
     return () => {
       cancelled = true;
       window.clearTimeout(finishTimer);
+      soundTimeouts.forEach((t) => window.clearTimeout(t));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- freeze on active + targetsKey
   }, [active, targetsKey, cardsPerPlayer]);
