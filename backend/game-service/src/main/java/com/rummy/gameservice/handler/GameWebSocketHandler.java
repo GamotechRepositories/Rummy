@@ -196,9 +196,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 // Auto-mark joined player as READY
                 tableActor.processCommand(new ReadyCommand(UUID.randomUUID().toString(), gameId, targetPlayerId, now), "AUTO_READY");
 
-                // If table has at least 2 players and all are ready, automatically deal cards and start game!
-                boolean allReady = tableActor.getState().getPlayers().stream().allMatch(p -> p.getStatus() == PlayerStatus.READY);
-                if (allReady && tableActor.getState().getPlayers().size() >= 2 && tableActor.getState().getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+                if (tableActor.shouldAutoStart()) {
                     tableActor.processCommand(new StartGameCommand(UUID.randomUUID().toString(), gameId, targetPlayerId, now), "AUTO_START");
                     log.info("[GameWebSocketHandler] Auto-started table {} with {} players", tableId, tableActor.getState().getPlayers().size());
                 }
@@ -223,8 +221,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 ReadyCommand cmd = new ReadyCommand(reqId, gameId, playerId, now);
                 tableActor.processCommand(cmd, reqId);
 
-                boolean allReady = tableActor.getState().getPlayers().stream().allMatch(p -> p.getStatus() == PlayerStatus.READY);
-                if (allReady && tableActor.getState().getPlayers().size() >= 2 && tableActor.getState().getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+                if (tableActor.shouldAutoStart()) {
                     tableActor.processCommand(new StartGameCommand(UUID.randomUUID().toString(), gameId, playerId, now), "AUTO_START");
                     log.info("[GameWebSocketHandler] Auto-started table {} on READY", tableId);
                 }

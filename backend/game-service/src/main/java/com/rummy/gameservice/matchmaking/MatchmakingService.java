@@ -209,13 +209,10 @@ public class MatchmakingService {
         RummyRules rules = RulesetRegistry.getRuleset(first.getRulesetId()).orElseGet(PointsRummyRules::new);
         TableActor actor = tableManager.getOrCreateTable(tableId, rules);
         routingRegistry.registerTableOwnership(tableId);
+        actor.setExpectedPlayers(first.getMaxPlayers());
 
         for (MatchmakingTicket ticket : humanTickets) {
             routingRegistry.registerPlayerTable(ticket.getPlayerId(), tableId);
-            ticket.setMatchedTableId(tableId);
-            ticket.setMatchedServerId(routingRegistry.getServerInstanceId());
-            ticket.setStatus(MatchmakingTicket.Status.MATCHED);
-            store.saveTicket(ticket);
 
             if (walletService != null && ticket.getStakeTier() > 0) {
                 try {
@@ -233,24 +230,10 @@ public class MatchmakingService {
                     log.warn("[Matchmaking] Could not debit stake for {}: {}", ticket.getPlayerId(), e.getMessage());
                 }
             }
-
-            log.info("[Matchmaking] Matched human player {} into table {} on {}",
-                    ticket.getPlayerId(), tableId, routingRegistry.getServerInstanceId());
         }
 
         if (fillWithAi) {
-            int neededBots;
-            if (first.getMaxPlayers() == 6) {
-                if (humanTickets.size() == 1) {
-                    neededBots = 2;
-                } else if (humanTickets.size() == 2) {
-                    neededBots = 1;
-                } else {
-                    neededBots = 0;
-                }
-            } else {
-                neededBots = Math.max(0, first.getMaxPlayers() - humanTickets.size());
-            }
+            int neededBots = Math.max(0, first.getMaxPlayers() - humanTickets.size());
 
             if (neededBots > 0) {
                 Set<String> usedNames = new HashSet<>();
@@ -285,6 +268,16 @@ public class MatchmakingService {
                     log.info("[Matchmaking] Added AI bot {} ({}) to table {}", botId, botName, tableId);
                 }
             }
+        }
+
+        // Publish MATCHED only after bots are seated, so clients join a full table.
+        for (MatchmakingTicket ticket : humanTickets) {
+            ticket.setMatchedTableId(tableId);
+            ticket.setMatchedServerId(routingRegistry.getServerInstanceId());
+            ticket.setStatus(MatchmakingTicket.Status.MATCHED);
+            store.saveTicket(ticket);
+            log.info("[Matchmaking] Matched human player {} into table {} on {}",
+                    ticket.getPlayerId(), tableId, routingRegistry.getServerInstanceId());
         }
     }
 

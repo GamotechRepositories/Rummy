@@ -3,13 +3,9 @@ import { useGameStore } from './game/store/useGameStore';
 import { socketClient } from './game/websocket/GameSocketClient';
 import { LobbyScreen } from './game/components/LobbyScreen';
 import { GameBoard } from './game/components/GameBoard';
-import {
-  HowToPlayTutorial,
-  shouldShowTutorial,
-} from './game/components/HowToPlayTutorial';
 import { AppErrorBoundary } from './game/components/AppErrorBoundary';
 import { LandscapeGate } from './game/components/LandscapeGate';
-import { installSoundUnlock, soundEngine } from './game/audio/soundEngine';
+import { installSoundUnlock } from './game/audio/soundEngine';
 import {
   clearActiveSessionLocal,
   fetchActiveSession,
@@ -34,7 +30,6 @@ function restoreLocalSessionIfAny(): boolean {
 
 export function App() {
   const { gameState, hasJoinedTable, resumePending } = useGameStore();
-  const [showTutorial, setShowTutorial] = useState(false);
   // Restore local table synchronously so first paint can show GameBoard (not blank)
   const [bootDone, setBootDone] = useState(() => {
     restoreLocalSessionIfAny();
@@ -98,11 +93,6 @@ export function App() {
         socketClient.connect();
         socketClient.ensureTableJoined();
         setBootDone(true);
-
-        const { resumePending: pending } = useGameStore.getState();
-        if (!cancelled && shouldShowTutorial() && !pending) {
-          setShowTutorial(true);
-        }
       }
     })();
 
@@ -114,16 +104,21 @@ export function App() {
   // Soft-reconnect: stay on GameBoard while reclaiming table
   const inGame = hasJoinedTable && (gameState !== null || resumePending);
 
-  const openTutorial = () => {
-    soundEngine.play('modal');
-    setShowTutorial(true);
-  };
-
   if (!bootDone) {
     return (
       <div className="app-frame" style={{ display: 'grid', placeItems: 'center', color: '#f8fafc' }}>
-        <div style={{ textAlign: 'center', opacity: 0.85 }}>
-          <div style={{ fontWeight: 800, letterSpacing: '0.04em' }}>Royal Rummy</div>
+        <div style={{ textAlign: 'center', opacity: 0.95 }}>
+          <img
+            src="/image.png"
+            alt="Royal Rummy"
+            style={{
+              height: 64,
+              maxWidth: '80vw',
+              objectFit: 'contain',
+              marginBottom: 12,
+              filter: 'drop-shadow(0 6px 18px rgba(0,0,0,0.65))',
+            }}
+          />
           <div style={{ fontSize: 13, marginTop: 8, color: '#94a3b8' }}>Checking for active table…</div>
         </div>
       </div>
@@ -135,14 +130,10 @@ export function App() {
       <div className="app-frame">
         {inGame ? (
           <LandscapeGate enabled>
-            <GameBoard onOpenTutorial={openTutorial} />
+            <GameBoard />
           </LandscapeGate>
         ) : (
-          <LobbyScreen onOpenTutorial={openTutorial} />
-        )}
-
-        {showTutorial && (
-          <HowToPlayTutorial onClose={() => setShowTutorial(false)} />
+          <LobbyScreen />
         )}
       </div>
     </AppErrorBoundary>

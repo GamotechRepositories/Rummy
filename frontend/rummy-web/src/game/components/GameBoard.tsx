@@ -7,7 +7,7 @@ import { PlayerHand } from './PlayerHand';
 import { ActionControls } from './ActionControls';
 import { DealAnimation, type DealTarget } from './DealAnimation';
 import { DeclareModal } from './DeclareModal';
-import { LogOut, Wifi, AlertCircle, Menu, X, ShieldAlert, BookOpen } from 'lucide-react';
+import { LogOut, Wifi, AlertCircle, Menu, X, ShieldAlert } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { soundEngine } from '../audio/soundEngine';
 import { GameResultModal } from './GameResultModal';
@@ -25,22 +25,18 @@ function getPerimeterPosition(index: number, total: number): SeatPosition {
     const seats: SeatPosition[] = ['left', 'top-left', 'top-right', 'right'];
     return seats[index] ?? 'left';
   }
-  // 5 opponents (6-player table) — clear rim seats around dealer
+  // 5 opponents (6-player table). Left seat faces the right seat.
   const seats: SeatPosition[] = [
     'bottom-left',
     'left',
     'top-left',
     'top-right',
-    'bottom-right',
+    'right',
   ];
   return seats[index % seats.length];
 }
 
-interface GameBoardProps {
-  onOpenTutorial?: () => void;
-}
-
-export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
+export const GameBoard: React.FC = () => {
   const {
     gameState,
     connectionStatus,
@@ -376,30 +372,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {onOpenTutorial && (
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onOpenTutorial();
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '12px 14px',
-                      borderRadius: '12px',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      justifyContent: 'flex-start',
-                    }}
-                  >
-                    <BookOpen size={16} color="var(--gold-accent)" />
-                    How to Play & Rummy Rules
-                  </button>
-                )}
-
                 <button
                   type="button"
                   className="btn-danger"

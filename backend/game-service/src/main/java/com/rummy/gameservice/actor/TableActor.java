@@ -57,6 +57,14 @@ public final class TableActor {
     private int turnsUntilNextBotDrop;
     private int lastWindDownTurnCounted = -1;
 
+    /**
+     * Seats that must be filled before the deal. Set by matchmaking (2 or 6).
+     * 0 means a private table, which can still start at 2.
+     */
+    private int expectedPlayers;
+    /** Matchmaking already filled empty seats with bots; the 15s fallback must not add more. */
+    private boolean matchmakingOwnsFill;
+
     public TableActor(String tableId,
                       GameState initialState,
                       RummyRules rules,
@@ -137,10 +145,38 @@ public final class TableActor {
     }
 
     /**
+     * Matchmade tables deal only once this many seats are taken.
+     * Empty seats are filled with bots by matchmaking before humans connect.
+     */
+    public synchronized void setExpectedPlayers(int count) {
+        int cap = Math.min(rules.getMaxPlayers(), Math.max(2, count));
+        this.expectedPlayers = cap;
+        this.matchmakingOwnsFill = true;
+        log.info("[TableActor:{}] Matchmade table expects {} players", tableId, cap);
+    }
+
+    public synchronized boolean shouldAutoStart() {
+        if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
+            return false;
+        }
+        int required = expectedPlayers >= 2 ? expectedPlayers : 2;
+        if (state.getPlayers().size() < required) {
+            return false;
+        }
+        return state.getPlayers().stream().allMatch(p -> p.getStatus() == PlayerStatus.READY);
+    }
+
+    /**
      * Executes a command sequentially inside the synchronized monitor of this table.
      */
     public synchronized EngineResult processCommand(GameCommand command, String requestId) {
         log.debug("[TableActor:{}] Processing command: {} (req: {})", tableId, command.getClass().getSimpleName(), requestId);
+
+        if (command instanceof StartGameCommand && holdingForPlayers()) {
+            log.info("[TableActor:{}] Holding deal until {} seats are filled ({} seated)",
+                    tableId, expectedPlayers, state.getPlayers().size());
+            return EngineResult.failure(this.state, "Table is still filling");
+        }
 
         EngineResult result = engine.process(this.state, command, this.rules);
 
@@ -438,8 +474,14 @@ public final class TableActor {
         return tableId;
     }
 
+    private boolean holdingForPlayers() {
+        return expectedPlayers >= 2
+                && state.getStatus() == GameStatus.WAITING_FOR_PLAYERS
+                && state.getPlayers().size() < expectedPlayers;
+    }
+
     private void checkAndScheduleAutoBotFallback() {
-        if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
+        if (matchmakingOwnsFill || state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
             cancelAutoBotFallback();
             return;
         }
@@ -514,8 +556,7 @@ public final class TableActor {
                     ), "FALLBACK_BOT_READY");
                 }
 
-                boolean allReady = state.getPlayers().stream().allMatch(p -> p.getStatus() == PlayerStatus.READY);
-                if (allReady && state.getPlayers().size() >= 2 && state.getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+                if (shouldAutoStart()) {
                     String starterId = state.getPlayers().get(0).getPlayerId();
                     processCommand(new StartGameCommand(
                             UUID.randomUUID().toString(),

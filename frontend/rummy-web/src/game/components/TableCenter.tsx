@@ -107,7 +107,7 @@ export const TableCenter: React.FC = () => {
               aria-label="Open discard pile"
             >
               {topDiscard ? (
-                <CardView card={topDiscard} wildJoker={cutJoker} size="small" />
+                <CardView card={topDiscard} wildJoker={cutJoker} size="normal" />
               ) : (
                 <span className="deck-open-empty">Empty</span>
               )}

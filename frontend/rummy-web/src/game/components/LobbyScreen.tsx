@@ -3,7 +3,6 @@ import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { WalletModal } from './WalletModal';
 import {
-  Crown,
   Coins,
   Play,
   X,
@@ -49,10 +48,6 @@ const VARIANT_BANNERS: Array<{
   { id: 'RUMMY_21', cardId: 'card-select-21card', label: '21-Card Rummy', src: '/f3e7974b-2f26-463a-9eff-6dead79be1da.jpg' },
 ];
 
-interface LobbyScreenProps {
-  onOpenTutorial?: () => void;
-}
-
 function StakeStepper({
   value,
   minusId,
@@ -95,7 +90,7 @@ function StakeStepper({
   );
 }
 
-export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
+export const LobbyScreen: React.FC = () => {
   const {
     displayName,
     setSession,
@@ -380,27 +375,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
     >
       {/* Top Header Bar */}
       <header className="lobby-topbar" style={{ display: currentPage === 'CONFIGURE_TABLE' ? 'none' : undefined }}>
-        <div className="lobby-brand">
-          <div className="lobby-brand-mark">
-            <Crown size={18} color="#1a1006" />
-          </div>
-          <span className="lobby-brand-name">Royal Rummy</span>
+        <div className="lobby-brand" title="Royal Rummy">
+          <img
+            src="/image.png"
+            alt="Royal Rummy"
+            className="lobby-brand-logo"
+            draggable={false}
+          />
         </div>
 
         <div className="lobby-top-actions">
           <SoundToggle compact />
-          {onOpenTutorial && (
-            <button
-              type="button"
-              className="lobby-link-btn"
-              onClick={() => {
-                soundEngine.play('click');
-                onOpenTutorial();
-              }}
-            >
-              How to play
-            </button>
-          )}
 
           {isEditingName ? (
             <input

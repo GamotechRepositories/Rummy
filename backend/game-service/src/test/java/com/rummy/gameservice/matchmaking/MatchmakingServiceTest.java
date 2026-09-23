@@ -82,6 +82,43 @@ class MatchmakingServiceTest {
     }
 
     @Test
+    @DisplayName("6-player table with one human fills the other five seats with bots")
+    void shouldFillSixSeatTableWithFiveBots() throws InterruptedException {
+        MatchmakingRequest req = new MatchmakingRequest("USR_SOLO6", "Solo Human", "INDIAN_POINTS", 100, 6, true);
+        MatchmakingTicket ticket = matchmakingService.enqueue(req);
+
+        Thread.sleep(150);
+        matchmakingService.processQueues();
+
+        assertThat(ticket.getStatus()).isEqualTo(MatchmakingTicket.Status.MATCHED);
+        var table = tableManager.getTable(ticket.getMatchedTableId());
+        assertThat(table).isPresent();
+        assertThat(table.get().getState().getPlayers()).hasSize(5);
+        assertThat(table.get().getState().getPlayers()).allMatch(p -> p.isBot());
+    }
+
+    @Test
+    @DisplayName("6-player table with two humans fills the other four seats with bots")
+    void shouldFillSixSeatTableWhenTwoHumansAreWaiting() throws InterruptedException {
+        MatchmakingRequest req1 = new MatchmakingRequest("USR_A", "Player A", "INDIAN_POINTS", 100, 6, true);
+        MatchmakingRequest req2 = new MatchmakingRequest("USR_B", "Player B", "INDIAN_POINTS", 100, 6, true);
+        MatchmakingTicket t1 = matchmakingService.enqueue(req1);
+        MatchmakingTicket t2 = matchmakingService.enqueue(req2);
+
+        Thread.sleep(150);
+        matchmakingService.processQueues();
+
+        assertThat(t1.getStatus()).isEqualTo(MatchmakingTicket.Status.MATCHED);
+        assertThat(t2.getStatus()).isEqualTo(MatchmakingTicket.Status.MATCHED);
+        assertThat(t1.getMatchedTableId()).isEqualTo(t2.getMatchedTableId());
+
+        var table = tableManager.getTable(t1.getMatchedTableId());
+        assertThat(table).isPresent();
+        assertThat(table.get().getState().getPlayers()).hasSize(4);
+        assertThat(table.get().getState().getPlayers()).allMatch(p -> p.isBot());
+    }
+
+    @Test
     @DisplayName("Should cancel ticket successfully")
     void shouldCancelTicket() {
         MatchmakingRequest req = new MatchmakingRequest("USR_CANCEL", "Canceller", "INDIAN_POINTS", 100, 2, false);
