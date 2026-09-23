@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { CardView } from './CardView';
 import type { GroupValidationType } from '../types/game';
@@ -14,12 +14,29 @@ const GROUP_LABELS: Record<GroupValidationType, { title: string; color: string; 
 };
 
 const DND_MIME = 'application/x-rummy-cards';
+const DRAG_THRESHOLD_PX = 10;
 
 // In-memory fallback if browser dataTransfer payload is restricted
 let activeDragCardIds: string[] = [];
 
-/** Visible fraction of each overlapped card (0.52 ≈ show half+ of face). */
-const SHOW_RATIO = 0.52;
+/** Visible fraction of each overlapped card (lower = tighter fan). */
+const SHOW_RATIO = 0.36;
+
+function isTouchLikePointer(e: React.PointerEvent | PointerEvent): boolean {
+  return e.pointerType === 'touch' || e.pointerType === 'pen';
+}
+
+function findDropGroupId(clientX: number, clientY: number): string | 'NEW' | null {
+  const stack = document.elementsFromPoint(clientX, clientY);
+  for (const el of stack) {
+    if (!(el instanceof HTMLElement)) continue;
+    const zone = el.closest('[data-drop-group]') as HTMLElement | null;
+    if (zone?.dataset.dropGroup) {
+      return zone.dataset.dropGroup as string | 'NEW';
+    }
+  }
+  return null;
+}
 
 export const PlayerHand: React.FC = () => {
   const {
@@ -31,7 +48,18 @@ export const PlayerHand: React.FC = () => {
   } = useGameStore();
 
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [touchDragging, setTouchDragging] = useState(false);
   const trayRef = useRef<HTMLDivElement>(null);
+  const ghostRef = useRef<HTMLDivElement | null>(null);
+  const suppressClickRef = useRef(false);
+  const pointerDragRef = useRef<{
+    pointerId: number;
+    cardId: string;
+    startX: number;
+    startY: number;
+    active: boolean;
+    ids: string[];
+  } | null>(null);
 
   const wildJoker = gameState?.cutJoker ?? null;
 
@@ -41,27 +69,35 @@ export const PlayerHand: React.FC = () => {
     if (!tray) return;
 
     const fit = () => {
+      const tray = trayRef.current;
+      if (!tray) return;
       const trayW = tray.clientWidth;
       if (trayW < 40) return;
+
+      const stage = tray.closest('.casino-table-stage') as HTMLElement | null;
+      const stageW = stage?.clientWidth || trayW;
+      const stageH = stage?.clientHeight || window.innerHeight;
+      // Scale with the smaller stage axis so short landscape screens shrink cards
+      const scaleBase = Math.min(stageW, stageH * 1.7);
+      const minCard = Math.max(18, scaleBase * 0.028);
+      const maxCard = Math.max(minCard + 4, scaleBase * 0.052);
 
       const counts = groups.map((g) => g.cards.length);
       const maxInGroup = Math.max(1, ...counts, 0);
       const groupCount = Math.max(1, groups.length);
-      const newZoneW = 68;
-      const gaps = groupCount * 10 + 8;
-      const groupChrome = groupCount * 20; // padding/borders
-      const avail = Math.max(180, trayW - newZoneW - gaps - groupChrome);
+      const newZoneW = Math.max(36, scaleBase * 0.05);
+      const gaps = groupCount * Math.max(4, scaleBase * 0.007) + 6;
+      const groupChrome = groupCount * Math.max(8, scaleBase * 0.012);
+      const avail = Math.max(120, trayW - newZoneW - gaps - groupChrome);
 
-      // Weight width by largest group when multiple groups share the row
       const totalCards = counts.reduce((a, b) => a + b, 0) || maxInGroup;
       const share =
         groupCount <= 1 ? 1 : Math.min(1, (maxInGroup / totalCards) * 1.15 + 0.15);
       const groupAvail = avail * share;
 
       const n = Math.max(maxInGroup, 1);
-      // width = cardW + (n-1) * cardW * SHOW_RATIO
       let cardW = groupAvail / (1 + (n - 1) * SHOW_RATIO);
-      cardW = Math.min(58, Math.max(34, cardW));
+      cardW = Math.min(maxCard, Math.max(minCard, cardW));
       const cardH = Math.round(cardW * 1.4);
       const overlap = -(cardW * (1 - SHOW_RATIO));
 
@@ -73,6 +109,8 @@ export const PlayerHand: React.FC = () => {
     fit();
     const ro = new ResizeObserver(() => fit());
     ro.observe(tray);
+    const stage = tray.closest('.casino-table-stage');
+    if (stage) ro.observe(stage);
     return () => ro.disconnect();
   }, [groups]);
 
@@ -84,7 +122,147 @@ export const PlayerHand: React.FC = () => {
     return [cardId];
   };
 
+  const commitMove = (ids: string[], targetGroupId: string | 'NEW') => {
+    if (!ids.length) return;
+
+    if (targetGroupId !== 'NEW') {
+      const currentGroups = useGameStore.getState().groups;
+      const target = currentGroups.find((g) => g.id === targetGroupId);
+      if (
+        target &&
+        ids.every((id) => target.cards.some((c) => c.instanceId === id)) &&
+        ids.length === target.cards.length
+      ) {
+        return;
+      }
+    }
+
+    soundEngine.play('group');
+    moveCardsToGroup(ids, targetGroupId);
+  };
+
+  const removeGhost = () => {
+    ghostRef.current?.remove();
+    ghostRef.current = null;
+  };
+
+  const placeGhost = (clientX: number, clientY: number, sourceEl: HTMLElement) => {
+    removeGhost();
+    const ghost = sourceEl.cloneNode(true) as HTMLDivElement;
+    ghost.classList.add('hand-card-ghost');
+    ghost.style.width = `${sourceEl.offsetWidth}px`;
+    ghost.style.height = `${sourceEl.offsetHeight}px`;
+    ghost.style.left = `${clientX - sourceEl.offsetWidth / 2}px`;
+    ghost.style.top = `${clientY - sourceEl.offsetHeight / 2}px`;
+    document.body.appendChild(ghost);
+    ghostRef.current = ghost;
+  };
+
+  const moveGhost = (clientX: number, clientY: number) => {
+    const ghost = ghostRef.current;
+    if (!ghost) return;
+    const w = ghost.offsetWidth;
+    const h = ghost.offsetHeight;
+    ghost.style.left = `${clientX - w / 2}px`;
+    ghost.style.top = `${clientY - h / 2}px`;
+  };
+
+  const endPointerDrag = (clientX: number, clientY: number, dropped: boolean) => {
+    const drag = pointerDragRef.current;
+    pointerDragRef.current = null;
+    removeGhost();
+    setTouchDragging(false);
+    setDropTargetId(null);
+
+    document.querySelectorAll('.rummy-card.dragging').forEach((el) => {
+      el.classList.remove('dragging');
+    });
+
+    if (drag?.active && dropped) {
+      const target = findDropGroupId(clientX, clientY);
+      if (target) {
+        commitMove(drag.ids, target);
+      }
+      suppressClickRef.current = true;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 300);
+    }
+
+    activeDragCardIds = [];
+  };
+
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const drag = pointerDragRef.current;
+      if (!drag || e.pointerId !== drag.pointerId) return;
+
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      const dist = Math.hypot(dx, dy);
+
+      if (!drag.active) {
+        if (dist < DRAG_THRESHOLD_PX) return;
+        drag.active = true;
+        setTouchDragging(true);
+        activeDragCardIds = drag.ids;
+        const source = document.getElementById(`card-${drag.cardId}`);
+        if (source) {
+          source.classList.add('dragging');
+          placeGhost(e.clientX, e.clientY, source);
+        }
+      }
+
+      e.preventDefault();
+      moveGhost(e.clientX, e.clientY);
+      const over = findDropGroupId(e.clientX, e.clientY);
+      setDropTargetId(over);
+    };
+
+    const onUp = (e: PointerEvent) => {
+      const drag = pointerDragRef.current;
+      if (!drag || e.pointerId !== drag.pointerId) return;
+      endPointerDrag(e.clientX, e.clientY, drag.active);
+    };
+
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      removeGhost();
+    };
+  }, []);
+
+  const handleCardPointerDown = (e: React.PointerEvent, cardId: string) => {
+    // Mouse keeps native HTML5 DnD; touch/pen use pointer drag
+    if (!isTouchLikePointer(e)) return;
+    if (e.button !== 0 && e.button !== -1) return;
+
+    const ids = resolveDragIds(cardId);
+    pointerDragRef.current = {
+      pointerId: e.pointerId,
+      cardId,
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+      ids,
+    };
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
   const handleCardDragStart = (e: React.DragEvent, cardId: string) => {
+    // Touch path uses pointer events — ignore HTML5 on touch
+    if (pointerDragRef.current) {
+      e.preventDefault();
+      return;
+    }
     const ids = resolveDragIds(cardId);
     activeDragCardIds = ids;
     const payload = JSON.stringify(ids);
@@ -145,25 +323,13 @@ export const PlayerHand: React.FC = () => {
     const ids = parseDragIds(e);
     setDropTargetId(null);
     activeDragCardIds = [];
-
-    if (!ids.length) return;
-
-    if (targetGroupId !== 'NEW') {
-      const currentGroups = useGameStore.getState().groups;
-      const target = currentGroups.find((g) => g.id === targetGroupId);
-      if (target && ids.every((id) => target.cards.some((c) => c.instanceId === id)) && ids.length === target.cards.length) {
-        return;
-      }
-    }
-
-    soundEngine.play('group');
-    moveCardsToGroup(ids, targetGroupId);
+    commitMove(ids, targetGroupId);
   };
 
   const totalCards = groups.reduce((n, g) => n + g.cards.length, 0);
 
   return (
-    <div className="player-hand">
+    <div className={`player-hand${touchDragging ? ' is-touch-dragging' : ''}`}>
       <div className="player-hand-tray" id="seat-self" ref={trayRef}>
         {totalCards === 0 && (
           <div className="player-hand-empty">Your cards will appear here after the deal.</div>
@@ -175,6 +341,7 @@ export const PlayerHand: React.FC = () => {
           return (
             <div
               key={group.id}
+              data-drop-group={group.id}
               className={`hand-group${isOver ? ' drop-over' : ''} hand-group--${group.groupType.toLowerCase()}`}
               onDragOver={(e) => allowDrop(e, group.id)}
               onDragEnter={(e) => allowDrop(e, group.id)}
@@ -215,6 +382,7 @@ export const PlayerHand: React.FC = () => {
                     key={card.instanceId}
                     className="hand-card-slot"
                     style={{ marginLeft: idx === 0 ? 0 : 'var(--card-overlap)' }}
+                    onPointerDown={(e) => handleCardPointerDown(e, card.instanceId)}
                   >
                     <CardView
                       card={card}
@@ -224,6 +392,7 @@ export const PlayerHand: React.FC = () => {
                       onDragStart={(e) => handleCardDragStart(e, card.instanceId)}
                       onDragEnd={handleCardDragEnd}
                       onClick={() => {
+                        if (suppressClickRef.current) return;
                         soundEngine.play('select');
                         toggleSelectCard(card.instanceId);
                       }}
@@ -247,6 +416,7 @@ export const PlayerHand: React.FC = () => {
         {totalCards > 0 && (
           <div
             id="btn-hand-new-group"
+            data-drop-group="NEW"
             className={`hand-new-group-zone${dropTargetId === 'NEW' ? ' drop-over' : ''}${selectedCardIds.length > 0 ? ' has-selection' : ''}`}
             onClick={() => {
               if (selectedCardIds.length > 0) {

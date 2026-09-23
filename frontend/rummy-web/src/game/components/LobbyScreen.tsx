@@ -206,16 +206,25 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
   }, [isMatchmaking]);
 
   useEffect(() => {
-    if (autoMatchmakePending) {
-      setAutoMatchmakePending(false);
-      setRematchNotice(true);
-      const targetConfig = lastGameConfig ?? {
-        rulesetId: activeRulesetId,
-        entryFee: activeEntryFee,
-        maxPlayers: selectedPlayers,
-      };
-      handlePlay(targetConfig);
+    if (!autoMatchmakePending) return;
+
+    // Always read latest config from store (avoid stale Lobby defaults = 2P)
+    const cfg = useGameStore.getState().lastGameConfig;
+    const maxPlayers =
+      cfg?.maxPlayers && cfg.maxPlayers >= 2 ? cfg.maxPlayers : selectedPlayers;
+
+    setAutoMatchmakePending(false);
+    setRematchNotice(true);
+    if (cfg?.maxPlayers && cfg.maxPlayers >= 2) {
+      setSelectedPlayers(cfg.maxPlayers);
     }
+
+    void handlePlay({
+      rulesetId: cfg?.rulesetId ?? activeRulesetId,
+      entryFee: cfg?.entryFee ?? activeEntryFee,
+      maxPlayers,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once when rematch flag flips
   }, [autoMatchmakePending]);
 
   useEffect(() => {
@@ -239,7 +248,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
 
     const rId = customConfig?.rulesetId ?? activeRulesetId;
     const eFee = customConfig?.entryFee ?? activeEntryFee;
-    const mPlayers = customConfig?.maxPlayers ?? selectedPlayers;
+    // Lobby only offers 2P / 6P tables — preserve 6 on rematch
+    const rawPlayers = Number(customConfig?.maxPlayers ?? selectedPlayers) || 2;
+    const mPlayers = rawPlayers >= 5 ? 6 : 2;
 
     setLastGameConfig({
       rulesetId: rId,
@@ -363,7 +374,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
 
   return (
     <LandscapeGate enabled={currentPage !== 'SELECT_VARIANT' || isMatchmaking}>
-    <div className="lobby-frame" style={{ color: '#f8fafc' }}>
+    <div
+      className={`lobby-frame${currentPage === 'CONFIGURE_TABLE' ? ' lobby-frame--stake' : ''}`}
+      style={{ color: '#f8fafc' }}
+    >
       {/* Top Header Bar */}
       <header className="lobby-topbar" style={{ display: currentPage === 'CONFIGURE_TABLE' ? 'none' : undefined }}>
         <div className="lobby-brand">
@@ -419,11 +433,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
 
       {/* Main Container */}
       <main
-        className="lobby-main"
-        style={{
-          justifyContent: 'center',
-          paddingBottom: currentPage === 'SELECT_VARIANT' ? '20vh' : 28,
-        }}
+        className={`lobby-main${currentPage === 'SELECT_VARIANT' ? ' lobby-main--variants' : ''}`}
       >
         {rematchNotice && isMatchmaking && (
           <div
@@ -448,32 +458,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
         {/* PAGE 1: CHOOSE VARIANT HUB                                */}
         {/* ========================================================= */}
         {currentPage === 'SELECT_VARIANT' && (
-          <div
-            style={{
-              width: '100%',
-              maxWidth: 980,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 18,
-            }}
-          >
-            {/* Title Section */}
-            <div style={{ textAlign: 'center' }}>
-              <h1
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: 'clamp(30px, 4.2vw, 42px)',
-                  fontWeight: 900,
-                  lineHeight: 1.2,
-                  margin: 0,
-                  color: '#ffffff',
-                  letterSpacing: '-0.01em',
-                  textShadow: '0 3px 14px rgba(0, 0, 0, 0.65)',
-                }}
-              >
-                Choose Your Rummy
+          <div className="lobby-variant-hub">
+            <div className="lobby-choose-heading">
+              <span className="lobby-choose-eyebrow">Select a game</span>
+              <h1 className="lobby-choose-title">
+                Choose Your <em>Rummy</em>
               </h1>
+              <span className="lobby-choose-ornament" aria-hidden>
+                <i />
+                <span>♠</span>
+                <i />
+              </span>
             </div>
 
             <div className="variant-cards-row">
@@ -498,29 +493,30 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ onOpenTutorial }) => {
         {/* ========================================================= */}
         {currentPage === 'CONFIGURE_TABLE' && (
           <div className="stake-screen">
-            <div className="stake-nav">
-              <button
-                type="button"
-                id="btn-back-to-variants"
-                className="stake-back"
-                onClick={() => {
-                  soundEngine.play('click');
-                  setCurrentPage('SELECT_VARIANT');
-                }}
-              >
-                <ArrowLeft size={15} strokeWidth={2.5} />
-                Change Variant
-              </button>
-              <div className="stake-step">
-                Step 2 of 2: <strong>Configure Stakes</strong>
-              </div>
-            </div>
-
             <div className="stake-card">
               <span className="stake-suit stake-suit-tl">♠</span>
               <span className="stake-suit stake-suit-tr">♦</span>
               <span className="stake-suit stake-suit-bl">♠</span>
               <span className="stake-suit stake-suit-br">♥</span>
+
+              <div className="stake-nav">
+                <button
+                  type="button"
+                  id="btn-back-to-variants"
+                  className="stake-back"
+                  onClick={() => {
+                    soundEngine.play('click');
+                    setCurrentPage('SELECT_VARIANT');
+                  }}
+                >
+                  <ArrowLeft size={15} strokeWidth={2.5} />
+                  Change Variant
+                </button>
+                <div className="stake-step">
+                  Step 2 of 2: <strong>Configure Stakes</strong>
+                </div>
+              </div>
+
               <div className="stake-emblem">
                 <div className="stake-ribbon">
                   <h2>{activeVariantTitle.toUpperCase()}</h2>

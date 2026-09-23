@@ -14,6 +14,7 @@ type FlyCard = {
   mx: number;
   my: number;
   rot: number;
+  rotMid: number;
   delayMs: number;
 };
 
@@ -25,10 +26,13 @@ type Props = {
   onComplete: () => void;
 };
 
-const FLIGHT_MS = 720;
-const STAGGER_MS = 62;
-/** Dealer hands on wood rim (BG cover top) — not face/neck */
-const HANDS_Y = 0.36;
+const FLIGHT_MS = 780;
+const STAGGER_MS = 70;
+/**
+ * Origin = painted deck between dealer hands (felt rim notch).
+ * Stage uses the board PNG 1:1 via aspect-ratio — tune as % of stage height.
+ */
+const HANDS_Y = 0.305;
 const HANDS_X = 0.5;
 
 function measurePoint(
@@ -87,7 +91,7 @@ export const DealAnimation: React.FC<Props> = ({
 
       const dests = frozenTargets.map((t) => {
         const sel = t.selector ?? `#seat-${t.id}`;
-        return measurePoint(table, sel) ?? { x: ox, y: oy + tableRect.height * 0.4 };
+        return measurePoint(table, sel) ?? { x: ox, y: oy + tableRect.height * 0.45 };
       });
 
       const next: FlyCard[] = [];
@@ -97,16 +101,19 @@ export const DealAnimation: React.FC<Props> = ({
           const dest = dests[p];
           const dx = dest.x - ox;
           const dy = dest.y - oy;
-          // Arc: leave hands slightly into the felt, then out to seat
-          const mx = dx * 0.28;
-          const my = dy * 0.2 + Math.min(28, tableRect.height * 0.04);
+          // Leave hands straight onto felt, then arc out to seat
+          const feltDip = Math.max(tableRect.height * 0.16, 64);
+          const mx = dx * 0.38;
+          const my = Math.max(dy * 0.32, feltDip);
+          const rot = (p % 2 === 0 ? -1 : 1) * (16 + (round % 4) * 7) + (idx % 3) * 4;
           next.push({
             key: `deal-${idx}`,
             dx,
             dy,
             mx,
             my,
-            rot: (p % 2 === 0 ? -1 : 1) * (22 + (round % 4) * 9) + (idx % 3) * 5,
+            rot,
+            rotMid: rot * 0.35,
             delayMs: idx * STAGGER_MS,
           });
           idx += 1;
@@ -116,7 +123,7 @@ export const DealAnimation: React.FC<Props> = ({
       soundEngine.play('deal');
 
       const flights = frozenTargets.length * cardsPerPlayer;
-      const totalMs = Math.max(0, flights - 1) * STAGGER_MS + FLIGHT_MS + 360;
+      const totalMs = Math.max(0, flights - 1) * STAGGER_MS + FLIGHT_MS + 280;
       finishTimer = window.setTimeout(() => {
         if (!doneRef.current) {
           doneRef.current = true;
@@ -140,7 +147,7 @@ export const DealAnimation: React.FC<Props> = ({
     <div className="deal-anim-layer" aria-hidden>
       <div className="deal-anim-banner">Dealer is dealing…</div>
 
-      {/* Mini stock in her hands — makes origin read as “from hands” */}
+      {/* Stock in hands — cards peel off from here */}
       <div
         className="deal-hands-stock"
         style={{ left: origin.x, top: origin.y }}
@@ -165,6 +172,7 @@ export const DealAnimation: React.FC<Props> = ({
               '--deal-mx': `${c.mx}px`,
               '--deal-my': `${c.my}px`,
               '--deal-rot': `${c.rot}deg`,
+              '--deal-rot-mid': `${c.rotMid}deg`,
             } as React.CSSProperties
           }
         >

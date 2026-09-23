@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 interface TurnTimerRingProps {
   turnDeadline: string | null;
+  /** Pixel size; omit to fill parent (responsive). */
   size?: number;
   strokeWidth?: number;
   totalDurationSeconds?: number;
@@ -10,7 +11,7 @@ interface TurnTimerRingProps {
 
 export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
   turnDeadline,
-  size = 72,
+  size,
   strokeWidth = 4,
   totalDurationSeconds = 30,
   showText = false,
@@ -39,12 +40,14 @@ export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
     return null;
   }
 
-  const radius = (size - strokeWidth) / 2;
+  // Unitless viewBox geometry so SVG can scale with CSS width/height
+  const vb = 100;
+  const sw = size ? (strokeWidth / size) * vb : strokeWidth * 1.6;
+  const radius = (vb - sw) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = Math.min(1, Math.max(0, secondsRemaining / totalDurationSeconds));
   const strokeDashoffset = circumference * (1 - progress);
 
-  // Color transitions: Green (>12s) -> Amber (5-12s) -> Red Pulsing (<5s)
   let strokeColor = 'var(--color-pure)';
   if (secondsRemaining < 5) {
     strokeColor = 'var(--color-invalid)';
@@ -53,22 +56,31 @@ export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
   }
 
   const isCritical = secondsRemaining <= 5;
-
-  return (
-    <div
-      style={{
+  const boxStyle: React.CSSProperties = size
+    ? {
         position: 'relative',
         width: size,
         height: size,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-      }}
-      className={isCritical ? 'timer-critical' : ''}
-    >
+      }
+    : {
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      };
+
+  return (
+    <div style={boxStyle} className={isCritical ? 'timer-critical' : ''}>
       <svg
-        width={size}
-        height={size}
+        viewBox={`0 0 ${vb} ${vb}`}
+        width={size ?? '100%'}
+        height={size ?? '100%'}
+        preserveAspectRatio="xMidYMid meet"
         style={{
           transform: 'rotate(-90deg)',
           position: 'absolute',
@@ -76,22 +88,20 @@ export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
           left: 0,
         }}
       >
-        {/* Background track */}
         <circle
-          cx={size / 2}
-          cy={size / 2}
+          cx={vb / 2}
+          cy={vb / 2}
           r={radius}
           stroke="rgba(255, 255, 255, 0.15)"
-          strokeWidth={strokeWidth}
+          strokeWidth={sw}
           fill="none"
         />
-        {/* Animated Countdown Ring */}
         <circle
-          cx={size / 2}
-          cy={size / 2}
+          cx={vb / 2}
+          cy={vb / 2}
           r={radius}
           stroke={strokeColor}
-          strokeWidth={strokeWidth}
+          strokeWidth={sw}
           fill="none"
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
@@ -99,7 +109,6 @@ export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
           style={{ transition: 'stroke-dashoffset 0.25s linear, stroke 0.3s ease' }}
         />
       </svg>
-      {/* Time Text (optional, default false so it does not block the avatar icon) */}
       {showText && (
         <span
           style={{

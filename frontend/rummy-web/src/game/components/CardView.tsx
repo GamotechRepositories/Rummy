@@ -57,10 +57,19 @@ export const CardView: React.FC<CardViewProps> = React.memo(({
   const rankStr = RANK_SHORT[card.rank] || '';
   const joker = isJoker(card, wildJoker);
   const isPrinted = card.printedJoker;
+  // HTML5 DnD is unreliable on touch phones — PlayerHand uses pointer drag there
+  const useNativeDrag =
+    isDraggable &&
+    typeof window !== 'undefined' &&
+    !window.matchMedia('(pointer: coarse)').matches;
 
   const cornerMarks = (
     <>
-      <span className="card-corner-rank">{rankStr}</span>
+      <span
+        className={`card-corner-rank${rankStr.length > 1 ? ' card-corner-rank--wide' : ''}`}
+      >
+        {rankStr}
+      </span>
       <span className="card-corner-suit">{suitChar}</span>
     </>
   );
@@ -81,9 +90,9 @@ export const CardView: React.FC<CardViewProps> = React.memo(({
       style={{
         cursor: isDraggable ? 'grab' : onClick ? 'pointer' : undefined,
       }}
-      draggable={isDraggable}
-      onDragStart={isDraggable ? onDragStart : undefined}
-      onDragEnd={isDraggable ? onDragEnd : undefined}
+      draggable={useNativeDrag}
+      onDragStart={useNativeDrag ? onDragStart : undefined}
+      onDragEnd={useNativeDrag ? onDragEnd : undefined}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       role="button"

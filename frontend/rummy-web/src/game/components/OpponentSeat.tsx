@@ -74,7 +74,7 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
     position === 'right' || position === 'top-right' || position === 'bottom-right';
 
   const avatarElement = (
-    <div style={{ position: 'relative', width: '56px', height: '56px', flexShrink: 0 }}>
+    <div className="opponent-avatar-wrap">
       {/* Turn Spotlight Glow on Felt */}
       {isCurrentTurn && (
         <div
@@ -92,29 +92,21 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
 
       {/* Turn Timer Ring */}
       {isCurrentTurn && (
-        <div style={{ position: 'absolute', top: '-4px', left: '-4px', zIndex: 12 }}>
-          <TurnTimerRing turnDeadline={turnDeadline ?? null} size={64} strokeWidth={3.5} />
+        <div className="opponent-avatar-timer">
+          <TurnTimerRing turnDeadline={turnDeadline ?? null} strokeWidth={3.5} />
         </div>
       )}
 
       {/* Outer Metallic Bezel */}
       <div
+        className="opponent-avatar-bezel"
         style={{
-          width: '56px',
-          height: '56px',
-          borderRadius: '50%',
-          padding: '2.5px',
           background: isCurrentTurn
             ? 'linear-gradient(135deg, #fef08a 0%, #d97706 50%, #fef08a 100%)'
             : 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(212,175,55,0.6) 50%, rgba(0,0,0,0.6) 100%)',
           boxShadow: isCurrentTurn
             ? '0 0 18px rgba(251, 191, 36, 0.7), 0 4px 12px rgba(0,0,0,0.6)'
             : '0 4px 12px rgba(0,0,0,0.55)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-          zIndex: 5,
         }}
       >
         {/* Character Illustration SVG */}
@@ -294,7 +286,7 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
       >
         <div
           style={{
-            fontSize: '11px',
+            fontSize: 'var(--ui-font-sm, 11px)',
             fontWeight: 800,
             color: isCurrentTurn ? '#fef08a' : '#ffffff',
             whiteSpace: 'nowrap',

@@ -259,8 +259,10 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
     displayName,
     groups: myVisualGroups,
     lastKnownHand,
+    lastGameConfig,
     leaveTable,
     setAutoMatchmakePending,
+    setLastGameConfig,
     clearSelection,
   } = useGameStore();
 
@@ -367,6 +369,17 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
 
   const handleRematch = () => {
     soundEngine.play('match');
+
+    // Capture table size BEFORE leaveTable clears gameState.
+    // Prefer saved config; fall back to seated count (opponents + self).
+    const seated = (gameState?.opponents?.length ?? 0) + 1;
+    const maxPlayers = Math.max(2, lastGameConfig?.maxPlayers ?? 0, seated);
+    setLastGameConfig({
+      rulesetId: lastGameConfig?.rulesetId ?? 'POINTS_13',
+      entryFee: lastGameConfig?.entryFee ?? 8,
+      maxPlayers,
+    });
+
     clearSelection();
     setAutoMatchmakePending(true);
     void clearActiveSessionRemote(playerId);

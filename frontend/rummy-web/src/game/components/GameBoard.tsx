@@ -14,28 +14,26 @@ import { GameResultModal } from './GameResultModal';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
 
 function getPerimeterPosition(index: number, total: number): SeatPosition {
-  // Opponents sit on the wood rail — not stacked in the HUD
+  // Top-view oval: self is bottom-center; opponents sit on the wood rim.
   if (total === 1) return 'left';
   if (total === 2) return index === 0 ? 'left' : 'right';
   if (total === 3) {
-    if (index === 0) return 'left';
-    if (index === 1) return 'top-left';
-    return 'top-right';
+    const seats: SeatPosition[] = ['left', 'top-left', 'top-right'];
+    return seats[index] ?? 'left';
   }
   if (total === 4) {
-    if (index === 0) return 'left';
-    if (index === 1) return 'top-left';
-    if (index === 2) return 'top-right';
-    return 'right';
+    const seats: SeatPosition[] = ['left', 'top-left', 'top-right', 'right'];
+    return seats[index] ?? 'left';
   }
-  const positions: SeatPosition[] = [
+  // 5 opponents (6-player table) — clear rim seats around dealer
+  const seats: SeatPosition[] = [
+    'bottom-left',
     'left',
     'top-left',
-    'top-center',
     'top-right',
-    'right',
+    'bottom-right',
   ];
-  return positions[index % positions.length];
+  return seats[index % seats.length];
 }
 
 interface GameBoardProps {
@@ -72,10 +70,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
     return () => window.clearTimeout(t);
   }, [resumePending, gameState]);
 
-  // Fresh deal → play dealer flight once per table; skip mid-hand reconnect
+  // Fresh deal → play dealer flight only on lobby→table transition (never on refresh/resume)
   React.useEffect(() => {
     if (!gameState) {
-      prevStatusRef.current = null;
+      // Keep prevStatus during soft-reconnect so refresh does not look like a new deal
       return;
     }
 
@@ -95,12 +93,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
 
     const handLen = gameState.hand?.length ?? 0;
     const freshPile = (gameState.discardHistory?.length ?? 0) <= 1;
-    const comingFromLobby =
-      prev === 'WAITING_FOR_PLAYERS' ||
-      prev === 'DEALING' ||
-      prev == null;
+    // Only animate when we watched the lobby→deal transition in this tab session.
+    // prev == null means first paint after refresh/resume — skip animation.
+    const watchedDealStart =
+      prev === 'WAITING_FOR_PLAYERS' || prev === 'DEALING';
 
-    if (status === 'IN_PROGRESS' && handLen > 0 && freshPile && comingFromLobby) {
+    if (status === 'IN_PROGRESS' && handLen > 0 && freshPile && watchedDealStart) {
       dealPlayedKeyRef.current = key;
       const seats: DealTarget[] = (gameState.opponents ?? []).map((o) => ({
         id: o.playerId,
@@ -111,7 +109,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onOpenTutorial }) => {
       return;
     }
 
-    if (status === 'IN_PROGRESS' && handLen > 0 && !freshPile) {
+    // Already mid-hand (refresh / reconnect / discard history moved on)
+    if (status === 'IN_PROGRESS' && handLen > 0) {
       dealPlayedKeyRef.current = key;
       setDealPlaying(false);
     }
