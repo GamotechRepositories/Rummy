@@ -2604,6 +2604,12 @@ h1, h2, h3, h4, .font-display {
   gap: 8px;
 }
 
+@media (min-width: 901px) {
+  .lobby-main.lobby-main--variants {
+    padding-top: clamp(100px, 18vh, 180px);
+  }
+}
+
 /* Stake / configure popup: fit viewport — no page scroller */
 .lobby-main:has(.stake-screen) {
   overflow: hidden;
