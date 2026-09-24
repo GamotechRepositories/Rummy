@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -45,8 +46,14 @@ public class MatchmakingService {
 
     private final long aiFallbackTimeoutMs;
     private final long maxQueueTimeoutMs;
+    private final long humanOnlyMs;
+    private final long botIntervalMs;
+    private final long dealDelayMs;
 
     private final ScheduledExecutorService matchingScheduler = Executors.newSingleThreadScheduledExecutor();
+    private final Object lobbyLock = new Object();
+    private final Map<String, OpenTable> openByQueue = new HashMap<>();
+    private final Map<String, OpenTable> openByTable = new HashMap<>();
 
     @Autowired
     public MatchmakingService(
@@ -56,7 +63,10 @@ public class MatchmakingService {
             MatchmakingStore store,
             @Autowired(required = false) WalletService walletService,
             @Value("${matchmaking.ai-fallback-timeout-ms:15000}") long aiFallbackTimeoutMs,
-            @Value("${matchmaking.max-queue-timeout-ms:45000}") long maxQueueTimeoutMs) {
+            @Value("${matchmaking.max-queue-timeout-ms:45000}") long maxQueueTimeoutMs,
+            @Value("${matchmaking.human-only-ms:5000}") long humanOnlyMs,
+            @Value("${matchmaking.bot-interval-ms:2000}") long botIntervalMs,
+            @Value("${matchmaking.deal-delay-ms:15000}") long dealDelayMs) {
         this.tableManager = Objects.requireNonNull(tableManager);
         this.routingRegistry = Objects.requireNonNull(routingRegistry);
         this.presenceService = Objects.requireNonNull(presenceService);
@@ -64,6 +74,20 @@ public class MatchmakingService {
         this.walletService = walletService;
         this.aiFallbackTimeoutMs = aiFallbackTimeoutMs;
         this.maxQueueTimeoutMs = maxQueueTimeoutMs;
+        this.humanOnlyMs = humanOnlyMs;
+        this.botIntervalMs = botIntervalMs;
+        this.dealDelayMs = dealDelayMs;
+    }
+
+    /** Test helper constructor with production lobby timings. */
+    public MatchmakingService(
+            TableManager tableManager,
+            TableRoutingRegistry routingRegistry,
+            PlayerPresenceService presenceService,
+            long aiFallbackTimeoutMs,
+            long maxQueueTimeoutMs) {
+        this(tableManager, routingRegistry, presenceService, aiFallbackTimeoutMs, maxQueueTimeoutMs,
+                5_000L, 2_000L, 15_000L);
     }
 
     /** Test helper constructor. */
@@ -72,9 +96,12 @@ public class MatchmakingService {
             TableRoutingRegistry routingRegistry,
             PlayerPresenceService presenceService,
             long aiFallbackTimeoutMs,
-            long maxQueueTimeoutMs) {
+            long maxQueueTimeoutMs,
+            long humanOnlyMs,
+            long botIntervalMs,
+            long dealDelayMs) {
         this(tableManager, routingRegistry, presenceService, new InMemoryMatchmakingStore(),
-                null, aiFallbackTimeoutMs, maxQueueTimeoutMs);
+                null, aiFallbackTimeoutMs, maxQueueTimeoutMs, humanOnlyMs, botIntervalMs, dealDelayMs);
     }
 
     @PostConstruct
@@ -99,6 +126,12 @@ public class MatchmakingService {
         );
 
         presenceService.updatePresence(request.getPlayerId());
+
+        if (request.isAllowAiFallback()) {
+            openOrJoinLobby(ticket, request);
+            return ticket;
+        }
+
         store.saveTicket(ticket);
         store.enqueue(ticket.getQueueKey(), ticket.getTicketId());
 
@@ -115,11 +148,46 @@ public class MatchmakingService {
         Optional<MatchmakingTicket> opt = store.findTicket(ticketId);
         if (opt.isEmpty()) return false;
         MatchmakingTicket ticket = opt.get();
-        if (ticket.getStatus() != MatchmakingTicket.Status.QUEUED) return false;
-        ticket.setStatus(MatchmakingTicket.Status.CANCELLED);
-        store.saveTicket(ticket);
-        log.info("[Matchmaking] Cancelled ticket {}", ticketId);
-        return true;
+        if (ticket.getStatus() == MatchmakingTicket.Status.QUEUED) {
+            ticket.setStatus(MatchmakingTicket.Status.CANCELLED);
+            store.saveTicket(ticket);
+            log.info("[Matchmaking] Cancelled ticket {}", ticketId);
+            return true;
+        }
+        if (ticket.getStatus() == MatchmakingTicket.Status.MATCHED) {
+            return releaseLobbyHuman(ticket);
+        }
+        return false;
+    }
+
+    /**
+     * A waiting human disconnected or left. Frees their reserved seat.
+     * The table is destroyed when nobody real remains.
+     */
+    public void onWaitingHumanLeft(String playerId, String tableId) {
+        if (playerId == null || tableId == null) return;
+        synchronized (lobbyLock) {
+            OpenTable open = openByTable.get(tableId);
+            if (open == null || open.seatingClosed) return;
+            open.humanIds.remove(playerId);
+            routingRegistry.unregisterPlayer(playerId);
+            if (open.humanIds.isEmpty()) {
+                discardOpenTable(open, true);
+            }
+            log.info("[Matchmaking] Waiting human {} left lobby {}", playerId, tableId);
+        }
+    }
+
+    /**
+     * Last human left before the deal. Cancels bot timers and drops the waiting table.
+     */
+    public void abandonTable(String tableId) {
+        if (tableId == null) return;
+        synchronized (lobbyLock) {
+            OpenTable open = openByTable.get(tableId);
+            if (open == null || open.seatingClosed) return;
+            discardOpenTable(open, true);
+        }
     }
 
     void processQueues() {
@@ -283,6 +351,176 @@ public class MatchmakingService {
 
     public int getQueuedPlayerCount() {
         return store.countQueued();
+    }
+
+    private void openOrJoinLobby(MatchmakingTicket ticket, MatchmakingRequest request) {
+        int maxPlayers = Math.max(2, Math.min(6, request.getMaxPlayers()));
+        synchronized (lobbyLock) {
+            OpenTable open = openByQueue.get(ticket.getQueueKey());
+            if (open == null || !canAccept(open)) {
+                open = createLobbyTable(ticket, maxPlayers);
+            } else if (!hasRoomWithoutEvict(open)) {
+                tableManager.getTable(open.tableId).ifPresent(TableActor::evictLatestBot);
+            }
+            open.humanIds.add(ticket.getPlayerId());
+            assignHuman(ticket, open.tableId);
+        }
+    }
+
+    private boolean canAccept(OpenTable open) {
+        if (open.seatingClosed) return false;
+        if (Duration.between(open.openedAt, Instant.now()).toMillis() >= dealDelayMs) return false;
+        Optional<TableActor> actorOpt = tableManager.getTable(open.tableId);
+        if (actorOpt.isEmpty() || !actorOpt.get().isSeatingOpen()) return false;
+        return hasRoomWithoutEvict(open) || actorOpt.get().countBots() > 0;
+    }
+
+    private boolean hasRoomWithoutEvict(OpenTable open) {
+        TableActor actor = tableManager.getTable(open.tableId).orElse(null);
+        if (actor == null) return false;
+        int pending = Math.max(0, open.humanIds.size() - actor.countHumans());
+        return actor.getState().getPlayers().size() + pending < open.maxPlayers;
+    }
+
+    private OpenTable createLobbyTable(MatchmakingTicket ticket, int maxPlayers) {
+        String tableId = "TBL_MM_" + UUID.randomUUID().toString().substring(0, 8);
+        RummyRules rules = RulesetRegistry.getRuleset(ticket.getRulesetId()).orElseGet(PointsRummyRules::new);
+        TableActor actor = tableManager.getOrCreateTable(tableId, rules);
+        routingRegistry.registerTableOwnership(tableId);
+        actor.setExpectedPlayers(maxPlayers);
+        Instant openedAt = Instant.now();
+        actor.armDealHold(openedAt.plusMillis(dealDelayMs));
+
+        OpenTable open = new OpenTable(tableId, ticket.getQueueKey(), maxPlayers, openedAt);
+        openByQueue.put(ticket.getQueueKey(), open);
+        openByTable.put(tableId, open);
+        scheduleLobby(open);
+        log.info("[Matchmaking] Opened lobby table {} for {}", tableId, ticket.getQueueKey());
+        return open;
+    }
+
+    private void scheduleLobby(OpenTable open) {
+        int maxBots = Math.max(0, open.maxPlayers - 1);
+        for (int i = 0; i < maxBots; i++) {
+            long delay = humanOnlyMs + (long) i * botIntervalMs;
+            if (delay >= dealDelayMs) break;
+            ScheduledFuture<?> task = matchingScheduler.schedule(() -> fillOneBot(open.tableId), delay, TimeUnit.MILLISECONDS);
+            open.tasks.add(task);
+        }
+        ScheduledFuture<?> deal = matchingScheduler.schedule(() -> dealLobby(open.tableId), dealDelayMs, TimeUnit.MILLISECONDS);
+        open.tasks.add(deal);
+    }
+
+    private void fillOneBot(String tableId) {
+        synchronized (lobbyLock) {
+            OpenTable open = openByTable.get(tableId);
+            if (open == null || open.seatingClosed) return;
+            TableActor actor = tableManager.getTable(tableId).orElse(null);
+            if (actor == null || !actor.isSeatingOpen()) return;
+            int pending = Math.max(0, open.humanIds.size() - actor.countHumans());
+            actor.seatOneWaitingBot(pending);
+        }
+    }
+
+    private void dealLobby(String tableId) {
+        synchronized (lobbyLock) {
+            OpenTable open = openByTable.get(tableId);
+            if (open == null || open.seatingClosed) return;
+            TableActor actor = tableManager.getTable(tableId).orElse(null);
+            if (actor == null) {
+                discardOpenTable(open, false);
+                return;
+            }
+            if (actor.countHumans() == 0) {
+                log.info("[Matchmaking] Lobby {} had no human at deal time; discarding", tableId);
+                discardOpenTable(open, true);
+                return;
+            }
+            open.seatingClosed = true;
+            openByQueue.remove(open.queueKey, open);
+            openByTable.remove(tableId);
+            cancelTasks(open);
+            actor.closeSeatingAndDeal();
+        }
+    }
+
+    private void assignHuman(MatchmakingTicket ticket, String tableId) {
+        routingRegistry.registerPlayerTable(ticket.getPlayerId(), tableId);
+        if (walletService != null && ticket.getStakeTier() > 0) {
+            try {
+                String txKey = "STAKE_" + tableId + "_" + ticket.getPlayerId();
+                walletService.debit(
+                        ticket.getPlayerId(),
+                        BigDecimal.valueOf(ticket.getStakeTier()),
+                        "GAME_ENTRY_STAKE",
+                        txKey,
+                        tableId,
+                        "Table entry stake for " + ticket.getRulesetId(),
+                        Map.of("tableId", tableId, "stakeTier", ticket.getStakeTier())
+                );
+            } catch (Exception e) {
+                log.warn("[Matchmaking] Could not debit stake for {}: {}", ticket.getPlayerId(), e.getMessage());
+            }
+        }
+        ticket.setMatchedTableId(tableId);
+        ticket.setMatchedServerId(routingRegistry.getServerInstanceId());
+        ticket.setStatus(MatchmakingTicket.Status.MATCHED);
+        store.saveTicket(ticket);
+        log.info("[Matchmaking] Seated human {} into open table {}", ticket.getPlayerId(), tableId);
+    }
+
+    private boolean releaseLobbyHuman(MatchmakingTicket ticket) {
+        synchronized (lobbyLock) {
+            String tableId = ticket.getMatchedTableId();
+            OpenTable open = tableId == null ? null : openByTable.get(tableId);
+            if (open == null || open.seatingClosed) {
+                return false;
+            }
+            open.humanIds.remove(ticket.getPlayerId());
+            ticket.setStatus(MatchmakingTicket.Status.CANCELLED);
+            store.saveTicket(ticket);
+            tableManager.getTable(tableId).ifPresent(actor -> actor.removeWaitingHuman(ticket.getPlayerId()));
+            routingRegistry.unregisterPlayer(ticket.getPlayerId());
+            if (open.humanIds.isEmpty()) {
+                discardOpenTable(open, true);
+            }
+            log.info("[Matchmaking] Released {} from lobby {}", ticket.getPlayerId(), tableId);
+            return true;
+        }
+    }
+
+    private void discardOpenTable(OpenTable open, boolean removeActor) {
+        open.seatingClosed = true;
+        openByQueue.remove(open.queueKey, open);
+        openByTable.remove(open.tableId);
+        cancelTasks(open);
+        if (removeActor) {
+            tableManager.removeTable(open.tableId);
+        }
+    }
+
+    private static void cancelTasks(OpenTable open) {
+        for (ScheduledFuture<?> task : open.tasks) {
+            task.cancel(false);
+        }
+        open.tasks.clear();
+    }
+
+    private static final class OpenTable {
+        final String tableId;
+        final String queueKey;
+        final int maxPlayers;
+        final Instant openedAt;
+        final Set<String> humanIds = new HashSet<>();
+        final List<ScheduledFuture<?>> tasks = new ArrayList<>();
+        boolean seatingClosed;
+
+        OpenTable(String tableId, String queueKey, int maxPlayers, Instant openedAt) {
+            this.tableId = tableId;
+            this.queueKey = queueKey;
+            this.maxPlayers = maxPlayers;
+            this.openedAt = openedAt;
+        }
     }
 
     @PreDestroy

@@ -57,13 +57,14 @@ public final class TableActor {
     private int turnsUntilNextBotDrop;
     private int lastWindDownTurnCounted = -1;
 
-    /**
-     * Seats that must be filled before the deal. Set by matchmaking (2 or 6).
-     * 0 means a private table, which can still start at 2.
-     */
+    /** Seats that must be filled before the deal. Set by matchmaking (2 or 6). 0 means a private table. */
     private int expectedPlayers;
-    /** Matchmaking already filled empty seats with bots; the 15s fallback must not add more. */
+    /** Matchmaking owns bot fill; the 15s private-table fallback must not add more. */
     private boolean matchmakingOwnsFill;
+    /** Lobby tables do not deal until this instant. Null for private and already-full matches. */
+    private Instant dealNotBefore;
+    /** After the lobby window, a late arrival must not take a seat on this table. */
+    private boolean seatingClosed;
 
     public TableActor(String tableId,
                       GameState initialState,
@@ -145,8 +146,8 @@ public final class TableActor {
     }
 
     /**
-     * Matchmade tables deal only once this many seats are taken.
-     * Empty seats are filled with bots by matchmaking before humans connect.
+     * Matchmade tables deal only once this many seats are taken, unless a timed lobby
+     * closes first and deals with whoever is already seated.
      */
     public synchronized void setExpectedPlayers(int count) {
         int cap = Math.min(rules.getMaxPlayers(), Math.max(2, count));
@@ -155,12 +156,171 @@ public final class TableActor {
         log.info("[TableActor:{}] Matchmade table expects {} players", tableId, cap);
     }
 
+    /** Hold the deal until {@code dealAt}. Server-owned lobby seating uses this. */
+    public synchronized void armDealHold(Instant dealAt) {
+        this.dealNotBefore = dealAt;
+        this.seatingClosed = false;
+    }
+
+    public synchronized boolean isSeatingOpen() {
+        return !seatingClosed
+                && state.getStatus() == GameStatus.WAITING_FOR_PLAYERS
+                && (dealNotBefore == null || Instant.now().isBefore(dealNotBefore));
+    }
+
+    public synchronized int countBots() {
+        return (int) state.getPlayers().stream().filter(PlayerState::isBot).count();
+    }
+
+    public synchronized int countHumans() {
+        return (int) state.getPlayers().stream().filter(p -> !p.isBot()).count();
+    }
+
+    /**
+     * Seat one server-created bot into a free seat. No-op when the table is full
+     * once {@code reservedSeats} (humans matched but not yet connected) are counted.
+     * The bot agent is idle until the deal creates a turn.
+     */
+    public synchronized boolean seatOneWaitingBot(int reservedSeats) {
+        if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS || seatingClosed) {
+            return false;
+        }
+        int cap = expectedPlayers >= 2 ? expectedPlayers : rules.getMaxPlayers();
+        if (state.getPlayers().size() + Math.max(0, reservedSeats) >= cap) {
+            return false;
+        }
+
+        Set<Integer> occupied = new HashSet<>();
+        Set<String> usedNames = new HashSet<>();
+        for (PlayerState player : state.getPlayers()) {
+            occupied.add(player.getSeatIndex());
+            if (player.getDisplayName() != null) {
+                usedNames.add(player.getDisplayName());
+            }
+        }
+        int freeSeat = -1;
+        for (int seat = 0; seat < cap; seat++) {
+            if (!occupied.contains(seat)) {
+                freeSeat = seat;
+                break;
+            }
+        }
+        if (freeSeat < 0) {
+            return false;
+        }
+
+        String botId = "BOT_" + UUID.randomUUID().toString().substring(0, 8);
+        String botName = IndianBotNames.nextUnique(usedNames);
+        registerBot(botId, botName, BotDifficulty.MEDIUM);
+        Instant now = Instant.now();
+        processCommand(new JoinCommand(
+                UUID.randomUUID().toString(),
+                state.getGameId(),
+                botId,
+                botName,
+                freeSeat,
+                true,
+                now
+        ), "LOBBY_BOT_JOIN");
+        processCommand(new ReadyCommand(
+                UUID.randomUUID().toString(),
+                state.getGameId(),
+                botId,
+                now
+        ), "LOBBY_BOT_READY");
+        log.info("[TableActor:{}] Seated waiting bot {} ({}) at seat {}", tableId, botId, botName, freeSeat);
+        return state.getPlayer(botId).isPresent();
+    }
+
+    /** Drop the most recently seated bot so a real player can take the seat. Waiting room only. */
+    public synchronized boolean evictLatestBot() {
+        if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
+            return false;
+        }
+        PlayerState latest = null;
+        for (PlayerState player : state.getPlayers()) {
+            if (player.isBot()) {
+                latest = player;
+            }
+        }
+        if (latest == null) {
+            return false;
+        }
+        String botId = latest.getPlayerId();
+        state.removePlayer(botId);
+        botAgents.remove(botId);
+        refreshHumanViews();
+        log.info("[TableActor:{}] Evicted bot {} for an arriving player", tableId, botId);
+        return true;
+    }
+
+    /** Remove a human who left before the deal. */
+    public synchronized boolean removeWaitingHuman(String playerId) {
+        if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
+            return false;
+        }
+        var player = state.getPlayer(playerId);
+        if (player.isEmpty() || player.get().isBot()) {
+            return false;
+        }
+        state.removePlayer(playerId);
+        refreshHumanViews();
+        log.info("[TableActor:{}] Removed waiting human {}", tableId, playerId);
+        return true;
+    }
+
+    /** Close the lobby window and deal to whoever is seated. */
+    public synchronized void closeSeatingAndDeal() {
+        this.dealNotBefore = null;
+        this.seatingClosed = true;
+        if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
+            return;
+        }
+        if (state.getPlayers().size() < 2) {
+            log.info("[TableActor:{}] Lobby closed with {} player(s); deal not started", tableId, state.getPlayers().size());
+            return;
+        }
+        Instant now = Instant.now();
+        for (PlayerState player : new ArrayList<>(state.getPlayers())) {
+            if (player.getStatus() != PlayerStatus.READY) {
+                processCommand(new ReadyCommand(
+                        UUID.randomUUID().toString(),
+                        state.getGameId(),
+                        player.getPlayerId(),
+                        now
+                ), "LOBBY_READY");
+            }
+        }
+        String starterId = state.getPlayers().get(0).getPlayerId();
+        processCommand(new StartGameCommand(
+                UUID.randomUUID().toString(),
+                state.getGameId(),
+                starterId,
+                now
+        ), "LOBBY_DEAL");
+        log.info("[TableActor:{}] Dealt lobby table with {} players", tableId, state.getPlayers().size());
+    }
+
+    private void refreshHumanViews() {
+        for (String playerId : sessions.keySet()) {
+            if (state.getPlayer(playerId).isPresent()) {
+                sendPlayerView(playerId, null);
+            }
+        }
+    }
+
     public synchronized boolean shouldAutoStart() {
         if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
             return false;
         }
+        if (dealNotBefore != null && Instant.now().isBefore(dealNotBefore)) {
+            return false;
+        }
         int required = expectedPlayers >= 2 ? expectedPlayers : 2;
-        if (state.getPlayers().size() < required) {
+        if (!seatingClosed && state.getPlayers().size() < required) {
+            return false;
+        }
+        if (seatingClosed && state.getPlayers().size() < 2) {
             return false;
         }
         return state.getPlayers().stream().allMatch(p -> p.getStatus() == PlayerStatus.READY);
@@ -475,9 +635,13 @@ public final class TableActor {
     }
 
     private boolean holdingForPlayers() {
-        return expectedPlayers >= 2
-                && state.getStatus() == GameStatus.WAITING_FOR_PLAYERS
-                && state.getPlayers().size() < expectedPlayers;
+        if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
+            return false;
+        }
+        if (dealNotBefore != null && Instant.now().isBefore(dealNotBefore)) {
+            return true;
+        }
+        return !seatingClosed && expectedPlayers >= 2 && state.getPlayers().size() < expectedPlayers;
     }
 
     private void checkAndScheduleAutoBotFallback() {

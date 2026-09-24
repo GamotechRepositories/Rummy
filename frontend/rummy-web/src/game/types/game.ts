@@ -97,6 +97,7 @@ export interface PlayerGameView {
   viewerScore?: number;
   viewerStatus?: PlayerStatus;
   winningGroups?: { cards: CardInstance[] }[];
+  viewerSeatIndex?: number;
 }
 
 export type GroupValidationType = 'PURE_SEQUENCE' | 'IMPURE_SEQUENCE' | 'SET' | 'INVALID';

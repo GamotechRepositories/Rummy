@@ -268,11 +268,32 @@ export const LobbyScreen: React.FC = () => {
       pollIntervalRef.current = null;
     }
 
-    setIsMatchmaking(true);
-    setMmQueueTime(0);
     soundEngine.unlock();
     preloadTableShell();
     soundEngine.play('match');
+
+    const enterMatchedTable = (ticketData: {
+      matchedTableId: string;
+      matchedServerId?: string;
+    }) => {
+      setIsMatchmaking(false);
+      setMmTicketId(null);
+      soundEngine.play('deal');
+      setSession(ticketData.matchedTableId, playerId, name);
+      setHasJoinedTable(true);
+      if (ticketData.matchedServerId) {
+        try {
+          sessionStorage.setItem('rummy_matched_server', ticketData.matchedServerId);
+        } catch {
+          // ignore
+        }
+      }
+      if (connectionStatus === 'CONNECTED') {
+        socketClient.joinTable(0);
+      } else {
+        socketClient.connect();
+      }
+    };
 
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/matchmaking/join`, {
@@ -294,6 +315,13 @@ export const LobbyScreen: React.FC = () => {
       }
 
       const data = await res.json();
+      if (data.status === 'MATCHED' && data.matchedTableId) {
+        enterMatchedTable(data);
+        return;
+      }
+
+      setIsMatchmaking(true);
+      setMmQueueTime(0);
       setMmTicketId(data.ticketId);
 
       pollIntervalRef.current = window.setInterval(async () => {
@@ -306,23 +334,7 @@ export const LobbyScreen: React.FC = () => {
               clearInterval(pollIntervalRef.current);
               pollIntervalRef.current = null;
             }
-            setIsMatchmaking(false);
-            soundEngine.play('deal');
-            setSession(ticketData.matchedTableId, playerId, name);
-            setHasJoinedTable(true);
-            // matchedServerId is set by the owning game node (multi-node / Redis routing)
-            if (ticketData.matchedServerId) {
-              try {
-                sessionStorage.setItem('rummy_matched_server', ticketData.matchedServerId);
-              } catch {
-                // ignore
-              }
-            }
-            if (connectionStatus === 'CONNECTED') {
-              socketClient.joinTable(0);
-            } else {
-              socketClient.connect();
-            }
+            enterMatchedTable(ticketData);
           } else if (ticketData.status === 'CANCELLED' || ticketData.status === 'EXPIRED') {
             if (pollIntervalRef.current) {
               clearInterval(pollIntervalRef.current);

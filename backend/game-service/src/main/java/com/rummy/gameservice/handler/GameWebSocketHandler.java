@@ -10,6 +10,7 @@ import com.rummy.engine.model.PlayerStatus;
 import com.rummy.engine.rules.CardGroup;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
+import com.rummy.gameservice.matchmaking.MatchmakingService;
 import com.rummy.gameservice.protocol.WsClientMessage;
 import com.rummy.gameservice.protocol.WsErrorMessage;
 import com.rummy.gameservice.protocol.WsServerMessage;
@@ -40,6 +41,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     private final TableRoutingRegistry routingRegistry;
     private final PlayerSessionService sessionService;
 
+    private MatchmakingService matchmakingService;
     public GameWebSocketHandler(
             TableManager tableManager,
             ObjectMapper objectMapper,
@@ -54,6 +56,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     }
 
     @Override
+    @Autowired(required = false)
+    public void setMatchmakingService(MatchmakingService matchmakingService) {
+        this.matchmakingService = matchmakingService;
+    }
+
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         log.info("[WS] New connection established: {}", session.getId());
         String authPlayerId = (String) session.getAttributes().get("authenticatedPlayerId");
@@ -152,12 +159,14 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         switch (type.toUpperCase()) {
             case "JOIN_TABLE" -> {
                 String name = data != null && data.has("displayName") ? data.get("displayName").asText() : playerId;
+                if (data != null && data.has("isBot") && data.get("isBot").asBoolean()) {
+                    sendError(session, "FORBIDDEN", "Clients cannot seat bots", reqId);
+                    return;
+                }
+                String name = data != null && data.has("displayName") ? data.get("displayName").asText() : playerId;
                 int seat = data != null && data.has("seatIndex") ? data.get("seatIndex").asInt() : 0;
-                boolean isBot = data != null && data.has("isBot") && data.get("isBot").asBoolean();
-                String targetPlayerId = (isBot && data != null && data.has("playerId"))
-                        ? data.get("playerId").asText()
-                        : playerId;
-
+                boolean isBot = false;
+                String targetPlayerId = playerId;
                 // Reconnection: If player already seated, re-register session and view
                 if (tableActor.getState().getPlayer(targetPlayerId).isPresent()) {
                     tableActor.registerSession(targetPlayerId, session);
@@ -207,7 +216,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 if (playerOpt.isPresent() && playerOpt.get().getStatus() == PlayerStatus.ACTIVE
                         && tableActor.getState().getStatus() == GameStatus.IN_PROGRESS) {
                     tableActor.processCommand(new DropCommand(reqId, gameId, playerId, now), "LEAVE_DROP");
-                }
+                } else if (tableActor.getState().getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+                    tableActor.removeWaitingHuman(playerId);
+                    if (matchmakingService != null) {
+                        matchmakingService.onWaitingHumanLeft(playerId, tableId);
+                    }
                 sessionService.clearPlayerBinding(playerId);
                 tableActor.unregisterSession(playerId);
                 session.sendMessage(new TextMessage(objectMapper.writeValueAsString(

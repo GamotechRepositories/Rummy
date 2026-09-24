@@ -409,12 +409,15 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
               borderRadius: '50%',
               background: isWinner
                 ? 'linear-gradient(135deg, #fbbf24, #d97706)'
-                : 'linear-gradient(135deg, #475569, #1e293b)',
-              boxShadow: isWinner ? '0 0 25px rgba(251, 191, 36, 0.6)' : 'none',
+                : 'linear-gradient(135deg, #b91c1c, #7f1d1d)',
+              boxShadow: isWinner
+                ? '0 0 25px rgba(251, 191, 36, 0.6)'
+                : '0 0 18px rgba(185, 28, 28, 0.45)',
+              border: '1px solid rgba(248, 231, 176, 0.45)',
               marginBottom: '8px',
             }}
           >
-            {isWinner ? <Trophy size={26} color="#1e1b4b" /> : <Award size={26} color="#94a3b8" />}
+            {isWinner ? <Trophy size={26} color="#1e1b4b" /> : <Award size={26} color="#f8e7b0" />}
           </div>
 
           <h2
@@ -440,7 +443,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
             )}
           </h2>
 
-          <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
+          <p style={{ margin: 0, fontSize: '12px', color: '#f3d7a1' }}>
             {isWinner
               ? 'Valid declaration! 0 penalty points. All players’ 13 cards are revealed below.'
               : 'Hand completed. Review every player’s 13 cards and score below.'}
@@ -456,7 +459,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
               fontWeight: 800,
               textTransform: 'uppercase',
               letterSpacing: '0.08em',
-              color: '#94a3b8',
+              color: '#f3d7a1',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -477,20 +480,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
                   allPlayers.reduce((acc, p) => ({ ...acc, [p.playerId]: next }), {})
                 );
               }}
-              style={{
-                background: 'rgba(56, 189, 248, 0.1)',
-                border: '1px solid rgba(56, 189, 248, 0.3)',
-                borderRadius: '8px',
-                color: '#38bdf8',
-                fontSize: '11px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '4px 10px',
-                transition: 'all 0.15s ease',
-              }}
+              className="showdown-toggle"
             >
               {showAllCards ? (
                 <>
@@ -568,8 +558,9 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
                           borderRadius: '50%',
                           background: won
                             ? 'linear-gradient(135deg, #fbbf24, #d97706)'
-                            : '#334155',
-                          color: won ? '#1a1a1a' : '#cbd5e1',
+                            : 'linear-gradient(135deg, #9f1d24, #5c1016)',
+                          color: won ? '#1a1a1a' : '#f8e7b0',
+                          border: won ? 'none' : '1px solid rgba(248, 231, 176, 0.35)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -680,8 +671,8 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
 
                       <div
                         style={{
-                          color: '#94a3b8',
-                          background: 'rgba(255, 255, 255, 0.06)',
+                          color: '#f8e7b0',
+                          background: 'rgba(127, 29, 29, 0.55)',
                           borderRadius: '50%',
                           padding: '4px',
                           display: 'flex',
@@ -711,15 +702,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
         </div>
 
         {/* Action Buttons */}
-        <div
-          style={{
-            padding: '14px 18px 16px',
-            display: 'flex',
-            gap: '12px',
-            background: 'rgba(0, 0, 0, 0.65)',
-            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          }}
-        >
+        <div className="showdown-footer">
           <button
             type="button"
             className="btn-secondary"

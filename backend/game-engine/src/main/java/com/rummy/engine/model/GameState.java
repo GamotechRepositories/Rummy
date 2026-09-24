@@ -72,6 +72,11 @@ public final class GameState implements Serializable {
         this.players.add(player);
     }
 
+    /** Waiting-room only. Removes a seated player so the seat can be reused. */
+    public boolean removePlayer(String playerId) {
+        return players.removeIf(p -> p.getPlayerId().equals(playerId));
+    }
+
     public CardInstance topDiscard() {
         if (discardPile.isEmpty()) {
             return null;

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { OpponentSeat, type SeatPosition } from './OpponentSeat';
@@ -133,6 +133,41 @@ export const GameBoard: React.FC = () => {
   };
 
   const opponents = gameState?.opponents ?? [];
+  const waitingForPlayers = gameState?.gameStatus === 'WAITING_FOR_PLAYERS';
+  const [arrivalNotice, setArrivalNotice] = useState<string | null>(null);
+  const [waitSeconds, setWaitSeconds] = useState(1);
+  const seenOpponents = useRef<Set<string> | null>(null);
+
+  useEffect(() => {
+    if (!waitingForPlayers) {
+      setWaitSeconds(1);
+      return;
+    }
+    setWaitSeconds(1);
+    const timer = window.setInterval(() => {
+      setWaitSeconds((seconds) => seconds + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [waitingForPlayers, gameState?.tableId]);
+
+  useEffect(() => {
+    if (!gameState || gameState.gameStatus !== 'WAITING_FOR_PLAYERS') {
+      seenOpponents.current = null;
+      return;
+    }
+    const current = gameState.opponents ?? [];
+    if (seenOpponents.current === null) {
+      seenOpponents.current = new Set(current.map((opp) => opp.playerId));
+      return;
+    }
+    const fresh = current.filter((opp) => !seenOpponents.current!.has(opp.playerId));
+    for (const opp of fresh) seenOpponents.current.add(opp.playerId);
+    if (fresh.length === 0) return;
+    const name = fresh[fresh.length - 1].displayName || 'A player';
+    setArrivalNotice(`${name} is added`);
+    const timer = window.setTimeout(() => setArrivalNotice(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [gameState]);
 
   // Derived labels — plain consts (not hooks) so early return below is safe
   const rawRulesetId = (lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
@@ -201,6 +236,12 @@ export const GameBoard: React.FC = () => {
         </div>
       )}
 
+      {arrivalNotice && (
+        <div className="board-arrival-toast" role="status">
+          {arrivalNotice}
+        </div>
+      )}
+
       <main className={`casino-table${dealPlaying ? ' deal-in-progress' : ''}`}>
         <div className="casino-table-stage" id="game-felt-table">
           {/* Top table plate — stake / pot / live (no turn pill, no joker here) */}
@@ -239,28 +280,63 @@ export const GameBoard: React.FC = () => {
 
           {/* Perimeter Seating (Distributed around the oval table rail) */}
           <div className="table-perimeter-seats" aria-label="Opponents">
-            {opponents.length > 0 ? (
-              opponents.map((opp, idx) => (
+            {(() => {
+              const waiting = gameState.gameStatus === 'WAITING_FOR_PLAYERS';
+              const viewerSeat = gameState.viewerSeatIndex ?? 0;
+              const slotCount = waiting ? Math.max(1, maxSeats - 1) : opponents.length;
+              const slots = waiting
+                ? Array.from({ length: slotCount }, (_, index) => {
+                    const seatIndex = (viewerSeat + 1 + index) % Math.max(maxSeats, 2);
+                    return {
+                      key: `seat-${seatIndex}`,
+                      seatIndex,
+                      player: opponents.find((opp) => opp.seatIndex === seatIndex),
+                      position: getPerimeterPosition(index, slotCount),
+                    };
+                  })
+                : opponents.map((opp, index) => ({
+                    key: opp.playerId,
+                    seatIndex: opp.seatIndex,
+                    player: opp,
+                    position: getPerimeterPosition(index, opponents.length),
+                  }));
+              if (!waiting && slots.length === 0) {
+                return (
+                  <div className="opponent-waiting-pod">
+                    <div className="opponent-waiting-dot" />
+                    Waiting for opponents…
+                  </div>
+                );
+              }
+              return slots.map((slot) => (
                 <OpponentSeat
-                  key={opp.playerId}
-                  player={opp}
-                  activePlayerId={gameState?.activePlayerId}
-                  turnDeadline={gameState?.turnDeadline}
-                  seatNumber={opp.seatIndex}
-                  gameStatus={gameState?.gameStatus}
-                  position={getPerimeterPosition(idx, opponents.length)}
+                  key={slot.key}
+                  player={slot.player}
+                  activePlayerId={gameState.activePlayerId}
+                  turnDeadline={gameState.turnDeadline}
+                  seatNumber={slot.seatIndex}
+                  gameStatus={gameState.gameStatus}
+                  position={slot.position}
                 />
-              ))
-            ) : (
-              <div className="opponent-waiting-pod">
-                <div className="opponent-waiting-dot" />
-                Waiting for opponents…
-              </div>
-            )}
+              ));
+            })()}
           </div>
 
           {/* Table Center (Closed Deck, Wild Joker, Discard Pile, Finish Slot) */}
           <section className="table-center-wrap" aria-label="Table Center">
+            {waitingForPlayers && (
+              <div className="join-wait" role="status">
+                <div className="join-wait-kicker">
+                  <span className="join-wait-dot" aria-hidden />
+                  Players are joining
+                </div>
+                <div className="join-wait-sec">
+                  {waitSeconds}
+                  <span>sec</span>
+                </div>
+                <p className="join-wait-line">Game will start when all players come</p>
+              </div>
+            )}
             <TableCenter />
           </section>
 

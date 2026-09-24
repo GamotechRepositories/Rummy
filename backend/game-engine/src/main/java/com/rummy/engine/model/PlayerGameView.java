@@ -35,7 +35,8 @@ public record PlayerGameView(
         List<CardInstance> discardHistory,
         int viewerScore,
         PlayerStatus viewerStatus,
-        List<CardGroup> winningGroups
+        List<CardGroup> winningGroups,
+        int viewerSeatIndex
 ) implements Serializable {
 
     public PlayerGameView(
@@ -54,7 +55,7 @@ public record PlayerGameView(
             Instant turnDeadline,
             boolean isMyTurn
     ) {
-        this(tableId, gameId, viewerPlayerId, gameStatus, sequence, hand, opponents, topDiscard, cutJoker, closedDeckRemaining, activePlayerId, turnPhase, turnDeadline, isMyTurn, null, List.of(), 0, PlayerStatus.ACTIVE, List.of());
+        this(tableId, gameId, viewerPlayerId, gameStatus, sequence, hand, opponents, topDiscard, cutJoker, closedDeckRemaining, activePlayerId, turnPhase, turnDeadline, isMyTurn, null, List.of(), 0, PlayerStatus.ACTIVE, List.of(), 0);
     }
 
     public PlayerGameView(
@@ -75,7 +76,7 @@ public record PlayerGameView(
             String winnerId,
             List<CardInstance> discardHistory
     ) {
-        this(tableId, gameId, viewerPlayerId, gameStatus, sequence, hand, opponents, topDiscard, cutJoker, closedDeckRemaining, activePlayerId, turnPhase, turnDeadline, isMyTurn, winnerId, discardHistory, 0, PlayerStatus.ACTIVE, List.of());
+        this(tableId, gameId, viewerPlayerId, gameStatus, sequence, hand, opponents, topDiscard, cutJoker, closedDeckRemaining, activePlayerId, turnPhase, turnDeadline, isMyTurn, winnerId, discardHistory, 0, PlayerStatus.ACTIVE, List.of(), 0);
     }
 
     public PlayerGameView(
@@ -98,7 +99,7 @@ public record PlayerGameView(
             int viewerScore,
             PlayerStatus viewerStatus
     ) {
-        this(tableId, gameId, viewerPlayerId, gameStatus, sequence, hand, opponents, topDiscard, cutJoker, closedDeckRemaining, activePlayerId, turnPhase, turnDeadline, isMyTurn, winnerId, discardHistory, viewerScore, viewerStatus, List.of());
+        this(tableId, gameId, viewerPlayerId, gameStatus, sequence, hand, opponents, topDiscard, cutJoker, closedDeckRemaining, activePlayerId, turnPhase, turnDeadline, isMyTurn, winnerId, discardHistory, viewerScore, viewerStatus, List.of(), 0);
     }
 
     public record OpponentView(
@@ -183,7 +184,8 @@ public record PlayerGameView(
                 state.getDiscardPile() != null ? new ArrayList<>(state.getDiscardPile()) : List.of(),
                 viewer.getScore(),
                 viewer.getStatus(),
-                winningGroups
+                winningGroups,
+                viewer.getSeatIndex()
         );
     }
 }
