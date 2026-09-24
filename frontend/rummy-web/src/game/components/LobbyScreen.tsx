@@ -19,6 +19,7 @@ import { LandscapeGate } from './LandscapeGate';
 import { soundEngine } from '../audio/soundEngine';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import { tryLockLandscape } from '../hooks/useRequiresLandscape';
+import { preloadTableShell } from '../utils/preloadTableShell';
 
 export type VariantType = 'POINTS' | 'POOL' | 'DEALS' | 'RUMMY_21';
 
@@ -45,7 +46,7 @@ const VARIANT_BANNERS: Array<{
   { id: 'POINTS', cardId: 'card-select-points', label: 'Point Rummy', src: '/3cc9cf25-042c-4870-9b09-f7f07c2ddc39.jpg' },
   { id: 'POOL', cardId: 'card-select-pool', label: 'Pool Rummy', src: '/7b9b7c96-a115-450d-ae27-568b5b8fbc89.jpg' },
   { id: 'DEALS', cardId: 'card-select-deals', label: 'Deal Rummy', src: '/8a9db3f4-972d-4293-b2df-9c50601211ea.jpg' },
-  { id: 'RUMMY_21', cardId: 'card-select-21card', label: '21-Card Rummy', src: '/f3e7974b-2f26-463a-9eff-6dead79be1da.jpg' },
+  { id: 'RUMMY_21', cardId: 'card-select-21card', label: '21-Card Rummy', src: '/7ac1f003-0294-4d18-ae39-93b53258c895.jpg' },
 ];
 
 function StakeStepper({
@@ -269,6 +270,8 @@ export const LobbyScreen: React.FC = () => {
 
     setIsMatchmaking(true);
     setMmQueueTime(0);
+    soundEngine.unlock();
+    preloadTableShell();
     soundEngine.play('match');
 
     try {
@@ -494,7 +497,9 @@ export const LobbyScreen: React.FC = () => {
                     setCurrentPage('SELECT_VARIANT');
                   }}
                 >
-                  <ArrowLeft size={15} strokeWidth={2.5} />
+                  <span className="stake-back-icon" aria-hidden>
+                    <ArrowLeft size={14} strokeWidth={2.75} />
+                  </span>
                   Change Variant
                 </button>
                 <div className="stake-step">
@@ -854,10 +859,39 @@ export const LobbyScreen: React.FC = () => {
               </p>
             </div>
 
+            <div className={`mm-search${mmQueueTime < 15 ? '' : ' mm-search--ready'}`} aria-hidden>
+              <div className="mm-orbit">
+                <span className="mm-orbit-ring" />
+                <span className="mm-orbit-sweep" />
+                <span className="mm-orbit-core">
+                  <Users size={16} />
+                </span>
+              </div>
+              <div className="mm-seats">
+                {Array.from({ length: selectedPlayers }, (_, seat) => (
+                  <span
+                    key={seat}
+                    className={`mm-seat${seat === 0 || mmQueueTime >= 15 ? ' on' : ''}${
+                      mmQueueTime < 15 && seat === mmQueueTime % selectedPlayers ? ' pulse' : ''
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
             <div className="mm-status">
-              {mmQueueTime < 15
-                ? 'Searching online players in queue...'
-                : 'Table matched! Connecting...'}
+              {mmQueueTime < 15 ? (
+                <>
+                  Searching for players
+                  <span className="mm-dots">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                </>
+              ) : (
+                'Table matched. Connecting…'
+              )}
             </div>
 
             <div className="stake-values mm-metrics">
@@ -886,19 +920,6 @@ export const LobbyScreen: React.FC = () => {
             {activePointValue !== null && (
               <div className="stake-summary">Point value: ₹{activePointValue}/point</div>
             )}
-
-            <div className="mm-progress-wrap">
-              <div className="mm-progress-head">
-                <span>Estimated Match Time</span>
-                <span className="mm-timer">{Math.max(0, 15 - mmQueueTime)}s</span>
-              </div>
-              <div className="mm-progress-track">
-                <div
-                  className="mm-progress-fill"
-                  style={{ width: `${Math.min(100, (mmQueueTime / 15) * 100)}%` }}
-                />
-              </div>
-            </div>
 
             <button type="button" id="btn-cancel-matchmaking" className="mm-cancel-btn" onClick={handleCancel}>
               <X size={16} strokeWidth={2.5} />
