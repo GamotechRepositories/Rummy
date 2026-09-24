@@ -34,7 +34,7 @@ function findDropGroupId(clientX: number, clientY: number): string | 'NEW' | nul
   return null;
 }
 
-export const PlayerHand: React.FC = () => {
+export const PlayerHand: React.FC<{ arrivingCount?: number }> = ({ arrivingCount }) => {
   const {
     groups,
     selectedCardIds,
@@ -59,7 +59,7 @@ export const PlayerHand: React.FC = () => {
 
   const wildJoker = gameState?.cutJoker ?? null;
 
-  // Fit card size so the largest group (often all 13) stays fully readable
+  // One row of fans on every screen: shrink cards so groups and New group stay visible
   useLayoutEffect(() => {
     const tray = trayRef.current;
     if (!tray) return;
@@ -70,30 +70,19 @@ export const PlayerHand: React.FC = () => {
       const trayW = tray.clientWidth;
       if (trayW < 40) return;
 
-      const stage = tray.closest('.casino-table-stage') as HTMLElement | null;
-      const stageW = stage?.clientWidth || trayW;
-      const stageH = stage?.clientHeight || window.innerHeight;
-      // Scale with the smaller stage axis so short landscape screens shrink cards
-      const scaleBase = Math.min(stageW, stageH * 1.7);
-      const minCard = Math.max(18, scaleBase * 0.028);
-      const maxCard = Math.max(minCard + 4, scaleBase * 0.052);
-
       const counts = groups.map((g) => g.cards.length);
-      const maxInGroup = Math.max(1, ...counts, 0);
       const groupCount = Math.max(1, groups.length);
-      const newZoneW = Math.max(36, scaleBase * 0.05);
-      const gaps = groupCount * Math.max(4, scaleBase * 0.007) + 6;
-      const groupChrome = groupCount * Math.max(8, scaleBase * 0.012);
-      const avail = Math.max(120, trayW - newZoneW - gaps - groupChrome);
+      const units = counts.map((n) => 1 + Math.max(0, n - 1) * SHOW_RATIO);
+      const unitSum = units.reduce((sum, n) => sum + n, 0) || 1;
 
-      const totalCards = counts.reduce((a, b) => a + b, 0) || maxInGroup;
-      const share =
-        groupCount <= 1 ? 1 : Math.min(1, (maxInGroup / totalCards) * 1.15 + 0.15);
-      const groupAvail = avail * share;
+      const newZoneW = 64;
+      const gaps = groupCount * 12;
+      const avail = Math.max(80, trayW - newZoneW - gaps);
+      const widthFit = avail / unitSum;
 
-      const n = Math.max(maxInGroup, 1);
-      let cardW = groupAvail / (1 + (n - 1) * SHOW_RATIO);
-      cardW = Math.min(maxCard, Math.max(minCard, cardW));
+      const stage = tray.closest('.casino-table-stage') as HTMLElement | null;
+      const stageH = stage?.clientHeight || window.innerHeight;
+      const cardW = Math.min(72, widthFit, stageH * 0.125);
       const cardH = Math.round(cardW * 1.4);
       const overlap = -(cardW * (1 - SHOW_RATIO));
 
@@ -218,7 +207,17 @@ export const PlayerHand: React.FC = () => {
     const onUp = (e: PointerEvent) => {
       const drag = pointerDragRef.current;
       if (!drag || e.pointerId !== drag.pointerId) return;
+      const tapped = !drag.active;
+      const cardId = drag.cardId;
       endPointerDrag(e.clientX, e.clientY, drag.active);
+      if (!tapped) return;
+      // Pointer capture sends the click to the slot, not the card, so select here.
+      suppressClickRef.current = true;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 350);
+      soundEngine.play('select');
+      useGameStore.getState().toggleSelectCard(cardId);
     };
 
     window.addEventListener('pointermove', onMove, { passive: false });
@@ -231,6 +230,20 @@ export const PlayerHand: React.FC = () => {
       removeGhost();
     };
   }, []);
+
+  const handleCardPointerUp = (e: React.PointerEvent, cardId: string) => {
+    const drag = pointerDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId || drag.cardId !== cardId) return;
+    const tapped = !drag.active;
+    endPointerDrag(e.clientX, e.clientY, drag.active);
+    if (!tapped) return;
+    suppressClickRef.current = true;
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 350);
+    soundEngine.play('select');
+    toggleSelectCard(cardId);
+  };
 
   const handleCardPointerDown = (e: React.PointerEvent, cardId: string) => {
     if (e.button !== 0 && e.button !== -1) return;
@@ -321,6 +334,43 @@ export const PlayerHand: React.FC = () => {
   };
 
   const totalCards = groups.reduce((n, g) => n + g.cards.length, 0);
+  const lastKnownHand = useGameStore((state) => state.lastKnownHand);
+  const viewerDropped =
+    gameState?.viewerStatus === 'DROPPED' && gameState.gameStatus === 'IN_PROGRESS';
+  const laidCount = Math.max(totalCards, lastKnownHand.length);
+
+  if (viewerDropped) {
+    const faceDownCount = laidCount > 0 ? laidCount : 13;
+    return (
+      <div className="player-hand player-hand--dropped">
+        <div className="player-hand-tray" id="seat-self">
+          <div className="dropped-hand">
+            <div className="dropped-hand-label">Cards laid down</div>
+            <div className="dropped-hand-row" aria-label={`${faceDownCount} cards laid face down`}>
+              {Array.from({ length: faceDownCount }, (_, i) => (
+                <div key={i} className="rummy-card-back dropped-hand-card" />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (arrivingCount != null) {
+    const arriving = (gameState?.hand ?? []).slice(0, arrivingCount);
+    return (
+      <div className="player-hand player-hand--arriving">
+        <div className="player-hand-tray" id="seat-self" ref={trayRef}>
+          <div className="deal-arrive-row" aria-label={`${arriving.length} cards dealt`}>
+            {arriving.map((card) => (
+              <CardView key={card.instanceId} card={card} wildJoker={wildJoker} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`player-hand${touchDragging ? ' is-touch-dragging' : ''}`}>
@@ -376,6 +426,7 @@ export const PlayerHand: React.FC = () => {
                     className="hand-card-slot"
                     style={{ marginLeft: idx === 0 ? 0 : 'var(--card-overlap)' }}
                     onPointerDown={(e) => handleCardPointerDown(e, card.instanceId)}
+                    onPointerUp={(e) => handleCardPointerUp(e, card.instanceId)}
                   >
                     <CardView
                       card={card}

@@ -128,7 +128,16 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
             justifyContent: 'center',
           }}
         >
-          {avatar.renderSvg(51)}
+          {avatar.photo ? (
+            <img
+              className="opponent-avatar-photo"
+              src={avatar.photo}
+              alt=""
+              draggable={false}
+            />
+          ) : (
+            avatar.renderSvg(51)
+          )}
         </div>
 
         {/* Status Overlay Badges */}

@@ -20,6 +20,7 @@ import { soundEngine } from '../audio/soundEngine';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import { tryLockLandscape } from '../hooks/useRequiresLandscape';
 import { preloadTableShell } from '../utils/preloadTableShell';
+import { PLAYER_CHARACTERS, photoForCharacter } from '../utils/avatarUtils';
 
 export type VariantType = 'POINTS' | 'POOL' | 'DEALS' | 'RUMMY_21';
 
@@ -96,6 +97,8 @@ export const LobbyScreen: React.FC = () => {
     displayName,
     setSession,
     setDisplayName,
+    avatarId,
+    setAvatarId,
     setHasJoinedTable,
     connectionStatus,
     playerId,
@@ -107,6 +110,7 @@ export const LobbyScreen: React.FC = () => {
 
   const [localName, setLocalName] = useState(displayName);
   const [isEditingName, setIsEditingName] = useState(false);
+  const [characterOpen, setCharacterOpen] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number>(1000);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [rematchNotice, setRematchNotice] = useState(false);
@@ -420,6 +424,18 @@ export const LobbyScreen: React.FC = () => {
               <Pencil size={12} strokeWidth={2} />
             </button>
           )}
+
+          <button
+            type="button"
+            className="lobby-character-btn"
+            onClick={() => {
+              soundEngine.play('click');
+              setCharacterOpen(true);
+            }}
+          >
+            <img src={photoForCharacter(avatarId)} alt="" draggable={false} />
+            Choose character
+          </button>
 
           <div className="lobby-balance">
             <Coins size={14} />
@@ -937,6 +953,47 @@ export const LobbyScreen: React.FC = () => {
               <X size={16} strokeWidth={2.5} />
               Cancel Search
             </button>
+          </div>
+        </div>
+      )}
+
+      {characterOpen && (
+        <div className="character-picker-backdrop" onClick={() => setCharacterOpen(false)}>
+          <div
+            className="character-picker"
+            role="dialog"
+            aria-label="Choose character"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="character-picker-head">
+              <h2>Choose character</h2>
+              <button type="button" className="character-picker-close" onClick={() => setCharacterOpen(false)} aria-label="Close">
+                <X size={16} />
+              </button>
+            </div>
+            {(['boy', 'girl'] as const).map((group) => (
+              <section key={group} className="character-picker-group">
+                <h3>{group === 'boy' ? 'Boys' : 'Girls'}</h3>
+                <div className="character-picker-grid">
+                  {PLAYER_CHARACTERS.filter((c) => c.group === group).map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className={`character-picker-face${c.id === avatarId ? ' on' : ''}`}
+                      aria-label={c.id}
+                      aria-pressed={c.id === avatarId}
+                      onClick={() => {
+                        soundEngine.play('select');
+                        setAvatarId(c.id);
+                        setCharacterOpen(false);
+                      }}
+                    >
+                      <img src={c.photo} alt="" draggable={false} />
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
           </div>
         </div>
       )}

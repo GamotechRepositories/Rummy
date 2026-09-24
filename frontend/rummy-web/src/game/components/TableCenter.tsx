@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { CardView } from './CardView';
-import { CheckCircle2, Inbox, Eye, X, History } from 'lucide-react';
+import { Eye, X, History } from 'lucide-react';
 import { isDiscardPhase, isDrawPhase } from '../utils/turnPhase';
 import { soundEngine } from '../audio/soundEngine';
 
@@ -110,7 +110,7 @@ export const TableCenter: React.FC = () => {
               {topDiscard ? (
                 <CardView card={topDiscard} wildJoker={cutJoker} size="normal" />
               ) : (
-                <span className="deck-open-empty">Empty</span>
+                <span className="deck-slot-word">Empty</span>
               )}
             </button>
             {discardHistory.length > 0 && (
@@ -142,17 +142,7 @@ export const TableCenter: React.FC = () => {
             onClick={handleFinishSlotClick}
             aria-label="Finish slot"
           >
-            {canDeclare ? (
-              <>
-                <CheckCircle2 size={20} />
-                <span>Declare</span>
-              </>
-            ) : (
-              <>
-                <Inbox size={18} />
-                <span>Finish</span>
-              </>
-            )}
+            <span className="deck-slot-word">{canDeclare ? 'Declare' : 'Finish'}</span>
           </button>
           <span className={`deck-pod-label${canDeclare ? ' on ok' : waiting ? ' on' : ''}`}>Finish slot</span>
         </div>

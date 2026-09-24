@@ -8,11 +8,13 @@ import {
   readPersistedDisplayName,
   readPersistedLastConfig,
 } from '../utils/sessionResume';
+import { persistAvatarId, readOrCreateAvatarId } from '../utils/avatarUtils';
 
 interface GameStoreState {
   tableId: string;
   playerId: string;
   displayName: string;
+  avatarId: string;
   connectionStatus: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING';
   hasJoinedTable: boolean;
   gameState: PlayerGameView | null;
@@ -35,6 +37,7 @@ interface GameStoreState {
   setConnectionStatus: (status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING') => void;
   setSession: (tableId: string, playerId: string, displayName: string) => void;
   setDisplayName: (displayName: string) => void;
+  setAvatarId: (avatarId: string) => void;
   setHasJoinedTable: (joined: boolean) => void;
   leaveTable: () => void;
   setResumePending: (pending: boolean) => void;
@@ -177,6 +180,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   tableId: 'TBL_ROYAL_01',
   playerId: getStoredPlayerId(),
   displayName: initialDisplayName,
+  avatarId: readOrCreateAvatarId(),
   connectionStatus: 'DISCONNECTED',
   hasJoinedTable: false,
   gameState: null,
@@ -206,6 +210,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       // ignore
     }
     set({ displayName });
+  },
+
+  setAvatarId: (avatarId) => {
+    persistAvatarId(avatarId);
+    set({ avatarId });
   },
 
   setHasJoinedTable: (joined) => set({ hasJoinedTable: joined }),
@@ -287,7 +296,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         : organizeHandIntoGroups(groups, hand, cutJoker);
 
     const handIds = new Set(effectiveHand.map((c) => c.instanceId));
-    const nextSelected = selectedCardIds.filter((id) => handIds.has(id));
+    const viewerDropped = view.viewerStatus === 'DROPPED' && view.gameStatus === 'IN_PROGRESS';
+    const nextSelected = viewerDropped ? [] : selectedCardIds.filter((id) => handIds.has(id));
 
     if (view.gameStatus === 'COMPLETED' || view.gameStatus === 'ABORTED') {
       clearActiveSessionLocal();
@@ -297,13 +307,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       gameState: normalizedView,
       groups: updatedGroups,
       selectedCardIds: nextSelected,
+      isDeclareModalOpen: viewerDropped ? false : get().isDeclareModalOpen,
       lastKnownHand: nextLastKnown,
       resumePending: false,
     });
   },
 
   toggleSelectCard: (cardId) => {
-    const { selectedCardIds } = get();
+    const { selectedCardIds, gameState } = get();
+    if (gameState?.viewerStatus === 'DROPPED') return;
     if (selectedCardIds.includes(cardId)) {
       set({ selectedCardIds: selectedCardIds.filter(id => id !== cardId) });
     } else {
@@ -315,6 +327,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   groupSelectedCards: () => {
     const { selectedCardIds, groups, gameState } = get();
+    if (gameState?.viewerStatus === 'DROPPED') return;
     if (selectedCardIds.length === 0) return;
 
     const selectedSet = new Set(selectedCardIds);
@@ -360,6 +373,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   moveCardsToGroup: (cardIds, targetGroupId) => {
     const { groups, gameState } = get();
+    if (gameState?.viewerStatus === 'DROPPED') return;
     if (!cardIds.length) return;
 
     const movingSet = new Set(cardIds);
@@ -464,6 +478,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   autoSortHand: () => {
     const { gameState } = get();
+    if (gameState?.viewerStatus === 'DROPPED') return;
     const hand = gameState?.hand;
     if (!hand || !hand.length) return;
 

@@ -141,7 +141,11 @@ public record PlayerGameView(
         for (PlayerState player : state.getPlayers()) {
             if (!player.getPlayerId().equals(viewerPlayerId)) {
                 List<CardInstance> opponentHand = isCompleted ? player.getShowdownHand() : List.of();
-                int opponentCardCount = isCompleted ? opponentHand.size() : player.getHandSize();
+                int opponentCardCount = isCompleted
+                        ? opponentHand.size()
+                        : player.getStatus() == PlayerStatus.DROPPED
+                                ? player.getShowdownHand().size()
+                                : player.getHandSize();
                 opponents.add(new OpponentView(
                         player.getPlayerId(),
                         player.getDisplayName(),

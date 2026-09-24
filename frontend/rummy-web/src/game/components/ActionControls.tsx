@@ -15,7 +15,7 @@ import { soundEngine } from '../audio/soundEngine';
 import { isDiscardPhase, isDrawPhase } from '../utils/turnPhase';
 import { calculateHandPenalty } from '../rules/clientValidator';
 import { TurnTimerRing } from './TurnTimerRing';
-import { getAvatarForPlayer } from '../utils/avatarUtils';
+import { getAvatarForPlayer, photoForCharacter } from '../utils/avatarUtils';
 
 export const ActionControls: React.FC = () => {
   const {
@@ -24,6 +24,7 @@ export const ActionControls: React.FC = () => {
     setDeclareModalOpen,
     clearSelection,
     displayName,
+    avatarId,
     groups,
     groupSelectedCards,
     autoSortHand,
@@ -92,10 +93,15 @@ export const ActionControls: React.FC = () => {
     socketClient.draw(source);
   };
 
+  const droppedOut =
+    gameState?.viewerStatus === 'DROPPED' && gameStatus === 'IN_PROGRESS';
+
   return (
     <div className="table-action-controls">
       <div className="bottom-control-bar">
         <div className="bcb-tools">
+          {!droppedOut && (
+            <>
           <button
             id="btn-group-cards"
             type="button"
@@ -131,6 +137,8 @@ export const ActionControls: React.FC = () => {
               <XCircle size={18} />
             </button>
           )}
+            </>
+          )}
         </div>
 
         <div className="bcb-player">
@@ -145,14 +153,23 @@ export const ActionControls: React.FC = () => {
                 />
               </div>
             )}
-            <div className={`bcb-avatar${isMyTurn ? ' on' : ''}`}>{myAvatar.renderSvg(40)}</div>
+            <div className={`bcb-avatar${isMyTurn ? ' on' : ''}`}>
+              <img className="bcb-avatar-photo" src={photoForCharacter(avatarId)} alt="" draggable={false} />
+            </div>
           </div>
           <div className="bcb-player-meta">
             <div className="bcb-player-name">
               {displayName}
               <span className="bcb-vip">{myAvatar.vipTier}</span>
             </div>
-            {gameStatus === 'IN_PROGRESS' && (
+            {gameStatus === 'IN_PROGRESS' && droppedOut && (
+              <div className="bcb-player-stats">
+                <span className="bcb-score">{gameState?.viewerScore ?? 0} pts</span>
+                <span className="bcb-dot" aria-hidden />
+                <span className="bcb-pure">Sitting out</span>
+              </div>
+            )}
+            {gameStatus === 'IN_PROGRESS' && !droppedOut && (
               <div className="bcb-player-stats">
                 <span className={`bcb-score${liveScore === 0 && hasPure ? ' ok' : ''}`}>
                   {liveScore} pts
@@ -167,7 +184,11 @@ export const ActionControls: React.FC = () => {
         </div>
 
         <div className="bcb-actions">
-          {gameStatus === 'IN_PROGRESS' && !discardPhase && (
+          {droppedOut && (
+            <div className="bcb-dropped">Dropped · {gameState?.viewerScore ?? 0} pts · sitting out</div>
+          )}
+
+          {gameStatus === 'IN_PROGRESS' && !droppedOut && !discardPhase && (
             <>
               <button
                 id="btn-action-draw-deck"
@@ -192,7 +213,7 @@ export const ActionControls: React.FC = () => {
             </>
           )}
 
-          {gameStatus === 'IN_PROGRESS' && discardPhase && (
+          {gameStatus === 'IN_PROGRESS' && !droppedOut && discardPhase && (
             <>
               <button
                 id="btn-action-discard"
@@ -217,7 +238,7 @@ export const ActionControls: React.FC = () => {
             </>
           )}
 
-          {gameStatus === 'IN_PROGRESS' && (
+          {gameStatus === 'IN_PROGRESS' && !droppedOut && (
             <button
               id="btn-action-drop"
               type="button"

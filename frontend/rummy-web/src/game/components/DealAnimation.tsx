@@ -117,21 +117,16 @@ export const DealAnimation: React.FC<Props> = ({
           const dest = circle[p].dest;
           const dx = dest.x - ox;
           const dy = dest.y - oy;
-          const len = Math.hypot(dx, dy) || 1;
-          const midX = dx * 0.5;
-          const midY = dy * 0.5;
-          const outX = ox + midX - cx;
-          const outY = oy + midY - cy;
-          const outLen = Math.hypot(outX, outY) || 1;
-          const bow = Math.min(22, len * 0.1);
-          const rot = (Math.atan2(dy, dx) * 180) / Math.PI * 0.06;
+          const midX = dx * 0.72;
+          const midY = dy * 0.72;
+          const rot = ((Math.atan2(dy, dx) * 180) / Math.PI) * 0.06;
           next.push({
             key: `deal-${idx}`,
             targetId: circle[p].id,
             dx,
             dy,
-            mx: midX + (outX / outLen) * bow,
-            my: midY + (outY / outLen) * bow,
+            mx: midX,
+            my: midY,
             rot,
             rotMid: rot * 0.4,
             delayMs: idx * STAGGER_MS,

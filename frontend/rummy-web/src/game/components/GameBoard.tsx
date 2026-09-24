@@ -25,9 +25,9 @@ function getPerimeterPosition(index: number, total: number): SeatPosition {
     const seats: SeatPosition[] = ['left', 'top-left', 'top-right', 'right'];
     return seats[index] ?? 'left';
   }
-  // 5 opponents (6-player table). Left seat faces the right seat.
+  // 5 opponents (6-player table). Extra seat sits on the right, not the lower left.
   const seats: SeatPosition[] = [
-    'bottom-left',
+    'bottom-right',
     'left',
     'top-left',
     'top-right',
@@ -140,17 +140,14 @@ export const GameBoard: React.FC = () => {
   const opponents = gameState?.opponents ?? [];
   const waitingForPlayers = gameState?.gameStatus === 'WAITING_FOR_PLAYERS';
   const [arrivalNotice, setArrivalNotice] = useState<string | null>(null);
-  const [waitSeconds, setWaitSeconds] = useState(1);
+  const [waitSeconds, setWaitSeconds] = useState(15);
   const seenOpponents = useRef<Set<string> | null>(null);
 
   useEffect(() => {
-    if (!waitingForPlayers) {
-      setWaitSeconds(1);
-      return;
-    }
-    setWaitSeconds(1);
+    if (!waitingForPlayers) return;
+    setWaitSeconds(15);
     const timer = window.setInterval(() => {
-      setWaitSeconds((seconds) => seconds + 1);
+      setWaitSeconds((seconds) => (seconds > 1 ? seconds - 1 : 1));
     }, 1000);
     return () => window.clearInterval(timer);
   }, [waitingForPlayers, gameState?.tableId]);
@@ -170,7 +167,7 @@ export const GameBoard: React.FC = () => {
     if (fresh.length === 0) return;
     const name = fresh[fresh.length - 1].displayName || 'A player';
     setArrivalNotice(`${name} is added`);
-    const timer = window.setTimeout(() => setArrivalNotice(null), 2200);
+    const timer = window.setTimeout(() => setArrivalNotice(null), 700);
     return () => window.clearTimeout(timer);
   }, [gameState]);
 
@@ -351,7 +348,7 @@ export const GameBoard: React.FC = () => {
 
           {/* Bottom Station: Player Hand & Action Controls */}
           <section className="table-player-station" aria-label="Player Station">
-            <PlayerHand />
+            <PlayerHand arrivingCount={dealPlaying ? (dealtCounts?.self ?? 0) : undefined} />
             <ActionControls />
           </section>
 
@@ -360,7 +357,6 @@ export const GameBoard: React.FC = () => {
             targets={dealTargets}
             cardsPerPlayer={13}
             onCardLanded={(targetId) => {
-              if (targetId === 'self') return;
               setDealtCounts((prev) => {
                 if (prev == null) return prev;
                 return { ...prev, [targetId]: (prev[targetId] ?? 0) + 1 };

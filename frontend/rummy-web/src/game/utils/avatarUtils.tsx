@@ -6,6 +6,7 @@ export interface AvatarProfile {
   vipTier: string;
   bgGradient: string;
   borderColor: string;
+  photo?: string;
   renderSvg: (size?: number) => React.ReactNode;
 }
 
@@ -295,17 +296,102 @@ export const AVATAR_CHARACTERS: AvatarProfile[] = [
   },
 ];
 
-/**
- * Returns a consistent character avatar profile based on the player's name or ID.
- */
-export function getAvatarForPlayer(identifier?: string | null): AvatarProfile {
-  if (!identifier) return AVATAR_CHARACTERS[0];
+const BOY_PHOTOS = Array.from(
+  { length: 15 },
+  (_, i) => `/avatars/boys/boy-${String(i + 1).padStart(2, '0')}.png`
+);
+const GIRL_PHOTOS = Array.from(
+  { length: 15 },
+  (_, i) => `/avatars/girls/girl-${String(i + 1).padStart(2, '0')}.png`
+);
 
+const BOY_FIRST = new Set([
+  'aarav', 'vivaan', 'aditya', 'vihaan', 'arjun', 'sai', 'reyansh', 'ayaan', 'krishna', 'ishaan',
+  'shaurya', 'atharv', 'advik', 'pranav', 'aryan', 'kabir', 'ansh', 'rudra', 'yuvaan', 'dhruv',
+  'kartik', 'rohan', 'kunal', 'nikhil', 'rahul', 'amit', 'suresh', 'vikram', 'rajesh', 'sanjay',
+]);
+
+const GIRL_FIRST = new Set([
+  'ananya', 'aadhya', 'diya', 'pari', 'anika', 'navya', 'myra', 'sara', 'aisha', 'kiara',
+  'isha', 'riya', 'saanvi', 'aarohi', 'meera', 'kavya', 'nisha', 'pooja', 'priya', 'neha',
+]);
+
+function hashIdentifier(identifier: string): number {
   let hash = 0;
   for (let i = 0; i < identifier.length; i++) {
     hash = (hash << 5) - hash + identifier.charCodeAt(i);
     hash |= 0;
   }
-  const index = Math.abs(hash) % AVATAR_CHARACTERS.length;
-  return AVATAR_CHARACTERS[index];
+  return Math.abs(hash);
+}
+
+export type PlayerCharacter = {
+  id: string;
+  photo: string;
+  group: 'boy' | 'girl';
+};
+
+function characterList(group: 'boy' | 'girl'): PlayerCharacter[] {
+  const folder = group === 'boy' ? 'boys' : 'girls';
+  const prefix = group === 'boy' ? 'boy' : 'girl';
+  return Array.from({ length: 15 }, (_, i) => {
+    const n = String(i + 1).padStart(2, '0');
+    const id = `${prefix}-${n}`;
+    return { id, photo: `/avatars/${folder}/${id}.png`, group };
+  });
+}
+
+export const PLAYER_CHARACTERS: PlayerCharacter[] = [
+  ...characterList('boy'),
+  ...characterList('girl'),
+];
+
+const AVATAR_KEY = 'rummy_avatar_id';
+
+export function isCharacterId(id: string | null | undefined): id is string {
+  return !!id && PLAYER_CHARACTERS.some((c) => c.id === id);
+}
+
+export function photoForCharacter(id: string | null | undefined): string {
+  return PLAYER_CHARACTERS.find((c) => c.id === id)?.photo ?? PLAYER_CHARACTERS[0].photo;
+}
+
+/** First visit picks one face at random and keeps it until the player changes it. */
+export function readOrCreateAvatarId(): string {
+  try {
+    const saved = localStorage.getItem(AVATAR_KEY);
+    if (isCharacterId(saved)) return saved;
+  } catch {
+    // ignore
+  }
+  const pick = PLAYER_CHARACTERS[Math.floor(Math.random() * PLAYER_CHARACTERS.length)].id;
+  try {
+    localStorage.setItem(AVATAR_KEY, pick);
+  } catch {
+    // ignore
+  }
+  return pick;
+}
+
+export function persistAvatarId(id: string): void {
+  if (!isCharacterId(id)) return;
+  try {
+    localStorage.setItem(AVATAR_KEY, id);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Opposite seats use a real photo. Boys and girls are separate pools of 15.
+ * The same name always gets the same face, and a boy's name never gets a girl's photo.
+ */
+export function getAvatarForPlayer(identifier?: string | null): AvatarProfile {
+  const id = identifier?.trim() || 'player';
+  const hash = hashIdentifier(id);
+  const first = id.split(/\s+/)[0]?.toLowerCase() ?? '';
+  const girl = GIRL_FIRST.has(first) || (!BOY_FIRST.has(first) && hash % 2 === 1);
+  const photos = girl ? GIRL_PHOTOS : BOY_PHOTOS;
+  const character = AVATAR_CHARACTERS[hash % AVATAR_CHARACTERS.length];
+  return { ...character, photo: photos[hash % photos.length] };
 }
