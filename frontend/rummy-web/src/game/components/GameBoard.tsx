@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { OpponentSeat, type SeatPosition } from './OpponentSeat';
@@ -52,6 +52,7 @@ export const GameBoard: React.FC = () => {
   const [resumeFailed, setResumeFailed] = React.useState(false);
   const [dealPlaying, setDealPlaying] = React.useState(false);
   const [dealTargets, setDealTargets] = React.useState<DealTarget[]>([]);
+  const [dealtCounts, setDealtCounts] = React.useState<Record<string, number> | null>(null);
   const dealPlayedKeyRef = React.useRef<string | null>(null);
   const prevStatusRef = React.useRef<string | null>(null);
 
@@ -67,7 +68,7 @@ export const GameBoard: React.FC = () => {
   }, [resumePending, gameState]);
 
   // Fresh deal → play dealer flight only on lobby→table transition (never on refresh/resume)
-  React.useEffect(() => {
+  useLayoutEffect(() => {
     if (!gameState) {
       // Keep prevStatus during soft-reconnect so refresh does not look like a new deal
       return;
@@ -81,6 +82,7 @@ export const GameBoard: React.FC = () => {
       dealPlayedKeyRef.current = null;
       setDealPlaying(false);
       setDealTargets([]);
+      setDealtCounts(null);
       return;
     }
 
@@ -101,6 +103,7 @@ export const GameBoard: React.FC = () => {
       }));
       seats.push({ id: 'self', selector: '#seat-self' });
       setDealTargets(seats);
+      setDealtCounts({});
       setDealPlaying(true);
       return;
     }
@@ -109,6 +112,7 @@ export const GameBoard: React.FC = () => {
     if (status === 'IN_PROGRESS' && handLen > 0) {
       dealPlayedKeyRef.current = key;
       setDealPlaying(false);
+      setDealtCounts(null);
     }
   }, [gameState]);
 
@@ -117,6 +121,7 @@ export const GameBoard: React.FC = () => {
       dealPlayedKeyRef.current = null;
       setDealPlaying(false);
       setDealTargets([]);
+      setDealtCounts(null);
     }
   }, [gameState?.tableId]);
 
@@ -317,6 +322,11 @@ export const GameBoard: React.FC = () => {
                   seatNumber={slot.seatIndex}
                   gameStatus={gameState.gameStatus}
                   position={slot.position}
+                  displayCount={
+                    dealPlaying && slot.player
+                      ? (dealtCounts?.[slot.player.playerId] ?? 0)
+                      : undefined
+                  }
                 />
               ));
             })()}
@@ -324,20 +334,19 @@ export const GameBoard: React.FC = () => {
 
           {/* Table Center (Closed Deck, Wild Joker, Discard Pile, Finish Slot) */}
           <section className="table-center-wrap" aria-label="Table Center">
+            <TableCenter />
             {waitingForPlayers && (
               <div className="join-wait" role="status">
-                <div className="join-wait-kicker">
-                  <span className="join-wait-dot" aria-hidden />
-                  Players are joining
-                </div>
                 <div className="join-wait-sec">
                   {waitSeconds}
-                  <span>sec</span>
+                  <span>s</span>
                 </div>
-                <p className="join-wait-line">Game will start when all players come</p>
+                <div className="join-wait-copy">
+                  <p className="join-wait-kicker">Players are joining</p>
+                  <p className="join-wait-line">Game starts when the table is full</p>
+                </div>
               </div>
             )}
-            <TableCenter />
           </section>
 
           {/* Bottom Station: Player Hand & Action Controls */}
@@ -350,7 +359,17 @@ export const GameBoard: React.FC = () => {
             active={dealPlaying}
             targets={dealTargets}
             cardsPerPlayer={13}
-            onComplete={() => setDealPlaying(false)}
+            onCardLanded={(targetId) => {
+              if (targetId === 'self') return;
+              setDealtCounts((prev) => {
+                if (prev == null) return prev;
+                return { ...prev, [targetId]: (prev[targetId] ?? 0) + 1 };
+              });
+            }}
+            onComplete={() => {
+              setDealPlaying(false);
+              setDealtCounts(null);
+            }}
           />
         </div>
       </main>
@@ -359,125 +378,64 @@ export const GameBoard: React.FC = () => {
 
       <GameResultModal isOpen={gameState?.gameStatus === 'COMPLETED'} />
 
-      {/* Safe Table Menu (☰) Modal */}
       {menuOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            backdropFilter: 'blur(6px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1050,
-            padding: '16px',
-          }}
-          onClick={() => setMenuOpen(false)}
-        >
+        <div className="table-menu-backdrop" onClick={() => setMenuOpen(false)}>
           <div
-            style={{
-              width: '100%',
-              maxWidth: '380px',
-              background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
-              borderRadius: '20px',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)',
-              overflow: 'hidden',
-            }}
+            className="table-menu"
+            role="dialog"
+            aria-label="Table menu"
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '16px 20px',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Menu size={18} color="var(--gold-accent)" />
-                <span style={{ fontWeight: 800, fontSize: '16px', color: '#ffffff' }}>Table Menu</span>
-              </div>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => setMenuOpen(false)}
-                style={{ padding: '6px', borderRadius: '50%' }}
-              >
+            <div className="table-menu-head">
+              <h2 className="table-menu-title">Table menu</h2>
+              <button type="button" className="table-menu-close" onClick={() => setMenuOpen(false)} aria-label="Close">
                 <X size={16} />
               </button>
             </div>
 
-            <div style={{ padding: '20px' }}>
-              {/* Table Info Card */}
-              <div
-                style={{
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid rgba(212, 175, 55, 0.25)',
-                  borderRadius: '14px',
-                  padding: '14px 16px',
-                  marginBottom: '16px',
-                }}
-              >
-                <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--gold-light)', marginBottom: '8px' }}>
-                  {variantName} · {maxSeats} Players
-                </div>
-                {isPointsRummy ? (
-                  <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>
-                      <span>Point Value:</span>
-                      <span style={{ color: '#ffffff', fontWeight: 600 }}>{stakeLabel}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>
-                      <span>Max Penalty:</span>
-                      <span style={{ color: '#ffffff', fontWeight: 600 }}>80 points (₹{entryFee.toFixed(2)})</span>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>
-                    <span>Entry Fee:</span>
-                    <span style={{ color: '#ffffff', fontWeight: 600 }}>₹{entryFee.toFixed(2)}</span>
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8' }}>
-                  <span>Table ID:</span>
-                  <span style={{ color: '#94a3b8', fontFamily: 'monospace' }}>{gameState?.tableId ?? 'T1'}</span>
-                </div>
-              </div>
+            <p className="table-menu-name">
+              {variantName} · {maxSeats} players
+            </p>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn-danger"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    if (gameState?.gameStatus === 'IN_PROGRESS') {
-                      setConfirmLeaveOpen(true);
-                    } else {
-                      handleLeaveTable();
-                    }
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '12px 14px',
-                    borderRadius: '12px',
-                    fontSize: '13px',
-                    fontWeight: 800,
-                    justifyContent: 'flex-start',
-                    background: 'rgba(239, 68, 68, 0.15)',
-                    border: '1px solid rgba(239, 68, 68, 0.4)',
-                    color: '#f87171',
-                  }}
-                >
-                  <LogOut size={16} />
-                  Leave Table
-                </button>
+            <div className="table-menu-rows">
+              {isPointsRummy ? (
+                <>
+                  <div className="table-menu-row">
+                    <span>Point value</span>
+                    <span>{stakeLabel}</span>
+                  </div>
+                  <div className="table-menu-row">
+                    <span>Max penalty</span>
+                    <span>80 pts (₹{entryFee.toFixed(2)})</span>
+                  </div>
+                </>
+              ) : (
+                <div className="table-menu-row">
+                  <span>Entry fee</span>
+                  <span>₹{entryFee.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="table-menu-row">
+                <span>Table</span>
+                <span className="table-menu-id">{gameState?.tableId ?? 'T1'}</span>
               </div>
             </div>
+
+            <button
+              type="button"
+              className="table-menu-leave"
+              onClick={() => {
+                setMenuOpen(false);
+                if (gameState?.gameStatus === 'IN_PROGRESS') {
+                  setConfirmLeaveOpen(true);
+                } else {
+                  handleLeaveTable();
+                }
+              }}
+            >
+              <LogOut size={15} />
+              Leave table
+            </button>
           </div>
         </div>
       )}

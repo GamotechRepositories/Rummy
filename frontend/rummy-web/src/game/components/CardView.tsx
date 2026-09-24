@@ -57,11 +57,8 @@ export const CardView: React.FC<CardViewProps> = React.memo(({
   const rankStr = RANK_SHORT[card.rank] || '';
   const joker = isJoker(card, wildJoker);
   const isPrinted = card.printedJoker;
-  // HTML5 DnD is unreliable on touch phones — PlayerHand uses pointer drag there
-  const useNativeDrag =
-    isDraggable &&
-    typeof window !== 'undefined' &&
-    !window.matchMedia('(pointer: coarse)').matches;
+  // PlayerHand moves cards with pointer events on mouse and touch.
+  const useNativeDrag = false;
 
   const cornerMarks = (
     <>

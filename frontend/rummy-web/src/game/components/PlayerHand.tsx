@@ -6,11 +6,11 @@ import { Plus } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { socketClient } from '../websocket/GameSocketClient';
 
-const GROUP_LABELS: Record<GroupValidationType, { title: string; color: string; bg: string }> = {
-  PURE_SEQUENCE: { title: '✓ Pure run', color: 'var(--color-pure)', bg: 'rgba(16,185,129,0.2)' },
-  IMPURE_SEQUENCE: { title: '★ Run', color: 'var(--color-impure)', bg: 'rgba(245,158,11,0.2)' },
-  SET: { title: '◆ Set', color: 'var(--color-set)', bg: 'rgba(59,130,246,0.2)' },
-  INVALID: { title: 'Not a group', color: 'var(--color-invalid)', bg: 'rgba(239,68,68,0.2)' },
+const GROUP_LABELS: Record<GroupValidationType, { title: string; color: string }> = {
+  PURE_SEQUENCE: { title: 'Pure', color: '#6ee7b7' },
+  IMPURE_SEQUENCE: { title: 'Run', color: '#fcd34d' },
+  SET: { title: 'Set', color: '#93c5fd' },
+  INVALID: { title: 'Not a group', color: '#e7b2ab' },
 };
 
 const DND_MIME = 'application/x-rummy-cards';
@@ -19,12 +19,8 @@ const DRAG_THRESHOLD_PX = 10;
 // In-memory fallback if browser dataTransfer payload is restricted
 let activeDragCardIds: string[] = [];
 
-/** Visible fraction of each overlapped card (lower = tighter fan). */
-const SHOW_RATIO = 0.36;
-
-function isTouchLikePointer(e: React.PointerEvent | PointerEvent): boolean {
-  return e.pointerType === 'touch' || e.pointerType === 'pen';
-}
+/** Visible fraction of each overlapped card. Higher = easier to grab. */
+const SHOW_RATIO = 0.52;
 
 function findDropGroupId(clientX: number, clientY: number): string | 'NEW' | null {
   const stack = document.elementsFromPoint(clientX, clientY);
@@ -237,8 +233,6 @@ export const PlayerHand: React.FC = () => {
   }, []);
 
   const handleCardPointerDown = (e: React.PointerEvent, cardId: string) => {
-    // Mouse keeps native HTML5 DnD; touch/pen use pointer drag
-    if (!isTouchLikePointer(e)) return;
     if (e.button !== 0 && e.button !== -1) return;
 
     const ids = resolveDragIds(cardId);
@@ -351,8 +345,6 @@ export const PlayerHand: React.FC = () => {
               <div
                 className="hand-group-label"
                 style={{
-                  backgroundColor: label.bg,
-                  borderColor: label.color,
                   color: label.color,
                   cursor: selectedCardIds.length > 0 ? 'pointer' : 'default',
                 }}
@@ -374,7 +366,8 @@ export const PlayerHand: React.FC = () => {
                     : label.title
                 }
               >
-                {label.title}
+                <span>{label.title}</span>
+                <span className="hand-group-count">{group.cards.length}</span>
               </div>
               <div className="hand-group-cards">
                 {group.cards.map((card, idx) => (

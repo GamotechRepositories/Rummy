@@ -9,6 +9,7 @@ export type DealTarget = {
 
 type FlyCard = {
   key: string;
+  targetId: string;
   dx: number;
   dy: number;
   mx: number;
@@ -24,10 +25,13 @@ type Props = {
   targets: DealTarget[];
   cardsPerPlayer?: number;
   onComplete: () => void;
+  /** Fired when a card reaches a seat, so that seat's count can tick up. */
+  onCardLanded?: (targetId: string) => void;
 };
 
-const FLIGHT_MS = 780;
-const STAGGER_MS = 70;
+const FLIGHT_MS = 460;
+/** Next card leaves while the previous is still in the air, so the circle stays readable. */
+const STAGGER_MS = 120;
 /**
  * Origin = painted deck between dealer hands (felt rim notch).
  * Stage uses the board PNG 1:1 via aspect-ratio — tune as % of stage height.
@@ -54,12 +58,15 @@ export const DealAnimation: React.FC<Props> = ({
   targets,
   cardsPerPlayer = 13,
   onComplete,
+  onCardLanded,
 }) => {
   const [cards, setCards] = useState<FlyCard[]>([]);
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
   const doneRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
+  const onCardLandedRef = useRef(onCardLanded);
   onCompleteRef.current = onComplete;
+  onCardLandedRef.current = onCardLanded;
 
   const targetsKey = useMemo(() => targets.map((t) => t.id).join('|'), [targets]);
 
@@ -90,31 +97,43 @@ export const DealAnimation: React.FC<Props> = ({
       const oy = tableRect.height * HANDS_Y;
       setOrigin({ x: ox, y: oy });
 
-      const dests = frozenTargets.map((t) => {
-        const sel = t.selector ?? `#seat-${t.id}`;
-        return measurePoint(table, sel) ?? { x: ox, y: oy + tableRect.height * 0.45 };
-      });
+      const cx = tableRect.width / 2;
+      const cy = tableRect.height / 2;
+      const circle = frozenTargets
+        .map((t) => {
+          const sel = t.selector ?? `#seat-${t.id}`;
+          const dest = measurePoint(table, sel) ?? { x: ox, y: oy + tableRect.height * 0.45 };
+          // 0 at the dealer (12 o'clock), increasing clockwise around the oval.
+          let angle = Math.atan2(dest.x - cx, -(dest.y - cy));
+          if (angle < 0) angle += Math.PI * 2;
+          return { id: t.id, dest, angle };
+        })
+        .sort((a, b) => a.angle - b.angle);
 
       const next: FlyCard[] = [];
       let idx = 0;
       for (let round = 0; round < cardsPerPlayer; round++) {
-        for (let p = 0; p < frozenTargets.length; p++) {
-          const dest = dests[p];
+        for (let p = 0; p < circle.length; p++) {
+          const dest = circle[p].dest;
           const dx = dest.x - ox;
           const dy = dest.y - oy;
-          // Leave hands straight onto felt, then arc out to seat
-          const feltDip = Math.max(tableRect.height * 0.16, 64);
-          const mx = dx * 0.38;
-          const my = Math.max(dy * 0.32, feltDip);
-          const rot = (p % 2 === 0 ? -1 : 1) * (16 + (round % 4) * 7) + (idx % 3) * 4;
+          const len = Math.hypot(dx, dy) || 1;
+          const midX = dx * 0.5;
+          const midY = dy * 0.5;
+          const outX = ox + midX - cx;
+          const outY = oy + midY - cy;
+          const outLen = Math.hypot(outX, outY) || 1;
+          const bow = Math.min(22, len * 0.1);
+          const rot = (Math.atan2(dy, dx) * 180) / Math.PI * 0.06;
           next.push({
             key: `deal-${idx}`,
+            targetId: circle[p].id,
             dx,
             dy,
-            mx,
-            my,
+            mx: midX + (outX / outLen) * bow,
+            my: midY + (outY / outLen) * bow,
             rot,
-            rotMid: rot * 0.35,
+            rotMid: rot * 0.4,
             delayMs: idx * STAGGER_MS,
           });
           idx += 1;
@@ -124,12 +143,15 @@ export const DealAnimation: React.FC<Props> = ({
 
       // Play authentic card flick sound for every single card as it leaves dealer's deck
       next.forEach((card, i) => {
-        const t = window.setTimeout(() => {
+        const flick = window.setTimeout(() => {
           if (!cancelled) {
             soundEngine.playCardDeal(i);
           }
         }, card.delayMs);
-        soundTimeouts.push(t);
+        const landed = window.setTimeout(() => {
+          if (!cancelled) onCardLandedRef.current?.(card.targetId);
+        }, card.delayMs + Math.round(FLIGHT_MS * 0.88));
+        soundTimeouts.push(flick, landed);
       });
 
       const flights = frozenTargets.length * cardsPerPlayer;

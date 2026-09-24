@@ -19,6 +19,7 @@ import com.rummy.gameservice.security.RateLimitingService;
 import com.rummy.gameservice.session.PlayerSessionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
@@ -55,12 +56,12 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         this.sessionService = Objects.requireNonNull(sessionService);
     }
 
-    @Override
     @Autowired(required = false)
     public void setMatchmakingService(MatchmakingService matchmakingService) {
         this.matchmakingService = matchmakingService;
     }
 
+    @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         log.info("[WS] New connection established: {}", session.getId());
         String authPlayerId = (String) session.getAttributes().get("authenticatedPlayerId");
@@ -158,7 +159,6 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
         switch (type.toUpperCase()) {
             case "JOIN_TABLE" -> {
-                String name = data != null && data.has("displayName") ? data.get("displayName").asText() : playerId;
                 if (data != null && data.has("isBot") && data.get("isBot").asBoolean()) {
                     sendError(session, "FORBIDDEN", "Clients cannot seat bots", reqId);
                     return;
@@ -221,6 +221,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     if (matchmakingService != null) {
                         matchmakingService.onWaitingHumanLeft(playerId, tableId);
                     }
+                }
                 sessionService.clearPlayerBinding(playerId);
                 tableActor.unregisterSession(playerId);
                 session.sendMessage(new TextMessage(objectMapper.writeValueAsString(

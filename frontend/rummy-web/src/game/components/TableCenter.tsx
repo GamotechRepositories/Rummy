@@ -21,6 +21,7 @@ export const TableCenter: React.FC = () => {
     discardHistory = [],
   } = gameState;
 
+  const waiting = gameState.gameStatus === 'WAITING_FOR_PLAYERS';
   const canDraw = isDrawPhase(isMyTurn, turnPhase);
   const canDiscardOrFinish = isDiscardPhase(isMyTurn, turnPhase);
   const canTakeOpen = canDraw && !!topDiscard;
@@ -86,8 +87,8 @@ export const TableCenter: React.FC = () => {
               <span className="deck-count-badge">{closedDeckRemaining}</span>
             </button>
           </div>
-          <span className={`deck-pod-label${canDraw ? ' on' : ''}`}>
-            {canDraw ? 'Tap to draw' : 'Closed'}
+          <span className={`deck-pod-label${canDraw || waiting ? ' on' : ''}`}>
+            {canDraw || waiting ? 'Tap to draw' : 'Closed'}
           </span>
         </div>
 
@@ -127,8 +128,8 @@ export const TableCenter: React.FC = () => {
               </button>
             )}
           </div>
-          <span className={`deck-pod-label${canTakeOpen || canDiscardHere ? ' on' : ''}`}>
-            {canTakeOpen ? 'Take open' : canDiscardHere ? 'Discard here' : 'Open'}
+          <span className={`deck-pod-label${canTakeOpen || canDiscardHere || waiting ? ' on' : ''}`}>
+            {waiting || canTakeOpen ? 'Take open' : canDiscardHere ? 'Discard here' : 'Open'}
           </span>
         </div>
 
@@ -153,7 +154,7 @@ export const TableCenter: React.FC = () => {
               </>
             )}
           </button>
-          <span className={`deck-pod-label${canDeclare ? ' on ok' : ''}`}>Finish slot</span>
+          <span className={`deck-pod-label${canDeclare ? ' on ok' : waiting ? ' on' : ''}`}>Finish slot</span>
         </div>
       </div>
 

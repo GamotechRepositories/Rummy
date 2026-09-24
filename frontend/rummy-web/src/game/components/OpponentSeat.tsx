@@ -21,6 +21,8 @@ interface OpponentSeatProps {
   seatNumber: number;
   gameStatus?: string;
   position?: SeatPosition;
+  /** While dealing, show this count instead of the server hand size. */
+  displayCount?: number;
 }
 
 export const OpponentSeat: React.FC<OpponentSeatProps> = ({
@@ -30,6 +32,7 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   seatNumber,
   gameStatus,
   position = 'top',
+  displayCount,
 }) => {
   if (!player) {
     return (
@@ -200,6 +203,8 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   );
 
   const hasRevealedCards = gameStatus === 'COMPLETED' && player.hand && player.hand.length > 0;
+  const cardCount = displayCount ?? player.cardCount;
+  const fanSize = Math.min(5, Math.max(0, cardCount));
 
   const cardFanElement = hasRevealedCards ? (
     <div
@@ -228,21 +233,26 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   ) : (
     <div
       className="opponent-card-fan"
-      title={`${player.cardCount} cards in hand`}
+      title={`${cardCount} cards in hand`}
       style={{ margin: position === 'left' || position === 'right' ? '0' : '0 2px' }}
     >
-      {[...Array(5)].map((_, i) => (
-        <div
-          key={i}
-          className="opponent-fan-card"
-          style={{
-            transform: `rotate(${(i - 2) * 12}deg) translateY(${Math.abs(i - 2) * 2}px)`,
-            left: `${i * 5 + 4}px`,
-          }}
-        />
-      ))}
+      {fanSize > 0 &&
+        [...Array(fanSize)].map((_, i) => {
+          const mid = (fanSize - 1) / 2;
+          const offset = i - mid;
+          return (
+            <div
+              key={i}
+              className="opponent-fan-card"
+              style={{
+                transform: `rotate(${offset * 12}deg) translateY(${Math.abs(offset) * 2}px)`,
+                left: `${i * 5 + 4}px`,
+              }}
+            />
+          );
+        })}
       <div className="opponent-fan-count">
-        {player.cardCount} cards
+        {cardCount} {cardCount === 1 ? 'card' : 'cards'}
       </div>
     </div>
   );

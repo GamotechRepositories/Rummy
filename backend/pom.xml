@@ -106,11 +106,16 @@
             </plugins>
         </pluginManagement>
 
-        <!-- Lets `spring-boot:` prefix resolve from the reactor root -->
+        <!-- Lets `spring-boot:` prefix resolve from the reactor root.
+             Skip run/repackage here so `-pl game-service -am` does not try to
+             launch the parent POM or the engine jar. game-service turns skip off. -->
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
             </plugin>
         </plugins>
     </build>
