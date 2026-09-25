@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  Coins,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
@@ -255,6 +256,7 @@ const ShowdownCardTray: React.FC<{
 export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
   const {
     gameState,
+    gameSettlement,
     playerId,
     displayName,
     groups: myVisualGroups,
@@ -353,6 +355,47 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
     return a.score - b.score;
   });
 
+  // Financial Settlement & Platform Rake Calculations for all 4 Variants
+  const activeRulesetId = (gameSettlement?.rulesetId ?? lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
+  const isRummy21 = activeRulesetId.includes('21') || activeRulesetId === 'RUMMY_21';
+  const isPoints13 = activeRulesetId.includes('POINT') || activeRulesetId === 'POINTS_13';
+  const isPointsBased = isPoints13 || isRummy21;
+  const maxPenaltyCap = isRummy21 ? 120 : 80;
+
+  const variantDisplayName = isRummy21
+    ? '21-Card Marriage Rummy (120 pt cap)'
+    : isPoints13
+      ? 'Points Rummy 13-Card (80 pt cap)'
+      : activeRulesetId.includes('POOL')
+        ? (activeRulesetId.includes('201') ? 'Pool 201 Rummy' : 'Pool 101 Rummy')
+        : 'Deals Rummy';
+
+  const stakeTier = gameSettlement?.stakeTier ?? lastGameConfig?.entryFee ?? 100;
+  let displayGrossPot = gameSettlement?.totalGrossPot ?? 0;
+  let displayRake = gameSettlement?.platformRakeAmount ?? 0;
+  let displayPrize = gameSettlement?.netWinnerPrize ?? 0;
+
+  // Fallback calculation if WebSocket message was delayed or offline view
+  if (!gameSettlement) {
+    if (isPointsBased) {
+      const ptValue = stakeTier / maxPenaltyCap;
+      let calculatedPot = 0;
+      unrankedPlayers.forEach((p) => {
+        if (!p.isWinner) {
+          const penalty = Math.min(maxPenaltyCap, Math.max(0, p.score));
+          calculatedPot += Math.min(stakeTier, penalty * ptValue);
+        }
+      });
+      displayGrossPot = calculatedPot;
+      displayRake = calculatedPot * 0.15;
+      displayPrize = calculatedPot - displayRake;
+    } else {
+      displayGrossPot = stakeTier * unrankedPlayers.length;
+      displayRake = displayGrossPot * 0.15;
+      displayPrize = displayGrossPot - displayRake;
+    }
+  }
+
   const togglePlayerExpanded = (pId: string) => {
     setExpandedPlayerIds((prev) => ({
       ...prev,
@@ -448,6 +491,47 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
               ? 'Valid declaration! 0 penalty points. All players’ 13 cards are revealed below.'
               : 'Hand completed. Review every player’s 13 cards and score below.'}
           </p>
+        </div>
+
+        {/* Real-World Financial Settlement Banner */}
+        <div
+          style={{
+            margin: '10px 14px 4px',
+            padding: '12px 14px',
+            background: 'linear-gradient(135deg, rgba(24, 24, 27, 0.95), rgba(9, 9, 11, 0.98))',
+            border: '1px solid rgba(251, 191, 36, 0.35)',
+            borderRadius: '12px',
+            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.45)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', fontWeight: 900, color: '#fef08a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Coins size={14} color="#fbbf24" /> {variantDisplayName.toUpperCase()}
+            </span>
+            <span style={{ fontSize: '9.5px', color: '#cbd5e1', background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251, 191, 36, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
+              15% Platform Commission (Rake)
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.25fr', gap: '8px', textAlign: 'center' }}>
+            <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '6px 8px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <div style={{ fontSize: '9.5px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Gross Pot (एकूण)</div>
+              <div style={{ fontSize: '14px', fontWeight: 900, color: '#f8fafc', marginTop: '2px' }}>₹{Number(displayGrossPot).toFixed(2)}</div>
+            </div>
+
+            <div style={{ background: 'rgba(239, 68, 68, 0.08)', padding: '6px 8px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+              <div style={{ fontSize: '9.5px', color: '#fca5a5', fontWeight: 700, textTransform: 'uppercase' }}>Platform Rake (15%)</div>
+              <div style={{ fontSize: '14px', fontWeight: 900, color: '#f87171', marginTop: '2px' }}>-₹{Number(displayRake).toFixed(2)}</div>
+            </div>
+
+            <div style={{ background: 'rgba(34, 197, 94, 0.12)', padding: '6px 8px', borderRadius: '8px', border: '1px solid rgba(34, 197, 94, 0.4)' }}>
+              <div style={{ fontSize: '9.5px', color: '#86efac', fontWeight: 800, textTransform: 'uppercase' }}>Winner Net (बक्षीस)</div>
+              <div style={{ fontSize: '15px', fontWeight: 900, color: '#4ade80', marginTop: '2px' }}>+₹{Number(displayPrize).toFixed(2)}</div>
+            </div>
+          </div>
         </div>
 
         {/* Scrollable Content: All Players Showdown Cards */}
@@ -654,20 +738,48 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                      <div style={{ textAlign: 'right' }}>
-                        <div
-                          style={{
-                            fontWeight: 900,
-                            fontSize: '16px',
-                            color: won ? '#86efac' : p.status === 'DROPPED' ? '#fbbf24' : '#f87171',
-                          }}
-                        >
-                          {p.score} pts
-                        </div>
-                        <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>
-                          {totalDisplayedCards > 0 ? `${totalDisplayedCards} cards` : '13 cards'}
-                        </div>
-                      </div>
+                      {(() => {
+                        const playerDetail = gameSettlement?.playerDetails?.[p.playerId];
+                        let pLoss = playerDetail?.lossAmount;
+                        let pRefund = playerDetail?.refundAmount;
+
+                        if (pLoss === undefined) {
+                          if (p.isWinner) {
+                            pLoss = 0;
+                            pRefund = 0;
+                          } else if (isPointsBased) {
+                            const ptVal = stakeTier / maxPenaltyCap;
+                            const penalty = Math.min(maxPenaltyCap, Math.max(0, p.score));
+                            pLoss = Math.min(stakeTier, penalty * ptVal);
+                            pRefund = Math.max(0, stakeTier - pLoss);
+                          } else {
+                            pLoss = stakeTier;
+                            pRefund = 0;
+                          }
+                        }
+
+                        return (
+                          <div style={{ textAlign: 'right' }}>
+                            <div
+                              style={{
+                                fontWeight: 900,
+                                fontSize: '15px',
+                                color: won ? '#4ade80' : p.status === 'DROPPED' ? '#fbbf24' : '#f87171',
+                              }}
+                            >
+                              {won ? `+₹${Number(displayPrize).toFixed(2)}` : `-₹${Number(pLoss).toFixed(2)}`}
+                            </div>
+                            <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                              <span>{p.score} pts</span>
+                              {pRefund !== undefined && pRefund > 0 && (
+                                <span style={{ color: '#86efac' }}>
+                                  (+₹{Number(pRefund).toFixed(2)} refund)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       <div
                         style={{

@@ -59,8 +59,22 @@ export function isJoker(card: CardInstance, wildJoker: CardInstance | null): boo
   return false;
 }
 
+export function isTunnela(cards: CardInstance[]): boolean {
+  if (cards.length !== 3) return false;
+  const allPrintedJokers = cards.every(c => c.printedJoker || c.rank === 'JOKER');
+  if (allPrintedJokers) return true;
+  if (cards.some(c => c.printedJoker || c.rank === 'JOKER')) return false;
+  const first = cards[0];
+  return cards.every(c => c.suit === first.suit && c.rank === first.rank);
+}
+
 export function validatePureSequence(cards: CardInstance[], wildJoker: CardInstance | null): boolean {
   if (cards.length < 3) return false;
+
+  // In 21-Card Rummy, a Tunnela (3 identical cards of same suit and rank, or 3 printed jokers) is a Pure Sequence
+  if (isTunnela(cards)) {
+    return true;
+  }
 
   // Pure sequences cannot use wild jokers or printed jokers as substitutes
   for (const c of cards) {
@@ -200,8 +214,13 @@ export function evaluateCardGroup(cards: CardInstance[], wildJoker: CardInstance
 
 export function checkOverallDeclaration(
   groups: { cards: CardInstance[] }[],
-  wildJoker: CardInstance | null
+  wildJoker: CardInstance | null,
+  rulesetId?: string
 ): { isValid: boolean; reason?: string } {
+  const isRummy21 = rulesetId?.includes('21') || rulesetId === 'RUMMY_21';
+  const minPure = isRummy21 ? 3 : 1;
+  const minTotal = isRummy21 ? 3 : 2;
+
   let pureSeqCount = 0;
   let totalSeqCount = 0;
   let allGroupsValid = true;
@@ -220,14 +239,17 @@ export function checkOverallDeclaration(
     }
   }
 
-  if (pureSeqCount < 1) {
-    return { isValid: false, reason: 'Requires at least 1 Pure Sequence without jokers' };
+  if (pureSeqCount < minPure) {
+    return {
+      isValid: false,
+      reason: `Requires at least ${minPure} Pure Sequence${minPure > 1 ? 's or Tunnelas' : ' without jokers'}`,
+    };
   }
-  if (totalSeqCount < 2) {
-    return { isValid: false, reason: 'Requires at least 2 Sequences (1 pure + 1 pure/impure)' };
+  if (totalSeqCount < minTotal) {
+    return { isValid: false, reason: `Requires at least ${minTotal} Sequences (found ${totalSeqCount})` };
   }
   if (!allGroupsValid) {
-    return { isValid: false, reason: 'All cards must belong to a valid sequence or set' };
+    return { isValid: false, reason: 'All cards must belong to a valid sequence, tunnela, or set' };
   }
 
   return { isValid: true };
@@ -236,9 +258,12 @@ export function checkOverallDeclaration(
 export function calculateHandPenalty(
   groups: { cards: CardInstance[]; groupType?: GroupValidationType }[],
   wildJoker: CardInstance | null,
-  maxPenalty = 80
+  maxPenalty = 80,
+  rulesetId?: string
 ): number {
   if (!groups || groups.length === 0) return 0;
+  const isRummy21 = rulesetId?.includes('21') || rulesetId === 'RUMMY_21';
+  const effectiveMaxPenalty = isRummy21 ? 120 : maxPenalty;
 
   let pureSeqCount = 0;
   let totalSeqCount = 0;
@@ -258,7 +283,7 @@ export function calculateHandPenalty(
     }
   }
 
-  // CASE 1: No pure sequence -> all ungrouped cards count (cap 80)
+  // CASE 1: No pure sequence -> all ungrouped cards count (cap effectiveMaxPenalty)
   if (pureSeqCount === 0) {
     let total = 0;
     for (const g of groups) {
@@ -266,12 +291,11 @@ export function calculateHandPenalty(
         total += getCardScore(c, wildJoker);
       }
     }
-    return Math.min(total, maxPenalty);
+    return Math.min(total, effectiveMaxPenalty);
   }
 
-  // CASE 2: 1 pure sequence, but less than 2 sequences
-  // Pure sequence is exempt (0 pts); all other cards count (cap 80)
-  if (totalSeqCount < 2) {
+  // CASE 2 (21-Card): < 3 pure sequences -> ONLY pure sequences exempt, rest count!
+  if (isRummy21 && pureSeqCount < 3) {
     let total = 0;
     for (const g of groups) {
       if (!pureGroups.includes(g)) {
@@ -280,16 +304,29 @@ export function calculateHandPenalty(
         }
       }
     }
-    return Math.min(total, maxPenalty);
+    return Math.min(total, effectiveMaxPenalty);
   }
 
-  // CASE 3: At least 2 sequences (including at least 1 pure)
-  // All valid sequences and sets are exempt (0 pts); only cards in invalid groups count
+  // CASE 2 (13-Card): 1 pure sequence, but less than 2 sequences
+  // Pure sequence is exempt (0 pts); all other cards count (cap 80)
+  if (!isRummy21 && totalSeqCount < 2) {
+    let total = 0;
+    for (const g of groups) {
+      if (!pureGroups.includes(g)) {
+        for (const c of g.cards) {
+          total += getCardScore(c, wildJoker);
+        }
+      }
+    }
+    return Math.min(total, effectiveMaxPenalty);
+  }
+
+  // CASE 3: All valid sequences and sets are exempt (0 pts); only cards in invalid groups count
   let total = 0;
   for (const g of invalidGroups) {
     for (const c of g.cards) {
       total += getCardScore(c, wildJoker);
     }
   }
-  return Math.min(total, maxPenalty);
+  return Math.min(total, effectiveMaxPenalty);
 }

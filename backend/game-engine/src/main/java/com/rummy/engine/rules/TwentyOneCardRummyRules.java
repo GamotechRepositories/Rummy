@@ -1,6 +1,7 @@
 package com.rummy.engine.rules;
 
 import com.rummy.engine.model.Card;
+import com.rummy.engine.model.CardInstance;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -8,7 +9,7 @@ import java.util.List;
 
 /**
  * Production ruleset implementation for 21-Card Indian Rummy (RUMMY_21).
- * Features: 3 decks (156 cards + jokers), 21 cards per player, minimum 3 pure sequences.
+ * Features: 3 decks (156 cards + jokers), 21 cards per player, minimum 3 pure sequences (or Tunnelas).
  */
 public final class TwentyOneCardRummyRules implements RummyRules {
 
@@ -107,6 +108,35 @@ public final class TwentyOneCardRummyRules implements RummyRules {
         return maximumPenalty;
     }
 
+    /**
+     * In 21-Card Rummy, a Tunnela (3 identical cards of the exact same rank and suit
+     * from different decks, or 3 printed jokers) is considered a valid Pure Sequence.
+     */
+    public static boolean isTunnela(CardGroup group) {
+        if (group == null || group.size() != 3) {
+            return false;
+        }
+        List<CardInstance> cards = group.getCards();
+        boolean allPrintedJokers = cards.stream().allMatch(CardInstance::isPrintedJoker);
+        if (allPrintedJokers) {
+            return true;
+        }
+        if (cards.stream().anyMatch(CardInstance::isPrintedJoker)) {
+            return false;
+        }
+        Card first = cards.get(0).getCard();
+        return cards.stream().allMatch(ci ->
+                ci.getCard().suit() == first.suit() && ci.getCard().rank() == first.rank()
+        );
+    }
+
+    public static GroupType classifyGroup(CardGroup group, Card cutJoker) {
+        if (isTunnela(group)) {
+            return GroupType.PURE_SEQUENCE;
+        }
+        return DeclarationValidator.classifyGroup(group, cutJoker);
+    }
+
     @Override
     public DeclarationResult validateDeclaration(List<CardGroup> groups, Card cutJoker) {
         if (groups == null || groups.isEmpty()) {
@@ -125,7 +155,7 @@ public final class TwentyOneCardRummyRules implements RummyRules {
         for (int i = 0; i < groups.size(); i++) {
             CardGroup group = groups.get(i);
             totalCards += group.size();
-            GroupType type = DeclarationValidator.classifyGroup(group, cutJoker);
+            GroupType type = classifyGroup(group, cutJoker);
             classifications.add(new DeclarationResult.GroupClassification(group, type));
 
             switch (type) {
@@ -144,7 +174,7 @@ public final class TwentyOneCardRummyRules implements RummyRules {
         }
 
         if (pureCount < 3) {
-            errors.add("21-Card Rummy requires at least 3 pure sequences (found " + pureCount + ")");
+            errors.add("21-Card Rummy requires at least 3 pure sequences or tunnelas (found " + pureCount + ")");
         }
 
         if (errors.isEmpty() && invalidCount == 0) {
@@ -156,6 +186,63 @@ public final class TwentyOneCardRummyRules implements RummyRules {
 
     @Override
     public int calculateLosingScore(List<CardGroup> groups, Card cutJoker) {
-        return ScoreCalculator.calculateHandPoints(groups, cutJoker, maximumPenalty);
+        if (groups == null || groups.isEmpty()) {
+            return 0;
+        }
+
+        int pureCount = 0;
+        int impureCount = 0;
+        List<CardGroup> pureSequences = new ArrayList<>();
+        List<CardGroup> validMelds = new ArrayList<>();
+        List<CardGroup> invalidGroups = new ArrayList<>();
+
+        for (CardGroup group : groups) {
+            GroupType type = classifyGroup(group, cutJoker);
+            switch (type) {
+                case PURE_SEQUENCE -> {
+                    pureCount++;
+                    pureSequences.add(group);
+                    validMelds.add(group);
+                }
+                case IMPURE_SEQUENCE -> {
+                    impureCount++;
+                    validMelds.add(group);
+                }
+                case SET -> validMelds.add(group);
+                case INVALID -> invalidGroups.add(group);
+            }
+        }
+
+        // 21-Card Rummy Scoring Rule:
+        // CASE 1: No pure sequences -> all cards count (capped at maximumPenalty)
+        if (pureCount == 0) {
+            int total = 0;
+            for (CardGroup group : groups) {
+                total += group.calculatePoints(cutJoker);
+            }
+            return Math.min(total, maximumPenalty);
+        }
+
+        // CASE 2: Less than 3 pure sequences (e.g. 1 or 2 pure sequences/tunnelas)
+        // ONLY pure sequences are exempt (0 points);
+        // All other cards (even if in valid sets or impure sequences) count towards penalty!
+        if (pureCount < 3) {
+            int total = 0;
+            for (CardGroup group : groups) {
+                if (!pureSequences.contains(group)) {
+                    total += group.calculatePoints(cutJoker);
+                }
+            }
+            return Math.min(total, maximumPenalty);
+        }
+
+        // CASE 3: At least 3 pure sequences
+        // All valid pure sequences, impure sequences, and sets are exempt (0 points);
+        // Only cards in invalid groups count towards penalty.
+        int total = 0;
+        for (CardGroup group : invalidGroups) {
+            total += group.calculatePoints(cutJoker);
+        }
+        return Math.min(total, maximumPenalty);
     }
 }

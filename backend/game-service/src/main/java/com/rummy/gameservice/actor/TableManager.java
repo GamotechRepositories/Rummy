@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -25,6 +26,7 @@ public class TableManager {
     private final com.rummy.gameservice.persistence.GamePersistenceService persistenceService;
     private final com.rummy.gameservice.kafka.GameEventProducer eventProducer;
     private final com.rummy.gameservice.session.PlayerSessionService sessionService;
+    private final com.rummy.gameservice.wallet.WalletService walletService;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final Map<String, TableActor> tables = new ConcurrentHashMap<>();
 
@@ -32,32 +34,34 @@ public class TableManager {
     public TableManager(ObjectMapper objectMapper,
                         com.rummy.gameservice.persistence.GamePersistenceService persistenceService,
                         @Autowired(required = false) com.rummy.gameservice.kafka.GameEventProducer eventProducer,
-                        @Autowired(required = false) @Lazy com.rummy.gameservice.session.PlayerSessionService sessionService) {
+                        @Autowired(required = false) @Lazy com.rummy.gameservice.session.PlayerSessionService sessionService,
+                        @Autowired(required = false) com.rummy.gameservice.wallet.WalletService walletService) {
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.persistenceService = persistenceService;
         this.eventProducer = eventProducer;
         this.sessionService = sessionService;
+        this.walletService = walletService;
     }
 
     public TableManager(ObjectMapper objectMapper,
                         com.rummy.gameservice.persistence.GamePersistenceService persistenceService) {
-        this(objectMapper, persistenceService, null, null);
+        this(objectMapper, persistenceService, null, null, null);
     }
 
     public TableManager(ObjectMapper objectMapper) {
-        this(objectMapper, null, null, null);
+        this(objectMapper, null, null, null, null);
     }
 
     public TableActor getOrCreateTable(String tableId, RummyRules rules) {
         return tables.computeIfAbsent(tableId, id -> {
             RummyRules activeRules = rules != null ? rules : new PointsRummyRules();
             String gameId = "G_" + UUID.randomUUID().toString().substring(0, 8);
-            Deck deck = Deck.createStandard13CardDeck();
+            Deck deck = Deck.createMultiPackDeck(activeRules.getDeckCount(), activeRules.getPrintedJokersPerDeck(), new SecureRandom());
             GameState initialState = new GameState(gameId, id, activeRules.getRulesetId(),
                     activeRules.getRulesetVersion(), List.of(), deck);
 
             return new TableActor(id, initialState, activeRules, engine, objectMapper, scheduler,
-                    persistenceService, eventProducer, sessionService);
+                    persistenceService, eventProducer, sessionService, walletService);
         });
     }
 

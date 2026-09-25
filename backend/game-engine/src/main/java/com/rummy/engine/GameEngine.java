@@ -31,7 +31,7 @@ public final class GameEngine {
                 case JoinCommand cmd -> handleJoin(state, cmd, rules);
                 case ReadyCommand cmd -> handleReady(state, cmd);
                 case StartGameCommand cmd -> handleStartGame(state, cmd, rules);
-                case DrawCommand cmd -> handleDraw(state, cmd);
+                case DrawCommand cmd -> handleDraw(state, cmd, rules);
                 case DiscardCommand cmd -> handleDiscard(state, cmd, rules);
                 case DeclareCommand cmd -> handleDeclare(state, cmd, rules);
                 case DropCommand cmd -> handleDrop(state, cmd, rules);
@@ -147,7 +147,7 @@ public final class GameEngine {
         return EngineResult.success(state, List.of(event));
     }
 
-    private EngineResult handleDraw(GameState state, DrawCommand cmd) {
+    private EngineResult handleDraw(GameState state, DrawCommand cmd, RummyRules rules) {
         if (state.getStatus() != GameStatus.IN_PROGRESS) {
             return EngineResult.failure(state, "Game is not in progress");
         }
@@ -160,8 +160,9 @@ public final class GameEngine {
         }
 
         PlayerState player = state.requirePlayer(cmd.playerId());
-        if (player.getHandSize() != 13) {
-            return EngineResult.failure(state, "Expected hand size of 13 before draw, but found " + player.getHandSize());
+        int expectedHand = rules.getCardsPerPlayer();
+        if (player.getHandSize() != expectedHand) {
+            return EngineResult.failure(state, "Expected hand size of " + expectedHand + " before draw, but found " + player.getHandSize());
         }
 
         CardInstance drawnCard;
@@ -212,8 +213,9 @@ public final class GameEngine {
         }
 
         PlayerState player = state.requirePlayer(cmd.playerId());
-        if (player.getHandSize() != 14) {
-            return EngineResult.failure(state, "Expected hand size of 14 before discard, but found " + player.getHandSize());
+        int expectedHand = rules.getCardsPerPlayer() + 1;
+        if (player.getHandSize() != expectedHand) {
+            return EngineResult.failure(state, "Expected hand size of " + expectedHand + " before discard, but found " + player.getHandSize());
         }
         if (!player.hasCard(cmd.cardInstanceId())) {
             return EngineResult.failure(state, "Card " + cmd.cardInstanceId() + " is not in player's hand");

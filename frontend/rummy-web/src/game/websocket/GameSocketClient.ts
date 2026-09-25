@@ -188,6 +188,13 @@ class GameSocketClient {
         }
         break;
 
+      case 'GAME_SETTLEMENT':
+        if (msg.payload) {
+          console.log('[WS] Received match financial settlement:', msg.payload);
+          useGameStore.getState().setGameSettlement(msg.payload as any);
+        }
+        break;
+
       case 'ERROR':
         if (msg.payload && typeof msg.payload === 'object' && 'message' in msg.payload) {
           const err = msg.payload as { message: string };

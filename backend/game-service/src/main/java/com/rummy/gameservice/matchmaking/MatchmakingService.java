@@ -278,6 +278,7 @@ public class MatchmakingService {
         TableActor actor = tableManager.getOrCreateTable(tableId, rules);
         routingRegistry.registerTableOwnership(tableId);
         actor.setExpectedPlayers(first.getMaxPlayers());
+        actor.setStakeTier(first.getStakeTier());
 
         for (MatchmakingTicket ticket : humanTickets) {
             routingRegistry.registerPlayerTable(ticket.getPlayerId(), tableId);
@@ -388,6 +389,7 @@ public class MatchmakingService {
         TableActor actor = tableManager.getOrCreateTable(tableId, rules);
         routingRegistry.registerTableOwnership(tableId);
         actor.setExpectedPlayers(maxPlayers);
+        actor.setStakeTier(ticket.getStakeTier());
         Instant openedAt = Instant.now();
         actor.armDealHold(openedAt.plusMillis(dealDelayMs));
 

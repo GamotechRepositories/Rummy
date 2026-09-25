@@ -122,4 +122,33 @@ public class WalletController {
                 "newBalance", tx.getBalanceAfter()
         ));
     }
+
+    @GetMapping("/platform-revenue")
+    public ResponseEntity<Map<String, Object>> getPlatformRevenue() {
+        BigDecimal balance = walletService.getPlatformTreasuryBalance();
+        List<WalletTransactionDocument> rakeTxns = walletService.getTransactions(WalletService.PLATFORM_TREASURY);
+        BigDecimal totalRake = rakeTxns.stream()
+                .filter(t -> "PLATFORM_RAKE".equals(t.getTransactionType()))
+                .map(WalletTransactionDocument::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return ResponseEntity.ok(Map.of(
+                "treasuryBalance", balance,
+                "totalRakeCollected", totalRake,
+                "rakeRate", "15%",
+                "rakePercentage", 0.15,
+                "currency", "INR",
+                "treasuryPlayerId", WalletService.PLATFORM_TREASURY,
+                "recentRakeTransactions", rakeTxns.stream().limit(20).toList()
+        ));
+    }
+
+    @GetMapping("/settlement")
+    public ResponseEntity<?> getSettlement(@RequestParam String gameId) {
+        GameSettlementResult result = walletService.getSettlement(gameId);
+        if (result == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(result);
+    }
 }

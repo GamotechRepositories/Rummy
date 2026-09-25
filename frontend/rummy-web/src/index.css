@@ -1054,8 +1054,8 @@ h1, h2, h3, h4, .font-display {
 }
 
 .opponent-seat-pod.pos-top-right {
-  top: 13%;
-  left: 78%;
+  top: 12%;
+  left: 73%;
   right: auto;
   transform: translate(-50%, 0);
 }
@@ -1067,8 +1067,8 @@ h1, h2, h3, h4, .font-display {
 }
 
 .opponent-seat-pod.pos-right {
-  top: 44%;
-  right: 2.5%;
+  top: 35%;
+  right: 3%;
   left: auto;
   transform: translateY(-50%);
 }
@@ -1080,10 +1080,10 @@ h1, h2, h3, h4, .font-display {
 }
 
 .opponent-seat-pod.pos-bottom-right {
-  top: 76%;
-  left: 86%;
-  right: auto;
-  transform: translate(-50%, -50%);
+  top: 58%;
+  right: 3%;
+  left: auto;
+  transform: translateY(-50%);
 }
 
 .opponent-waiting-pod {
@@ -4955,19 +4955,30 @@ body.mobile-landscape-play .game-frame {
   }
 
   .opponent-seat-pod.pos-top-right {
-    top: 11%;
-    left: 80%;
+    top: 10%;
+    left: 74%;
     transform: translate(-50%, 0);
   }
 
-  .opponent-seat-pod.pos-left,
-  .opponent-seat-pod.pos-right {
+  .opponent-seat-pod.pos-left {
     top: 44%;
   }
 
-  .opponent-seat-pod.pos-bottom-left,
-  .opponent-seat-pod.pos-bottom-right {
+  .opponent-seat-pod.pos-right {
+    top: 35%;
+    right: 3%;
+    left: auto;
+  }
+
+  .opponent-seat-pod.pos-bottom-left {
     top: 74%;
+  }
+
+  .opponent-seat-pod.pos-bottom-right {
+    top: 58%;
+    right: 3%;
+    left: auto;
+    transform: translateY(-50%);
   }
 
   .opponent-waiting-pod {

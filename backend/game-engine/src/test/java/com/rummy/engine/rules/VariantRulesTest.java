@@ -43,13 +43,56 @@ class VariantRulesTest {
     }
 
     @Test
-    @DisplayName("Variant 06: 21-Card Rummy")
+    @DisplayName("Variant 06: 21-Card Rummy with Tunnela and Strict 3 Pure Sequence Scoring")
     void testTwentyOneCardRummy() {
         TwentyOneCardRummyRules rules = new TwentyOneCardRummyRules();
         assertThat(rules.getCardsPerPlayer()).isEqualTo(21);
         assertThat(rules.getDeckCount()).isEqualTo(3);
         assertThat(rules.getMinimumSequences()).isEqualTo(3);
         assertThat(rules.getRequiredPureSequences()).isEqualTo(3);
+        assertThat(rules.getFirstDropPenalty()).isEqualTo(30);
+        assertThat(rules.getMiddleDropPenalty()).isEqualTo(60);
+        assertThat(rules.getMaximumPenalty()).isEqualTo(120);
+
+        // Verify Tunnela (3 identical cards from different decks) is classified as Pure Sequence
+        CardInstance k1 = new CardInstance("D1_S_K", Card.of(Suit.SPADES, Rank.KING), 1);
+        CardInstance k2 = new CardInstance("D2_S_K", Card.of(Suit.SPADES, Rank.KING), 2);
+        CardInstance k3 = new CardInstance("D3_S_K", Card.of(Suit.SPADES, Rank.KING), 3);
+        CardGroup tunnelaGroup = CardGroup.of(k1, k2, k3);
+
+        assertThat(TwentyOneCardRummyRules.isTunnela(tunnelaGroup)).isTrue();
+        assertThat(TwentyOneCardRummyRules.classifyGroup(tunnelaGroup, null)).isEqualTo(GroupType.PURE_SEQUENCE);
+
+        // Verify printed jokers tunnela
+        CardInstance pj1 = new CardInstance("PJ_1", Card.printedJoker(), 1);
+        CardInstance pj2 = new CardInstance("PJ_2", Card.printedJoker(), 2);
+        CardInstance pj3 = new CardInstance("PJ_3", Card.printedJoker(), 3);
+        CardGroup pjTunnela = CardGroup.of(pj1, pj2, pj3);
+        assertThat(TwentyOneCardRummyRules.isTunnela(pjTunnela)).isTrue();
+
+        // Hand points: only 1 pure sequence -> sets and other cards are NOT exempt (must pay points)
+        CardInstance h1 = new CardInstance("D1_H_A", Card.of(Suit.HEARTS, Rank.ACE), 1);
+        CardInstance h2 = new CardInstance("D1_H_2", Card.of(Suit.HEARTS, Rank.TWO), 1);
+        CardInstance h3 = new CardInstance("D1_H_3", Card.of(Suit.HEARTS, Rank.THREE), 1);
+        CardGroup pureSeq1 = CardGroup.of(h1, h2, h3);
+
+        CardInstance setC1 = new CardInstance("D1_C_K", Card.of(Suit.CLUBS, Rank.KING), 1);
+        CardInstance setC2 = new CardInstance("D1_D_K", Card.of(Suit.DIAMONDS, Rank.KING), 1);
+        CardInstance setC3 = new CardInstance("D1_H_K", Card.of(Suit.HEARTS, Rank.KING), 1);
+        CardGroup kingSet = CardGroup.of(setC1, setC2, setC3);
+
+        // When only 1 pure sequence present in 21-card rummy, kingSet points (3 x 10 = 30) MUST be counted!
+        int scoreWithOnePure = rules.calculateLosingScore(List.of(pureSeq1, kingSet), null);
+        assertThat(scoreWithOnePure).isEqualTo(30);
+
+        // When 3 pure sequences are present (e.g. 2 runs + 1 tunnela), valid sets ARE exempt (0 points)
+        CardInstance s4 = new CardInstance("D1_S_4", Card.of(Suit.SPADES, Rank.FOUR), 1);
+        CardInstance s5 = new CardInstance("D1_S_5", Card.of(Suit.SPADES, Rank.FIVE), 1);
+        CardInstance s6 = new CardInstance("D1_S_6", Card.of(Suit.SPADES, Rank.SIX), 1);
+        CardGroup pureSeq2 = CardGroup.of(s4, s5, s6);
+
+        int scoreWithThreePure = rules.calculateLosingScore(List.of(pureSeq1, pureSeq2, tunnelaGroup, kingSet), null);
+        assertThat(scoreWithThreePure).isEqualTo(0);
     }
 
     @Test

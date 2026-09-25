@@ -17,7 +17,8 @@ type SoundName =
   | 'match'
   | 'deal'
   | 'tick'
-  | 'modal';
+  | 'modal'
+  | 'join';
 
 const MUTE_KEY = 'rummy_sound_muted';
 
@@ -361,6 +362,9 @@ class SoundEngine {
         break;
       case 'modal':
         this.tone(ctx, 520, 0.08, 'sine', 0.07);
+        break;
+      case 'join':
+        this.arpeggio(ctx, [523.25, 659.25, 783.99], 0.055, 0.09);
         break;
     }
   }

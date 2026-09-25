@@ -86,4 +86,29 @@ describe('clientValidator Unit Tests', () => {
     expect(noPureResult.isValid).toBe(false);
     expect(noPureResult.reason).toContain('Pure Sequence');
   });
+
+  it('validates Tunnela as Pure Sequence and enforces 3 pure sequences for 21-Card Rummy', () => {
+    // 3 identical King of Spades
+    const tunnelaCards = [
+      makeCard('SPADES', 'KING'),
+      makeCard('SPADES', 'KING'),
+      makeCard('SPADES', 'KING'),
+    ];
+    expect(validatePureSequence(tunnelaCards, wildJoker)).toBe(true);
+    expect(evaluateCardGroup(tunnelaCards, wildJoker)).toBe('PURE_SEQUENCE');
+
+    const pure1 = { cards: [makeCard('HEARTS', 'ACE'), makeCard('HEARTS', 'TWO'), makeCard('HEARTS', 'THREE')] };
+    const pure2 = { cards: [makeCard('CLUBS', 'EIGHT'), makeCard('CLUBS', 'NINE'), makeCard('CLUBS', 'TEN')] };
+    const tunnelaGroup = { cards: tunnelaCards };
+    const set1 = { cards: [makeCard('HEARTS', 'FOUR'), makeCard('DIAMONDS', 'FOUR'), makeCard('CLUBS', 'FOUR')] };
+
+    // With 2 pure sequences only in 21-card rummy, it must fail (requires 3 pure sequences)
+    const twoPure21Result = checkOverallDeclaration([pure1, pure2, set1], wildJoker, 'RUMMY_21');
+    expect(twoPure21Result.isValid).toBe(false);
+    expect(twoPure21Result.reason).toContain('at least 3 Pure Sequence');
+
+    // With 3 pure sequences (2 runs + 1 tunnela), it must pass
+    const threePure21Result = checkOverallDeclaration([pure1, pure2, tunnelaGroup, set1], wildJoker, 'RUMMY_21');
+    expect(threePure21Result.isValid).toBe(true);
+  });
 });

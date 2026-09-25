@@ -14,7 +14,7 @@ import { GameResultModal } from './GameResultModal';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
 
 function getPerimeterPosition(index: number, total: number): SeatPosition {
-  // Top-view oval: self is bottom-center; opponents sit on the wood rim.
+  // Clockwise from the viewer: first seat is on the left, last seat is the lower right.
   if (total === 1) return 'left';
   if (total === 2) return index === 0 ? 'left' : 'right';
   if (total === 3) {
@@ -25,15 +25,18 @@ function getPerimeterPosition(index: number, total: number): SeatPosition {
     const seats: SeatPosition[] = ['left', 'top-left', 'top-right', 'right'];
     return seats[index] ?? 'left';
   }
-  // 5 opponents (6-player table). Extra seat sits on the right, not the lower left.
-  const seats: SeatPosition[] = [
-    'bottom-right',
-    'left',
-    'top-left',
-    'top-right',
-    'right',
-  ];
+  const seats: SeatPosition[] = ['left', 'top-left', 'top-right', 'right', 'bottom-right'];
   return seats[index % seats.length];
+}
+
+function orderBySeat<T extends { seatIndex: number }>(
+  opponents: T[],
+  viewerSeat: number,
+  seatCount: number,
+): T[] {
+  const n = Math.max(seatCount, opponents.length + 1, 2);
+  const offset = (seatIndex: number) => (seatIndex - viewerSeat - 1 + n) % n;
+  return [...opponents].sort((a, b) => offset(a.seatIndex) - offset(b.seatIndex));
 }
 
 export const GameBoard: React.FC = () => {
@@ -98,10 +101,17 @@ export const GameBoard: React.FC = () => {
 
     if (status === 'IN_PROGRESS' && handLen > 0 && freshPile && watchedDealStart) {
       dealPlayedKeyRef.current = key;
-      const seats: DealTarget[] = (gameState.opponents ?? []).map((o) => ({
-        id: o.playerId,
-      }));
-      seats.push({ id: 'self', selector: '#seat-self' });
+      const viewerSeat = gameState.viewerSeatIndex ?? 0;
+      const seatCount = Math.max(
+        (gameState.opponents ?? []).length + 1,
+        2,
+      );
+      const ordered = orderBySeat(gameState.opponents ?? [], viewerSeat, seatCount);
+      // Viewer first, then seats in order, so the last seat receives the last card.
+      const seats: DealTarget[] = [{ id: 'self', selector: '#seat-self' }];
+      for (const opponent of ordered) {
+        seats.push({ id: opponent.playerId });
+      }
       setDealTargets(seats);
       setDealtCounts({});
       setDealPlaying(true);
@@ -155,6 +165,7 @@ export const GameBoard: React.FC = () => {
   useEffect(() => {
     if (!gameState || gameState.gameStatus !== 'WAITING_FOR_PLAYERS') {
       seenOpponents.current = null;
+      setArrivalNotice(null);
       return;
     }
     const current = gameState.opponents ?? [];
@@ -166,10 +177,15 @@ export const GameBoard: React.FC = () => {
     for (const opp of fresh) seenOpponents.current.add(opp.playerId);
     if (fresh.length === 0) return;
     const name = fresh[fresh.length - 1].displayName || 'A player';
+    soundEngine.play('join');
     setArrivalNotice(`${name} is added`);
-    const timer = window.setTimeout(() => setArrivalNotice(null), 700);
-    return () => window.clearTimeout(timer);
   }, [gameState]);
+
+  useEffect(() => {
+    if (!arrivalNotice) return;
+    const timer = window.setTimeout(() => setArrivalNotice(null), 1000);
+    return () => window.clearTimeout(timer);
+  }, [arrivalNotice]);
 
   // Derived labels — plain consts (not hooks) so early return below is safe
   const rawRulesetId = (lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
@@ -238,7 +254,7 @@ export const GameBoard: React.FC = () => {
         </div>
       )}
 
-      {arrivalNotice && (
+      {waitingForPlayers && arrivalNotice && (
         <div className="board-arrival-toast" role="status">
           {arrivalNotice}
         </div>
@@ -296,12 +312,14 @@ export const GameBoard: React.FC = () => {
                       position: getPerimeterPosition(index, slotCount),
                     };
                   })
-                : opponents.map((opp, index) => ({
-                    key: opp.playerId,
-                    seatIndex: opp.seatIndex,
-                    player: opp,
-                    position: getPerimeterPosition(index, opponents.length),
-                  }));
+                : orderBySeat(opponents, viewerSeat, Math.max(maxSeats, opponents.length + 1)).map(
+                    (opp, index, ordered) => ({
+                      key: opp.playerId,
+                      seatIndex: opp.seatIndex,
+                      player: opp,
+                      position: getPerimeterPosition(index, ordered.length),
+                    }),
+                  );
               if (!waiting && slots.length === 0) {
                 return (
                   <div className="opponent-waiting-pod">
@@ -502,7 +520,9 @@ export const GameBoard: React.FC = () => {
               The hand is currently in progress.
               <br />
               Leaving now will result in an immediate forfeit with{' '}
-              <strong style={{ color: '#fca5a5' }}>maximum penalty (80 points)</strong>.
+              <strong style={{ color: '#fca5a5' }}>
+                maximum penalty ({gameState?.rulesetId?.includes('21') || gameState?.rulesetId === 'RUMMY_21' ? 120 : 80} points)
+              </strong>.
             </p>
 
             <div style={{ display: 'flex', gap: '10px' }}>

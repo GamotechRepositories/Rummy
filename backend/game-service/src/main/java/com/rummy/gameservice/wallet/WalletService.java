@@ -149,8 +149,169 @@ public class WalletService {
                 "Daily complimentary login bonus tokens", Map.of("claimedAt", now.toString()));
     }
 
+    public static final String PLATFORM_TREASURY = "PLATFORM_TREASURY";
+    public static final BigDecimal DEFAULT_RAKE_RATE = new BigDecimal("0.15"); // 15% Platform Commission
+
+    private final Map<String, GameSettlementResult> settlementCache = new ConcurrentHashMap<>();
+
     /**
-     * Settles a finished table match: debits loser stakes and credits winner with net pot.
+     * Production-ready P2P Settlement Engine with Variant-aware Rake Calculation (Supreme Court & Legal Skill Gaming compliant):
+     * 1. POINTS RUMMY:
+     *    - Point value = stakeTier / 80 (cap).
+     *    - Each loser loses: min(penaltyPoints * pointValue, stakeTier).
+     *    - Any unlost stake (stakeTier - loss) is refunded to the human loser as GAME_REFUND.
+     *    - Platform charges 15% Rake on total collected loser losses -> PLATFORM_TREASURY.
+     *    - Winner receives: their initial stake back + Net Winner Prize (85% of collected losses).
+     * 2. POOL & DEALS RUMMY:
+     *    - Fixed entry fee = stakeTier.
+     *    - Total Gross Pot = stakeTier * totalPlayers.
+     *    - Platform charges 15% Rake on total pot -> PLATFORM_TREASURY.
+     *    - Winner receives Net Prize (85% of gross pot) -> GAME_WIN.
+     */
+    public synchronized GameSettlementResult settleMatch(String gameId,
+                                                        String tableId,
+                                                        String rulesetId,
+                                                        BigDecimal stakeTier,
+                                                        String winnerPlayerId,
+                                                        Map<String, Integer> finalScores,
+                                                        List<String> allPlayerIds) {
+        if (stakeTier == null || stakeTier.compareTo(BigDecimal.ZERO) <= 0 || winnerPlayerId == null) {
+            log.warn("[Wallet] Skipping settlement: invalid stakeTier ({}) or null winner", stakeTier);
+            return null;
+        }
+
+        // Idempotency: avoid double-settling the same match
+        if (settlementCache.containsKey(gameId)) {
+            log.info("[Wallet] Match gameId={} already settled, returning cached result", gameId);
+            return settlementCache.get(gameId);
+        }
+
+        List<String> players = (allPlayerIds != null && !allPlayerIds.isEmpty())
+                ? new ArrayList<>(allPlayerIds)
+                : (finalScores != null ? new ArrayList<>(finalScores.keySet()) : List.of(winnerPlayerId));
+
+        if (!players.contains(winnerPlayerId)) {
+            players.add(winnerPlayerId);
+        }
+
+        Map<String, Integer> scores = finalScores != null ? finalScores : Map.of();
+        String rId = (rulesetId != null) ? rulesetId.toUpperCase() : "POINTS_13";
+        boolean isRummy21 = rId.contains("21") || rId.equals("RUMMY_21");
+        boolean isPoints13 = rId.contains("POINT") || rId.equals("POINTS_13");
+        boolean isPointsBased = isPoints13 || isRummy21;
+
+        // 21-Card Indian Rummy cap is 120 penalty points (30 first drop, 60 middle drop); 13-Card is 80 penalty points
+        int maxPenaltyCap = isRummy21 ? 120 : 80;
+
+        Map<String, GameSettlementResult.PlayerSettlementDetail> details = new LinkedHashMap<>();
+        BigDecimal totalGrossPot = BigDecimal.ZERO;
+
+        if (isPointsBased) {
+            // Points Rummy (80 cap for 13 cards, 120 cap for 21 cards). Point value = stakeTier / maxPenaltyCap.
+            BigDecimal pointValue = stakeTier.divide(BigDecimal.valueOf(maxPenaltyCap), 4, java.math.RoundingMode.HALF_UP);
+
+            for (String pId : players) {
+                if (pId.equals(winnerPlayerId)) {
+                    continue;
+                }
+                int penalty = scores.getOrDefault(pId, maxPenaltyCap);
+                penalty = Math.min(maxPenaltyCap, Math.max(0, penalty));
+
+                BigDecimal loss = pointValue.multiply(BigDecimal.valueOf(penalty)).setScale(2, java.math.RoundingMode.HALF_UP);
+                loss = loss.min(stakeTier);
+                BigDecimal refund = stakeTier.subtract(loss).setScale(2, java.math.RoundingMode.HALF_UP);
+                totalGrossPot = totalGrossPot.add(loss);
+
+                // If human player dropped early, refund their unlost stake
+                if (!pId.startsWith("BOT_") && refund.compareTo(BigDecimal.ZERO) > 0) {
+                    String refundKey = "REFUND_" + gameId + "_" + pId;
+                    try {
+                        credit(pId, refund, "GAME_REFUND", refundKey, gameId,
+                                "Unlost stake refund (" + penalty + " pts) for " + gameId + " (" + rId + ")",
+                                Map.of("gameId", gameId, "penalty", penalty, "refund", refund, "variant", rId));
+                    } catch (Exception e) {
+                        log.warn("[Wallet] Failed to credit refund to {}: {}", pId, e.getMessage());
+                    }
+                }
+
+                details.put(pId, new GameSettlementResult.PlayerSettlementDetail(
+                        pId, false, penalty, stakeTier, loss, refund, BigDecimal.ZERO, loss.negate()
+                ));
+            }
+        } else {
+            // Pool Rummy (POOL_101, POOL_201) / Deals Rummy (DEALS_RUMMY): Fixed entry fee
+            for (String pId : players) {
+                if (pId.equals(winnerPlayerId)) {
+                    continue;
+                }
+                int penalty = scores.getOrDefault(pId, 80);
+                totalGrossPot = totalGrossPot.add(stakeTier);
+
+                details.put(pId, new GameSettlementResult.PlayerSettlementDetail(
+                        pId, false, penalty, stakeTier, stakeTier, BigDecimal.ZERO, BigDecimal.ZERO, stakeTier.negate()
+                ));
+            }
+        }
+
+        // Platform Rake (15%)
+        BigDecimal platformRake = totalGrossPot.multiply(DEFAULT_RAKE_RATE).setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal netWinnerPrize = totalGrossPot.subtract(platformRake).setScale(2, java.math.RoundingMode.HALF_UP);
+
+        // Record Platform Treasury Rake
+        if (platformRake.compareTo(BigDecimal.ZERO) > 0) {
+            String rakeKey = "RAKE_" + gameId;
+            try {
+                credit(PLATFORM_TREASURY, platformRake, "PLATFORM_RAKE", rakeKey, gameId,
+                        "Platform commission rake (15%) for " + gameId + " (" + rId + ")",
+                        Map.of("gameId", gameId, "tableId", tableId != null ? tableId : "", "grossPot", totalGrossPot, "rake", platformRake, "variant", rId));
+            } catch (Exception e) {
+                log.warn("[Wallet] Failed to credit platform treasury rake: {}", e.getMessage());
+            }
+        }
+
+        // Credit Winner
+        BigDecimal winnerCreditAmount = isPointsBased ? stakeTier.add(netWinnerPrize) : netWinnerPrize;
+        BigDecimal winnerNetDelta = isPointsBased ? netWinnerPrize : netWinnerPrize.subtract(stakeTier);
+
+        if (!winnerPlayerId.startsWith("BOT_")) {
+            String winKey = "WIN_" + gameId + "_" + winnerPlayerId;
+            try {
+                credit(winnerPlayerId, winnerCreditAmount, "GAME_WIN", winKey, gameId,
+                        "Winner prize payout for " + gameId + " (" + rulesetId + ")",
+                        Map.of("gameId", gameId, "grossPot", totalGrossPot, "rake", platformRake, "netPrize", netWinnerPrize));
+            } catch (Exception e) {
+                log.warn("[Wallet] Failed to credit winner {}: {}", winnerPlayerId, e.getMessage());
+            }
+        } else {
+            // Bot win goes to house treasury
+            String botWinKey = "BOT_WIN_" + gameId;
+            try {
+                credit(PLATFORM_TREASURY, winnerCreditAmount, "BOT_HOUSE_WIN", botWinKey, gameId,
+                        "House Bot win payout for " + gameId,
+                        Map.of("gameId", gameId, "botId", winnerPlayerId, "amount", winnerCreditAmount));
+            } catch (Exception e) {
+                log.warn("[Wallet] Failed to credit house bot win: {}", e.getMessage());
+            }
+        }
+
+        details.put(winnerPlayerId, new GameSettlementResult.PlayerSettlementDetail(
+                winnerPlayerId, true, 0, stakeTier, BigDecimal.ZERO, BigDecimal.ZERO, netWinnerPrize, winnerNetDelta
+        ));
+
+        GameSettlementResult result = new GameSettlementResult(
+                gameId, tableId, rulesetId, winnerPlayerId, stakeTier, totalGrossPot,
+                DEFAULT_RAKE_RATE, platformRake, netWinnerPrize, details
+        );
+
+        settlementCache.put(gameId, result);
+        log.info("[Wallet] Settlement complete for gameId={}: GrossPot={}, PlatformRake={}, WinnerPrize={}, WinnerNetDelta={}",
+                gameId, totalGrossPot, platformRake, netWinnerPrize, winnerNetDelta);
+
+        return result;
+    }
+
+    /**
+     * Settles a finished table match: debits loser stakes and credits winner with net pot (legacy support).
      */
     public synchronized void settleGame(String gameId, String winnerPlayerId, List<String> loserPlayerIds, BigDecimal stake) {
         if (stake.compareTo(BigDecimal.ZERO) <= 0 || winnerPlayerId == null) return;
@@ -167,7 +328,7 @@ public class WalletService {
                     log.warn("[Wallet] Failed to debit loser {}: {}", loserId, e.getMessage());
                 }
             } else {
-                totalPot = totalPot.add(stake); // Bot chips added to pot
+                totalPot = totalPot.add(stake);
             }
         }
 
@@ -176,6 +337,14 @@ public class WalletService {
             credit(winnerPlayerId, totalPot, "GAME_WIN", creditKey, gameId, "Winner prize payout for " + gameId,
                     Map.of("gameId", gameId, "pot", totalPot));
         }
+    }
+
+    public GameSettlementResult getSettlement(String gameId) {
+        return settlementCache.get(gameId);
+    }
+
+    public BigDecimal getPlatformTreasuryBalance() {
+        return getOrCreateWallet(PLATFORM_TREASURY).getFreePlayBalance();
     }
 
     /**

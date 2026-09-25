@@ -2,7 +2,6 @@ import React from 'react';
 import type { OpponentView } from '../types/game';
 import { TurnTimerRing } from './TurnTimerRing';
 import { getAvatarForPlayer } from '../utils/avatarUtils';
-import { Crown } from 'lucide-react';
 
 export type SeatPosition =
   | 'left'
@@ -179,35 +178,6 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
           </span>
         )}
       </div>
-
-      {/* VIP Badge Pill */}
-      {!isDropped && !isDeclared && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '-4px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'linear-gradient(135deg, #78350f, #451a03)',
-            border: '1px solid #fbbf24',
-            color: '#fef08a',
-            fontSize: '7.5px',
-            fontWeight: 900,
-            padding: '0.5px 5px',
-            borderRadius: '8px',
-            letterSpacing: '0.04em',
-            whiteSpace: 'nowrap',
-            boxShadow: '0 2px 6px rgba(0,0,0,0.6)',
-            zIndex: 14,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '2px',
-          }}
-        >
-          <Crown size={8} color="#fbbf24" />
-          {avatar.vipTier}
-        </div>
-      )}
     </div>
   );
 

@@ -66,6 +66,10 @@ public final class TableActor {
     /** After the lobby window, a late arrival must not take a seat on this table. */
     private boolean seatingClosed;
 
+    private final com.rummy.gameservice.wallet.WalletService walletService;
+    private int stakeTier = 100;
+    private com.rummy.gameservice.wallet.GameSettlementResult lastSettlement;
+
     public TableActor(String tableId,
                       GameState initialState,
                       RummyRules rules,
@@ -74,7 +78,8 @@ public final class TableActor {
                       ScheduledExecutorService scheduler,
                       com.rummy.gameservice.persistence.GamePersistenceService persistenceService,
                       com.rummy.gameservice.kafka.GameEventProducer eventProducer,
-                      com.rummy.gameservice.session.PlayerSessionService sessionService) {
+                      com.rummy.gameservice.session.PlayerSessionService sessionService,
+                      com.rummy.gameservice.wallet.WalletService walletService) {
         this.tableId = Objects.requireNonNull(tableId);
         this.state = Objects.requireNonNull(initialState);
         this.rules = Objects.requireNonNull(rules);
@@ -85,6 +90,19 @@ public final class TableActor {
         this.persistenceService = persistenceService;
         this.eventProducer = eventProducer;
         this.sessionService = sessionService;
+        this.walletService = walletService;
+    }
+
+    public TableActor(String tableId,
+                      GameState initialState,
+                      RummyRules rules,
+                      GameEngine engine,
+                      ObjectMapper objectMapper,
+                      ScheduledExecutorService scheduler,
+                      com.rummy.gameservice.persistence.GamePersistenceService persistenceService,
+                      com.rummy.gameservice.kafka.GameEventProducer eventProducer,
+                      com.rummy.gameservice.session.PlayerSessionService sessionService) {
+        this(tableId, initialState, rules, engine, objectMapper, scheduler, persistenceService, eventProducer, sessionService, null);
     }
 
     public TableActor(String tableId,
@@ -124,6 +142,13 @@ public final class TableActor {
         // Send full initial player view to reconnecting or joining player
         if (state.getPlayer(playerId).isPresent()) {
             sendPlayerView(playerId, null);
+        }
+
+        if (lastSettlement != null && session.isOpen()) {
+            try {
+                WsServerMessage msg = WsServerMessage.of("GAME_SETTLEMENT", null, tableId, state.getSequence(), lastSettlement);
+                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(msg)));
+            } catch (Exception ignored) {}
         }
 
         if (state.getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
@@ -359,8 +384,31 @@ public final class TableActor {
                 persistenceService.recordGameEventAsync(state.getGameId(), event);
                 if (event instanceof com.rummy.engine.event.GameStartedEvent) {
                     persistenceService.recordGameStarted(state, tableId);
-                } else if (event instanceof com.rummy.engine.event.GameFinishedEvent) {
+                } else if (event instanceof com.rummy.engine.event.GameFinishedEvent finishedEvent) {
                     persistenceService.recordGameFinished(state, tableId);
+                    if (walletService != null && stakeTier > 0) {
+                        try {
+                            List<String> playerIds = state.getPlayers().stream()
+                                    .map(PlayerState::getPlayerId)
+                                    .toList();
+                            this.lastSettlement = walletService.settleMatch(
+                                    state.getGameId(),
+                                    tableId,
+                                    rules.getRulesetId(),
+                                    java.math.BigDecimal.valueOf(stakeTier),
+                                    finishedEvent.winnerPlayerId(),
+                                    finishedEvent.finalScores(),
+                                    playerIds
+                            );
+                            if (this.lastSettlement != null) {
+                                broadcastMessage(WsServerMessage.of("GAME_SETTLEMENT", requestId, tableId, state.getSequence(), this.lastSettlement));
+                                log.info("[TableActor:{}] Settled game: pot={}, rake={}, netWinnerPrize={}",
+                                        tableId, lastSettlement.totalGrossPot(), lastSettlement.platformRakeAmount(), lastSettlement.netWinnerPrize());
+                            }
+                        } catch (Exception e) {
+                            log.error("[TableActor:{}] Settlement error for gameId={}: {}", tableId, state.getGameId(), e.getMessage(), e);
+                        }
+                    }
                 }
             }
             if (event instanceof com.rummy.engine.event.GameFinishedEvent && sessionService != null) {
@@ -739,6 +787,18 @@ public final class TableActor {
             autoStartFallbackFuture.cancel(false);
             autoStartFallbackFuture = null;
         }
+    }
+
+    public int getStakeTier() {
+        return stakeTier;
+    }
+
+    public void setStakeTier(int stakeTier) {
+        this.stakeTier = stakeTier;
+    }
+
+    public com.rummy.gameservice.wallet.GameSettlementResult getLastSettlement() {
+        return lastSettlement;
     }
 
     public synchronized void destroy() {

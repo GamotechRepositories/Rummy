@@ -15,7 +15,7 @@ import { soundEngine } from '../audio/soundEngine';
 import { isDiscardPhase, isDrawPhase } from '../utils/turnPhase';
 import { calculateHandPenalty } from '../rules/clientValidator';
 import { TurnTimerRing } from './TurnTimerRing';
-import { getAvatarForPlayer, photoForCharacter } from '../utils/avatarUtils';
+import { photoForCharacter } from '../utils/avatarUtils';
 
 export const ActionControls: React.FC = () => {
   const {
@@ -47,10 +47,12 @@ export const ActionControls: React.FC = () => {
 
   const drawPhase = isDrawPhase(isMyTurn, turnPhase);
   const discardPhase = isDiscardPhase(isMyTurn, turnPhase);
-  const myAvatar = getAvatarForPlayer(displayName);
+  const isRummy21 = gameState.rulesetId?.includes('21') || gameState.rulesetId === 'RUMMY_21';
   const wildJoker = gameState.cutJoker ?? null;
-  const hasPure = groups.some((g) => g.groupType === 'PURE_SEQUENCE');
-  const liveScore = calculateHandPenalty(groups, wildJoker);
+  const pureCount = groups.filter((g) => g.groupType === 'PURE_SEQUENCE').length;
+  const neededPure = isRummy21 ? 3 : 1;
+  const hasPure = pureCount >= neededPure;
+  const liveScore = calculateHandPenalty(groups, wildJoker, isRummy21 ? 120 : 80, gameState.rulesetId);
 
   const handleDiscard = () => {
     if (selectedCardIds.length !== 1) return;
@@ -65,7 +67,7 @@ export const ActionControls: React.FC = () => {
   };
 
   const isFirstTurn = (gameState.discardHistory?.length ?? 0) <= 1;
-  const dropPenaltyPoints = isFirstTurn ? 20 : 40;
+  const dropPenaltyPoints = isRummy21 ? (isFirstTurn ? 30 : 60) : (isFirstTurn ? 20 : 40);
 
   const handleOpenDeclare = () => {
     if (selectedCardIds.length !== 1) return;
@@ -160,7 +162,6 @@ export const ActionControls: React.FC = () => {
           <div className="bcb-player-meta">
             <div className="bcb-player-name">
               {displayName}
-              <span className="bcb-vip">{myAvatar.vipTier}</span>
             </div>
             {gameStatus === 'IN_PROGRESS' && droppedOut && (
               <div className="bcb-player-stats">
@@ -176,7 +177,9 @@ export const ActionControls: React.FC = () => {
                 </span>
                 <span className="bcb-dot" aria-hidden />
                 <span className={`bcb-pure${hasPure ? ' ok' : ''}`}>
-                  {hasPure ? 'Pure run ready' : 'Need pure run'}
+                  {hasPure
+                    ? (isRummy21 ? '3 Pure runs ready' : 'Pure run ready')
+                    : (isRummy21 ? `${pureCount}/3 Pure runs` : 'Need pure run')}
                 </span>
               </div>
             )}

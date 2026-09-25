@@ -28,7 +28,7 @@ export const DeclareModal: React.FC = () => {
     }))
     .filter((g) => g.cards.length > 0);
 
-  const evaluation = checkOverallDeclaration(remainingGroups, gameState.cutJoker);
+  const evaluation = checkOverallDeclaration(remainingGroups, gameState.cutJoker, gameState.rulesetId);
 
   const handleConfirmDeclare = () => {
     if (!finishCardId) return;

@@ -159,3 +159,28 @@ export interface PlayerHistoryResponse {
   winRate: number;
   results: GameResultItem[];
 }
+
+export interface PlayerSettlementDetail {
+  playerId: string;
+  isWinner: boolean;
+  penaltyPoints: number;
+  initialStake: number;
+  lossAmount: number;
+  refundAmount: number;
+  winAmount: number;
+  netWalletDelta: number;
+}
+
+export interface GameSettlementResult {
+  gameId: string;
+  tableId: string;
+  rulesetId: string;
+  winnerPlayerId: string;
+  stakeTier: number;
+  totalGrossPot: number;
+  platformRakeRate: number;
+  platformRakeAmount: number;
+  netWinnerPrize: number;
+  playerDetails: Record<string, PlayerSettlementDetail>;
+}
+

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CardInstance, PlayerGameView, VisualCardGroup } from '../types/game';
+import type { CardInstance, GameSettlementResult, PlayerGameView, VisualCardGroup } from '../types/game';
 import { evaluateCardGroup, getCardScore } from '../rules/clientValidator';
 import {
   clearActiveSessionLocal,
@@ -18,6 +18,7 @@ interface GameStoreState {
   connectionStatus: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING';
   hasJoinedTable: boolean;
   gameState: PlayerGameView | null;
+  gameSettlement: GameSettlementResult | null;
   groups: VisualCardGroup[];
   selectedCardIds: string[];
   isDeclareModalOpen: boolean;
@@ -40,6 +41,7 @@ interface GameStoreState {
   setAvatarId: (avatarId: string) => void;
   setHasJoinedTable: (joined: boolean) => void;
   leaveTable: () => void;
+  setGameSettlement: (settlement: GameSettlementResult | null) => void;
   setResumePending: (pending: boolean) => void;
   clearResumeOnGameOver: () => void;
   setLastGameConfig: (config: { rulesetId: string; entryFee: number; maxPlayers: number } | null) => void;
@@ -184,6 +186,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   connectionStatus: 'DISCONNECTED',
   hasJoinedTable: false,
   gameState: null,
+  gameSettlement: null,
   groups: [],
   selectedCardIds: [],
   isDeclareModalOpen: false,
@@ -219,6 +222,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   setHasJoinedTable: (joined) => set({ hasJoinedTable: joined }),
 
+  setGameSettlement: (settlement) => set({ gameSettlement: settlement }),
+
   setResumePending: (pending) => set({ resumePending: pending }),
 
   clearResumeOnGameOver: () => {
@@ -245,6 +250,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       hasJoinedTable: false,
       resumePending: false,
       gameState: null,
+      gameSettlement: null,
       groups: [],
       selectedCardIds: [],
       isDeclareModalOpen: false,

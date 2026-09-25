@@ -97,18 +97,12 @@ export const DealAnimation: React.FC<Props> = ({
       const oy = tableRect.height * HANDS_Y;
       setOrigin({ x: ox, y: oy });
 
-      const cx = tableRect.width / 2;
-      const cy = tableRect.height / 2;
-      const circle = frozenTargets
-        .map((t) => {
-          const sel = t.selector ?? `#seat-${t.id}`;
-          const dest = measurePoint(table, sel) ?? { x: ox, y: oy + tableRect.height * 0.45 };
-          // 0 at the dealer (12 o'clock), increasing clockwise around the oval.
-          let angle = Math.atan2(dest.x - cx, -(dest.y - cy));
-          if (angle < 0) angle += Math.PI * 2;
-          return { id: t.id, dest, angle };
-        })
-        .sort((a, b) => a.angle - b.angle);
+      // Keep the seat order from the table. Last seat in that list is dealt last.
+      const circle = frozenTargets.map((t) => {
+        const sel = t.selector ?? `#seat-${t.id}`;
+        const dest = measurePoint(table, sel) ?? { x: ox, y: oy + tableRect.height * 0.45 };
+        return { id: t.id, dest };
+      });
 
       const next: FlyCard[] = [];
       let idx = 0;
@@ -174,7 +168,6 @@ export const DealAnimation: React.FC<Props> = ({
 
   return (
     <div className="deal-anim-layer" aria-hidden>
-      <div className="deal-anim-banner">Dealer is dealing…</div>
 
       {/* Stock in hands — cards peel off from here */}
       <div
