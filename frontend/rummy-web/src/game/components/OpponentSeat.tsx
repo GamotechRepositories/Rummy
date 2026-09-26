@@ -2,6 +2,7 @@ import React from 'react';
 import type { OpponentView } from '../types/game';
 import { TurnTimerRing } from './TurnTimerRing';
 import { getAvatarForPlayer } from '../utils/avatarUtils';
+import { UserPlus } from 'lucide-react';
 
 export type SeatPosition =
   | 'left'
@@ -36,32 +37,91 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   if (!player) {
     return (
       <div
-        className={`opponent-seat-pod pos-${position}`}
+        className={`opponent-seat-pod pos-${position} empty-seat-pod`}
         style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: '6px',
-          opacity: 0.35,
+          gap: '5px',
+          zIndex: 8,
+          pointerEvents: 'none',
         }}
       >
+        {/* Visual Seat Beacon / Icon */}
         <div
+          className="empty-seat-circle"
           style={{
-            width: '54px',
-            height: '54px',
+            position: 'relative',
+            width: '52px',
+            height: '52px',
             borderRadius: '50%',
-            border: '2px dashed rgba(255, 255, 255, 0.3)',
+            background: 'radial-gradient(circle at 35% 30%, rgba(28, 48, 36, 0.95) 0%, rgba(8, 18, 12, 0.98) 100%)',
+            border: '2px dashed rgba(251, 191, 36, 0.8)',
+            boxShadow: '0 0 18px rgba(251, 191, 36, 0.35), 0 4px 14px rgba(0, 0, 0, 0.7), inset 0 0 14px rgba(251, 191, 36, 0.15)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--text-muted)',
-            fontSize: '11px',
-            fontWeight: 700,
+            color: '#fbbf24',
           }}
         >
-          Seat {seatNumber + 1}
+          <UserPlus size={22} strokeWidth={2.2} style={{ opacity: 0.95 }} />
         </div>
-        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Empty</span>
+
+        {/* Seat Label & Empty Badge */}
+        <div
+          className="empty-seat-nameplate"
+          style={{
+            background: 'linear-gradient(180deg, rgba(20, 36, 26, 0.94) 0%, rgba(8, 18, 12, 0.98) 100%)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(251, 191, 36, 0.45)',
+            borderRadius: '12px',
+            padding: '3px 10px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.65), 0 0 10px rgba(251, 191, 36, 0.18)',
+            textAlign: 'center',
+            minWidth: '82px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '1px',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '11.5px',
+              fontWeight: 800,
+              color: '#fef08a',
+              letterSpacing: '0.3px',
+              whiteSpace: 'nowrap',
+              textShadow: '0 1px 3px rgba(0, 0, 0, 0.8)',
+            }}
+          >
+            Seat {seatNumber + 1}
+          </div>
+          <div
+            style={{
+              fontSize: '9.5px',
+              fontWeight: 700,
+              color: '#cbd5e1',
+              letterSpacing: '0.6px',
+              textTransform: 'uppercase',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            <span
+              style={{
+                width: '5px',
+                height: '5px',
+                borderRadius: '50%',
+                background: '#fbbf24',
+                boxShadow: '0 0 6px #fbbf24',
+                display: 'inline-block',
+              }}
+            />
+            Empty
+          </div>
+        </div>
       </div>
     );
   }

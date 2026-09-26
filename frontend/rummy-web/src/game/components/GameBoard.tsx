@@ -50,7 +50,6 @@ export const GameBoard: React.FC = () => {
   } = useGameStore();
 
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const [confirmLeaveOpen, setConfirmLeaveOpen] = React.useState(false);
   const [resumeFailed, setResumeFailed] = React.useState(false);
   const [dealPlaying, setDealPlaying] = React.useState(false);
   const [dealTargets, setDealTargets] = React.useState<DealTarget[]>([]);
@@ -391,88 +390,26 @@ export const GameBoard: React.FC = () => {
 
       <GameResultModal isOpen={gameState?.gameStatus === 'COMPLETED'} />
 
+      {/* Combined Table Details & Safe Leave Modal */}
       {menuOpen && (
-        <div className="table-menu-backdrop" onClick={() => setMenuOpen(false)}>
+        <div
+          className="royal-dialog-backdrop"
+          role="presentation"
+          onClick={() => setMenuOpen(false)}
+        >
           <div
-            className="table-menu"
+            className="royal-dialog-card"
             role="dialog"
-            aria-label="Table menu"
+            aria-label="Table Details & Leave Confirmation"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="table-menu-head">
-              <div className="table-menu-title-wrap">
-                <span className="table-menu-icon">♠</span>
-                <h2 className="table-menu-title">Table Details</h2>
-              </div>
-              <button
-                type="button"
-                className="table-menu-close"
-                onClick={() => setMenuOpen(false)}
-                aria-label="Close"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="table-menu-badge-wrap">
-              <span className="table-menu-name">
-                {variantName} · {maxSeats} Players
-              </span>
-            </div>
-
-            <div className="table-menu-rows">
-              {isPointsRummy ? (
-                <>
-                  <div className="table-menu-row">
-                    <span>Point value</span>
-                    <span className="table-menu-value--gold">{stakeLabel}</span>
-                  </div>
-                  <div className="table-menu-row">
-                    <span>Max penalty</span>
-                    <span className="table-menu-value--penalty">
-                      {gameState?.rulesetId?.includes('21') || gameState?.rulesetId === 'RUMMY_21' ? '120 pts' : '80 pts'} (₹{entryFee.toFixed(2)})
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <div className="table-menu-row">
-                  <span>Entry fee</span>
-                  <span className="table-menu-value--gold">₹{entryFee.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="table-menu-row">
-                <span>Table ID</span>
-                <span className="table-menu-id">{gameState?.tableId ?? 'T1'}</span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              className="table-menu-leave"
-              onClick={() => {
-                setMenuOpen(false);
-                if (gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped) {
-                  setConfirmLeaveOpen(true);
-                } else {
-                  handleLeaveTable();
-                }
-              }}
-            >
-              <LogOut size={16} />
-              Leave Table
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Safe Leave Confirmation Modal */}
-      {confirmLeaveOpen && (
-        <div className="royal-dialog-backdrop" role="presentation">
-          <div className="royal-dialog-card" role="dialog" aria-label="Confirm Leave Table">
             <button
               type="button"
               className="royal-dialog-close"
-              onClick={() => setConfirmLeaveOpen(false)}
+              onClick={() => {
+                soundEngine.play('click');
+                setMenuOpen(false);
+              }}
               aria-label="Close"
             >
               <X size={18} />
@@ -485,31 +422,68 @@ export const GameBoard: React.FC = () => {
               </div>
             </div>
 
-            <h3 className="royal-dialog-title">Leave Active Table?</h3>
+            <h3 className="royal-dialog-title">
+              {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped
+                ? 'Leave Active Table?'
+                : 'Table Details'}
+            </h3>
             <p className="royal-dialog-subtitle">
-              Your hand is currently live. Leaving the table mid-game will forfeit the round.
+              {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped
+                ? 'Your hand is currently live. Leaving the table mid-game will forfeit the round.'
+                : gameState?.viewerDropped
+                ? 'You have dropped this hand. You can safely leave the table now.'
+                : 'Game has not started yet. You can leave now without any penalty.'}
             </p>
 
-            <div className="royal-dialog-penalty-box">
-              <div className="royal-dialog-penalty-label">
-                <span className="royal-dialog-penalty-tag">
-                  <ShieldAlert size={13} />
-                  Forfeit Penalty
-                </span>
-                <span className="royal-dialog-penalty-desc">
-                  Max penalty points will apply
-                </span>
-              </div>
-              <div className="royal-dialog-penalty-badge">
-                +{gameState?.rulesetId?.includes('21') || gameState?.rulesetId === 'RUMMY_21' ? 120 : 80} PTS
+            <div className="table-menu-badge-wrap" style={{ padding: '0 0 12px', display: 'flex', justifyContent: 'center' }}>
+              <span className="table-menu-name">
+                ♠ {variantName} · {maxSeats} Players
+              </span>
+            </div>
+
+            <div className="table-menu-rows" style={{ margin: '0 0 16px', textAlign: 'left' }}>
+              {isPointsRummy ? (
+                <div className="table-menu-row">
+                  <span>Point value</span>
+                  <span className="table-menu-value--gold">{stakeLabel}</span>
+                </div>
+              ) : (
+                <div className="table-menu-row">
+                  <span>Entry fee</span>
+                  <span className="table-menu-value--gold">₹{entryFee.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="table-menu-row">
+                <span>Table ID</span>
+                <span className="table-menu-id">{gameState?.tableId ?? 'T1'}</span>
               </div>
             </div>
+
+            {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped && (
+              <div className="royal-dialog-penalty-box">
+                <div className="royal-dialog-penalty-label">
+                  <span className="royal-dialog-penalty-tag">
+                    <ShieldAlert size={13} />
+                    Forfeit Penalty
+                  </span>
+                  <span className="royal-dialog-penalty-desc">
+                    Max penalty points will apply
+                  </span>
+                </div>
+                <div className="royal-dialog-penalty-badge">
+                  +{gameState?.rulesetId?.includes('21') || gameState?.rulesetId === 'RUMMY_21' ? 120 : 80} PTS
+                </div>
+              </div>
+            )}
 
             <div className="royal-dialog-actions">
               <button
                 type="button"
                 className="royal-btn-gold"
-                onClick={() => setConfirmLeaveOpen(false)}
+                onClick={() => {
+                  soundEngine.play('click');
+                  setMenuOpen(false);
+                }}
               >
                 Resume Game
               </button>
@@ -517,10 +491,11 @@ export const GameBoard: React.FC = () => {
                 type="button"
                 className="royal-btn-danger"
                 onClick={() => {
-                  setConfirmLeaveOpen(false);
+                  setMenuOpen(false);
                   handleLeaveTable();
                 }}
               >
+                <LogOut size={16} />
                 Leave Table
               </button>
             </div>

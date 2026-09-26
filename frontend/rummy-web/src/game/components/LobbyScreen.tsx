@@ -508,16 +508,38 @@ export const LobbyScreen: React.FC = () => {
         {/* ========================================================= */}
         {currentPage === 'CONFIGURE_TABLE' && (
           <div className="stake-screen">
+            {/* Desktop Navigation: Positioned outside the popup card */}
+            <div className="stake-nav stake-nav--desktop">
+              <button
+                type="button"
+                id="btn-back-to-variants"
+                className="stake-back"
+                onClick={() => {
+                  soundEngine.play('click');
+                  setCurrentPage('SELECT_VARIANT');
+                }}
+              >
+                <span className="stake-back-icon" aria-hidden>
+                  <ArrowLeft size={14} strokeWidth={2.75} />
+                </span>
+                Change Variant
+              </button>
+              <div className="stake-step">
+                Step 2 of 2: <strong>Configure Stakes</strong>
+              </div>
+            </div>
+
             <div className="stake-card">
               <span className="stake-suit stake-suit-tl">♠</span>
               <span className="stake-suit stake-suit-tr">♦</span>
               <span className="stake-suit stake-suit-bl">♠</span>
               <span className="stake-suit stake-suit-br">♥</span>
 
-              <div className="stake-nav">
+              {/* Mobile Navigation: Remains inside the full-screen card on mobile */}
+              <div className="stake-nav stake-nav--mobile">
                 <button
                   type="button"
-                  id="btn-back-to-variants"
+                  id="btn-back-to-variants-mobile"
                   className="stake-back"
                   onClick={() => {
                     soundEngine.play('click');

@@ -837,6 +837,27 @@ h1, h2, h3, h4, .font-display {
   transition: all 0.3s ease;
 }
 
+.empty-seat-pod {
+  pointer-events: none;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.empty-seat-circle {
+  animation: pulseEmptySeatRing 3.2s ease-in-out infinite;
+  transition: transform 0.2s ease;
+}
+
+@keyframes pulseEmptySeatRing {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(251, 191, 36, 0.3), 0 4px 14px rgba(0, 0, 0, 0.7), inset 0 0 12px rgba(251, 191, 36, 0.1);
+    border-color: rgba(251, 191, 36, 0.75);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(251, 191, 36, 0.55), 0 4px 16px rgba(0, 0, 0, 0.8), inset 0 0 18px rgba(251, 191, 36, 0.22);
+    border-color: rgba(251, 191, 36, 0.95);
+  }
+}
+
 .opponent-avatar-wrap {
   position: relative;
   width: var(--seat-avatar, 48px);
@@ -3331,6 +3352,14 @@ h1, h2, h3, h4, .font-display {
     gap: clamp(8px, 1.6dvh, 16px);
   }
 
+  .stake-nav--desktop {
+    display: none !important;
+  }
+
+  .stake-nav--mobile {
+    display: flex !important;
+  }
+
   .lobby-frame--stake .stake-nav {
     margin-bottom: 2px;
   }
@@ -3414,6 +3443,27 @@ h1, h2, h3, h4, .font-display {
   gap: clamp(6px, 1.2vw, 12px);
   flex-shrink: 0;
   padding: 2px 2px 0;
+}
+
+.stake-nav--desktop {
+  display: flex;
+  width: 100%;
+  margin-bottom: clamp(6px, 1.2dvh, 14px);
+  padding: 0 4px;
+}
+
+.stake-nav--mobile {
+  display: none !important;
+}
+
+@media (min-width: 901px) {
+  .stake-card {
+    max-height: calc(100dvh - 84px);
+  }
+
+  .stake-card .stake-emblem {
+    margin-top: clamp(6px, 1.2dvh, 14px);
+  }
 }
 
 .stake-back {
