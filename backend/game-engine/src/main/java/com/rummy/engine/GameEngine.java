@@ -360,7 +360,9 @@ public final class GameEngine {
         }
 
         boolean isFirstDrop = !player.hasTakenFirstTurn();
-        int penalty = isFirstDrop ? rules.getFirstDropPenalty() : rules.getMiddleDropPenalty();
+        int penalty = cmd.isForfeit()
+                ? rules.getMaximumPenalty()
+                : (isFirstDrop ? rules.getFirstDropPenalty() : rules.getMiddleDropPenalty());
         player.markDropped(penalty);
 
         List<GameEvent> events = new ArrayList<>();

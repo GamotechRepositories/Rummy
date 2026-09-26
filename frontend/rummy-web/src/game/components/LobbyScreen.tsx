@@ -102,7 +102,6 @@ export const LobbyScreen: React.FC = () => {
     setHasJoinedTable,
     connectionStatus,
     playerId,
-    lastGameConfig,
     autoMatchmakePending,
     setAutoMatchmakePending,
     setLastGameConfig,

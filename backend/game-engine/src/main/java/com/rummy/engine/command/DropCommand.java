@@ -9,5 +9,10 @@ public record DropCommand(
         String commandId,
         String gameId,
         String playerId,
-        Instant timestamp
-) implements GameCommand {}
+        Instant timestamp,
+        boolean isForfeit
+) implements GameCommand {
+    public DropCommand(String commandId, String gameId, String playerId, Instant timestamp) {
+        this(commandId, gameId, playerId, timestamp, false);
+    }
+}

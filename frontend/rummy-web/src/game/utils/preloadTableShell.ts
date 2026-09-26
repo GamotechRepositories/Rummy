@@ -3,7 +3,7 @@
  * Fetched during matchmaking so the felt is already cached when the table opens.
  * Does not join a table or request any game state.
  */
-const TABLE_SHELL_IMAGES = ['/table-board.png?v=071656'] as const;
+const TABLE_SHELL_IMAGES = ['/table-board.png?v=011548'] as const;
 
 export function preloadTableShell(): void {
   for (const src of TABLE_SHELL_IMAGES) {

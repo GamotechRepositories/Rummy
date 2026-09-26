@@ -215,7 +215,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 var playerOpt = tableActor.getState().getPlayer(playerId);
                 if (playerOpt.isPresent() && playerOpt.get().getStatus() == PlayerStatus.ACTIVE
                         && tableActor.getState().getStatus() == GameStatus.IN_PROGRESS) {
-                    tableActor.processCommand(new DropCommand(reqId, gameId, playerId, now), "LEAVE_DROP");
+                    tableActor.processCommand(new DropCommand(reqId, gameId, playerId, now, true), "LEAVE_FORFEIT");
                 } else if (tableActor.getState().getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
                     tableActor.removeWaitingHuman(playerId);
                     if (matchmakingService != null) {

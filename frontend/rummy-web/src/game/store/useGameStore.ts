@@ -522,3 +522,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   setErrorMessage: (msg) => set({ errorMessage: msg }),
   setLastEventMessage: (msg) => set({ lastEventMessage: msg }),
 }));
+
+if (typeof window !== 'undefined') {
+  (window as unknown as { __GAME_STORE__: typeof useGameStore }).__GAME_STORE__ = useGameStore;
+}
+

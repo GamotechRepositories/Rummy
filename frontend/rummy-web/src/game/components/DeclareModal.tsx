@@ -100,7 +100,7 @@ export const DeclareModal: React.FC = () => {
               border: '1px solid rgba(255, 255, 255, 0.1)',
             }}
           >
-            <CardView card={finishCard} wildJoker={gameState.cutJoker} size="small" />
+            <CardView card={finishCard} wildJoker={gameState.cutJoker} />
             <div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Card you are throwing to finish:</div>
               <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--gold-light)' }}>

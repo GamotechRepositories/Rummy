@@ -4,7 +4,6 @@ import { socketClient } from '../websocket/GameSocketClient';
 import confetti from 'canvas-confetti';
 import {
   Trophy,
-  Award,
   RotateCcw,
   LogOut,
   CheckCircle2,
@@ -13,10 +12,7 @@ import {
   EyeOff,
   Layers,
   Crown,
-  ChevronDown,
-  ChevronUp,
   Sparkles,
-  Coins,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
@@ -28,11 +24,11 @@ interface GameResultModalProps {
   isOpen: boolean;
 }
 
-const GROUP_LABELS: Record<GroupValidationType, { title: string; color: string; bg: string }> = {
-  PURE_SEQUENCE: { title: '✓ Pure Run', color: '#10b981', bg: 'rgba(16, 185, 129, 0.2)' },
-  IMPURE_SEQUENCE: { title: '★ Run', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.2)' },
-  SET: { title: '◆ Set', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.2)' },
-  INVALID: { title: 'Cards', color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)' },
+const GROUP_CONFIG: Record<GroupValidationType, { label: string; color: string; bg: string }> = {
+  PURE_SEQUENCE: { label: 'Pure', color: '#34d399', bg: 'rgba(52, 211, 153, 0.15)' },
+  IMPURE_SEQUENCE: { label: 'Sequence', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)' },
+  SET: { label: 'Set', color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.15)' },
+  INVALID: { label: 'Cards', color: '#f87171', bg: 'rgba(248, 113, 113, 0.12)' },
 };
 
 const SUIT_ORDER: Record<string, number> = { SPADES: 0, HEARTS: 1, CLUBS: 2, DIAMONDS: 3, NONE: 4 };
@@ -53,59 +49,45 @@ const RANK_ORDER: Record<string, number> = {
   JOKER: 14,
 };
 
-const SUIT_NAMES: Record<string, string> = {
-  SPADES: '♠ Spades',
-  HEARTS: '♥ Hearts',
-  CLUBS: '♣ Clubs',
-  DIAMONDS: '♦ Diamonds',
-  JOKER: '🃏 Jokers',
-};
-
-interface FormattedShowdownGroup {
-  title: string;
+interface ShowdownGroup {
   type: GroupValidationType;
   cards: CardInstance[];
   pts: number;
 }
 
 /**
- * Organizes a player's 13 cards into clean, readable Rummy groups of 3–5 cards max.
- * Never produces a single 13-card clump.
+ * Organizes revealed player cards into simple Rummy groups matching the game table style.
  */
-function organizePlayerShowdownCards(
+function autoGroupShowdownCards(
   cards: CardInstance[],
   wildJoker: CardInstance | null,
   isWinner: boolean,
   declaredGroups?: { cards: CardInstance[] }[]
-): FormattedShowdownGroup[] {
-  // 1. If player formally declared and has valid declared groups (2-5 cards each)
+): ShowdownGroup[] {
+  // 1. If winner declared groups, use their exact declaration
   if (
     isWinner &&
     declaredGroups &&
     declaredGroups.length >= 2 &&
-    declaredGroups.every((g) => g.cards && g.cards.length >= 2 && g.cards.length <= 6)
+    declaredGroups.every((g) => g.cards && g.cards.length >= 2)
   ) {
-    return declaredGroups.map((g) => {
-      const type = evaluateCardGroup(g.cards, wildJoker);
-      return {
-        title: '',
-        type,
-        cards: g.cards,
-        pts: 0,
-      };
-    });
+    return declaredGroups.map((g) => ({
+      type: evaluateCardGroup(g.cards, wildJoker),
+      cards: g.cards,
+      pts: 0,
+    }));
   }
 
   if (!cards || cards.length === 0) return [];
 
-  // 2. Sort all cards by suit and rank
+  // 2. Sort cards by suit and rank
   const sorted = [...cards].sort((a, b) => {
     const s = (SUIT_ORDER[a.suit] ?? 99) - (SUIT_ORDER[b.suit] ?? 99);
     if (s !== 0) return s;
     return (RANK_ORDER[a.rank] ?? 99) - (RANK_ORDER[b.rank] ?? 99);
   });
 
-  // 3. Bucket by suit
+  // 3. Bucket into natural groups
   const suitBuckets: Record<string, CardInstance[]> = {};
   for (const c of sorted) {
     const key = c.printedJoker ? 'JOKER' : c.suit;
@@ -113,145 +95,27 @@ function organizePlayerShowdownCards(
     suitBuckets[key].push(c);
   }
 
-  const resultGroups: FormattedShowdownGroup[] = [];
+  const result: ShowdownGroup[] = [];
 
-  for (const [key, groupCards] of Object.entries(suitBuckets)) {
-    // If a suit bucket has more than 4 cards (e.g. 5, 6 or 7 cards), split it into sub-chunks of 3-4 cards
-    if (groupCards.length > 4) {
+  for (const [, groupCards] of Object.entries(suitBuckets)) {
+    if (groupCards.length > 5) {
       const mid = Math.ceil(groupCards.length / 2);
-      const chunk1 = groupCards.slice(0, mid);
-      const chunk2 = groupCards.slice(mid);
-      [chunk1, chunk2].forEach((chunk) => {
+      const c1 = groupCards.slice(0, mid);
+      const c2 = groupCards.slice(mid);
+      [c1, c2].forEach((chunk) => {
         const type = evaluateCardGroup(chunk, wildJoker);
         const pts = isWinner ? 0 : chunk.reduce((sum, c) => sum + getCardScore(c, wildJoker), 0);
-        const defaultTitle = SUIT_NAMES[key] ? `${SUIT_NAMES[key]} (${chunk.length})` : key;
-        resultGroups.push({
-          title: defaultTitle,
-          type,
-          cards: chunk,
-          pts,
-        });
+        result.push({ type, cards: chunk, pts });
       });
     } else {
       const type = evaluateCardGroup(groupCards, wildJoker);
       const pts = isWinner ? 0 : groupCards.reduce((sum, c) => sum + getCardScore(c, wildJoker), 0);
-      const defaultTitle = SUIT_NAMES[key] ? `${SUIT_NAMES[key]} (${groupCards.length})` : key;
-      resultGroups.push({
-        title: defaultTitle,
-        type,
-        cards: groupCards,
-        pts,
-      });
+      result.push({ type, cards: groupCards, pts });
     }
   }
 
-  return resultGroups;
+  return result;
 }
-
-const ShowdownCardTray: React.FC<{
-  groups: FormattedShowdownGroup[];
-  wildJoker: CardInstance | null;
-  cardCount: number;
-}> = ({ groups, wildJoker, cardCount }) => {
-  if (!groups || groups.length === 0) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '10px 14px',
-          borderRadius: '12px',
-          background: 'rgba(255, 255, 255, 0.03)',
-          border: '1px dashed rgba(255, 255, 255, 0.12)',
-          color: '#94a3b8',
-          fontSize: '12px',
-          marginTop: '8px',
-        }}
-      >
-        <Layers size={15} color="#64748b" />
-        <span>{cardCount > 0 ? `${cardCount} cards held at showdown` : 'Cards concealed'}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="showdown-grid">
-      {groups.map((group, gIdx) => {
-        const type = group.type || 'INVALID';
-        const labelInfo = GROUP_LABELS[type] || GROUP_LABELS.INVALID;
-        const displayLabel = group.title && type === 'INVALID' ? group.title : labelInfo.title;
-
-        return (
-          <div
-            key={gIdx}
-            className="showdown-group-pod"
-            style={{
-              border: `1.5px solid ${labelInfo.color}`,
-            }}
-          >
-            {/* Group Label Header */}
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '0 2px',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: '9.5px',
-                  fontWeight: 900,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
-                  color: labelInfo.color,
-                  backgroundColor: labelInfo.bg,
-                  padding: '2px 6px',
-                  borderRadius: '5px',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {displayLabel}
-              </span>
-
-              {typeof group.pts === 'number' && group.pts > 0 && (
-                <span
-                  style={{
-                    fontSize: '9.5px',
-                    color: '#f87171',
-                    fontWeight: 800,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {group.pts} pts
-                </span>
-              )}
-            </div>
-
-            {/* Overlapping Cards Strip */}
-            <div className="showdown-cards-tray">
-              {group.cards.map((c, cIdx) => (
-                <div
-                  key={c.instanceId || `${gIdx}-${cIdx}`}
-                  className="showdown-card-wrapper"
-                  style={{
-                    zIndex: cIdx + 1,
-                  }}
-                >
-                  <CardView card={c} wildJoker={wildJoker} size="small" />
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
 
 export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
   const {
@@ -298,7 +162,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
   const myScore = isWinner ? 0 : (gameState.viewerScore ?? (opponents.length > 0 ? opponents[0].score : 80));
   const myStatus = isWinner ? 'WON' : (gameState.viewerStatus ?? 'LOST');
 
-  // Viewer's 13 cards (with fallback to lastKnownHand or visual groups if dropped)
+  // Viewer's cards
   const myShowdownCards: CardInstance[] =
     gameState.hand && gameState.hand.length > 0
       ? gameState.hand
@@ -308,7 +172,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
           ? myVisualGroups.flatMap((g) => g.cards)
           : [];
 
-  // Winner's cards (with fallback across gameState, opponents, or winningGroups)
+  // Winner's cards
   const winnerOpponent = opponents.find((p) => p.playerId === winnerId);
   const rawWinnerCards: CardInstance[] = isWinner
     ? myShowdownCards
@@ -318,7 +182,6 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
         ? gameState.winningGroups.flatMap((wg) => wg.cards)
         : [];
 
-  // Build unified players list, sorted so Winner is #1 at the top
   const unrankedPlayers = [
     {
       playerId,
@@ -348,14 +211,13 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
     }),
   ];
 
-  // Winner always at index 0, followed by score ascending
+  // Winner always first
   const allPlayers = [...unrankedPlayers].sort((a, b) => {
     if (a.isWinner) return -1;
     if (b.isWinner) return 1;
     return a.score - b.score;
   });
 
-  // Financial Settlement & Platform Rake Calculations for all 4 Variants
   const activeRulesetId = (gameSettlement?.rulesetId ?? lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
   const isRummy21 = activeRulesetId.includes('21') || activeRulesetId === 'RUMMY_21';
   const isPoints13 = activeRulesetId.includes('POINT') || activeRulesetId === 'POINTS_13';
@@ -363,9 +225,9 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
   const maxPenaltyCap = isRummy21 ? 120 : 80;
 
   const variantDisplayName = isRummy21
-    ? '21-Card Marriage Rummy (120 pt cap)'
+    ? '21-Card Marriage Rummy'
     : isPoints13
-      ? 'Points Rummy 13-Card (80 pt cap)'
+      ? 'Points Rummy (13-Card)'
       : activeRulesetId.includes('POOL')
         ? (activeRulesetId.includes('201') ? 'Pool 201 Rummy' : 'Pool 101 Rummy')
         : 'Deals Rummy';
@@ -375,7 +237,6 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
   let displayRake = gameSettlement?.platformRakeAmount ?? 0;
   let displayPrize = gameSettlement?.netWinnerPrize ?? 0;
 
-  // Fallback calculation if WebSocket message was delayed or offline view
   if (!gameSettlement) {
     if (isPointsBased) {
       const ptValue = stakeTier / maxPenaltyCap;
@@ -412,9 +273,6 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
 
   const handleRematch = () => {
     soundEngine.play('match');
-
-    // Capture table size BEFORE leaveTable clears gameState.
-    // Prefer saved config; fall back to seated count (opponents + self).
     const seated = (gameState?.opponents?.length ?? 0) + 1;
     const maxPlayers = Math.max(2, lastGameConfig?.maxPlayers ?? 0, seated);
     setLastGameConfig({
@@ -438,125 +296,95 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
   };
 
   return (
-    <div className="showdown-backdrop">
-      <div className={`showdown-modal-container ${isWinner ? 'is-winner-modal' : ''}`}>
-        {/* Header Banner */}
-        <div className={`showdown-header ${isWinner ? 'winner-header' : 'regular-header'}`}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '52px',
-              height: '52px',
-              borderRadius: '50%',
-              background: isWinner
-                ? 'linear-gradient(135deg, #fbbf24, #d97706)'
-                : 'linear-gradient(135deg, #b91c1c, #7f1d1d)',
-              boxShadow: isWinner
-                ? '0 0 25px rgba(251, 191, 36, 0.6)'
-                : '0 0 18px rgba(185, 28, 28, 0.45)',
-              border: '1px solid rgba(248, 231, 176, 0.45)',
-              marginBottom: '8px',
-            }}
+    <div className="result-page-screen" role="region" aria-label="Game Showdown Result Page">
+      {/* Top Navigation Bar */}
+      <header className="result-top-bar">
+        <div className="result-top-left">
+          <button
+            type="button"
+            className="result-back-btn"
+            onClick={handleLeave}
+            title="Leave table and return to lobby"
           >
-            {isWinner ? <Trophy size={26} color="#1e1b4b" /> : <Award size={26} color="#f8e7b0" />}
-          </div>
-
-          <h2
-            className="showdown-header-title"
-            style={{
-              margin: '0 0 4px',
-              fontSize: '22px',
-              fontWeight: 900,
-              color: isWinner ? '#fef08a' : '#f8fafc',
-              letterSpacing: '-0.01em',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-            }}
-          >
-            {isWinner ? (
-              <>
-                <Sparkles size={20} color="#fbbf24" /> You Won the Hand!
-              </>
-            ) : (
-              `${winnerName} Won the Hand`
-            )}
-          </h2>
-
-          <p style={{ margin: 0, fontSize: '12px', color: '#f3d7a1' }}>
-            {isWinner
-              ? 'Valid declaration! 0 penalty points. All players’ 13 cards are revealed below.'
-              : 'Hand completed. Review every player’s 13 cards and score below.'}
-          </p>
+            <LogOut size={15} />
+            Leave Table
+          </button>
         </div>
 
-        {/* Real-World Financial Settlement Banner */}
-        <div
-          style={{
-            margin: '10px 14px 4px',
-            padding: '12px 14px',
-            background: 'linear-gradient(135deg, rgba(24, 24, 27, 0.95), rgba(9, 9, 11, 0.98))',
-            border: '1px solid rgba(251, 191, 36, 0.35)',
-            borderRadius: '12px',
-            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.45)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '11px', fontWeight: 900, color: '#fef08a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Coins size={14} color="#fbbf24" /> {variantDisplayName.toUpperCase()}
-            </span>
-            <span style={{ fontSize: '9.5px', color: '#cbd5e1', background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251, 191, 36, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
-              15% Platform Commission (Rake)
-            </span>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.25fr', gap: '8px', textAlign: 'center' }}>
-            <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '6px 8px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-              <div style={{ fontSize: '9.5px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Gross Pot (एकूण)</div>
-              <div style={{ fontSize: '14px', fontWeight: 900, color: '#f8fafc', marginTop: '2px' }}>₹{Number(displayGrossPot).toFixed(2)}</div>
-            </div>
-
-            <div style={{ background: 'rgba(239, 68, 68, 0.08)', padding: '6px 8px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
-              <div style={{ fontSize: '9.5px', color: '#fca5a5', fontWeight: 700, textTransform: 'uppercase' }}>Platform Rake (15%)</div>
-              <div style={{ fontSize: '14px', fontWeight: 900, color: '#f87171', marginTop: '2px' }}>-₹{Number(displayRake).toFixed(2)}</div>
-            </div>
-
-            <div style={{ background: 'rgba(34, 197, 94, 0.12)', padding: '6px 8px', borderRadius: '8px', border: '1px solid rgba(34, 197, 94, 0.4)' }}>
-              <div style={{ fontSize: '9.5px', color: '#86efac', fontWeight: 800, textTransform: 'uppercase' }}>Winner Net (बक्षीस)</div>
-              <div style={{ fontSize: '15px', fontWeight: 900, color: '#4ade80', marginTop: '2px' }}>+₹{Number(displayPrize).toFixed(2)}</div>
-            </div>
-          </div>
+        <div className="result-top-center">
+          <span className="result-top-title">♠ GAME SHOWDOWN ♠</span>
+          <span className="result-top-pill">
+            {variantDisplayName} • {allPlayers.length} Players
+          </span>
         </div>
 
-        {/* Scrollable Content: All Players Showdown Cards */}
-        <div className="showdown-scoreboard-body">
-          {/* Section Header Toolbar */}
-          <div
-            style={{
-              fontSize: '11px',
-              fontWeight: 800,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              color: '#f3d7a1',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0 4px',
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fef08a' }}>
-              <Layers size={14} color="#fbbf24" />
-              13-Card Showdown Scoreboard (सर्व खेळाडूंचे पत्ते)
-            </span>
+        <div className="result-top-right">
+          <span className="result-table-id-pill">
+            Table {gameState.tableId ?? 'T1'}
+          </span>
+        </div>
+      </header>
+
+      {/* Main Page Scrollable Content */}
+      <main className="result-page-content">
+        {/* Winner Hero Banner (No card box - seamless header) */}
+        <section className="result-hero-banner">
+          <div className="result-hero-crown">
+            {isWinner ? <Trophy size={28} /> : <Crown size={28} />}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
+            <h1 className="result-hero-title">
+              {isWinner ? (
+                <>
+                  <Sparkles size={22} color="#fbbf24" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
+                  You Won the Hand!
+                </>
+              ) : (
+                `${winnerName} Won the Hand`
+              )}
+            </h1>
+            <p className="result-hero-subtitle">
+              {isWinner
+                ? 'Valid declaration with 0 penalty points. All players’ cards and settlements are shown below.'
+                : 'Hand completed. Review all players’ showdown cards and final settlement below.'}
+            </p>
+          </div>
+
+          {/* Unified Pot Strip (Single sleek bar, no separate nested chips) */}
+          <div className="result-pot-strip">
+            <div className="result-pot-strip-item">
+              <span className="result-pot-strip-label">Gross Pot</span>
+              <span className="result-pot-strip-val">₹{Number(displayGrossPot).toFixed(2)}</span>
+            </div>
+
+            <div className="result-pot-strip-divider" />
+
+            <div className="result-pot-strip-item">
+              <span className="result-pot-strip-label">Platform Fee (15%)</span>
+              <span className="result-pot-strip-val val-red">-₹{Number(displayRake).toFixed(2)}</span>
+            </div>
+
+            <div className="result-pot-strip-divider" />
+
+            <div className="result-pot-strip-item val-winner">
+              <span className="result-pot-strip-label" style={{ color: '#86efac' }}>Winner Payout</span>
+              <span className="result-pot-strip-val val-green">+₹{Number(displayPrize).toFixed(2)}</span>
+            </div>
+          </div>
+        </section>
+
+        {/* Scoreboard Sheet - Single Unified Sheet (No individual cards per player) */}
+        <section className="result-scoreboard-sheet">
+          <div className="result-sheet-header">
+            <div className="result-sheet-title">
+              <Layers size={15} />
+              <span>SHOWDOWN SCOREBOARD</span>
+            </div>
 
             <button
               type="button"
+              className="result-toggle-btn"
               onClick={() => {
                 const next = !showAllCards;
                 setShowAllCards(next);
@@ -564,30 +392,33 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
                   allPlayers.reduce((acc, p) => ({ ...acc, [p.playerId]: next }), {})
                 );
               }}
-              className="showdown-toggle"
             >
               {showAllCards ? (
                 <>
-                  <EyeOff size={13} /> Hide Cards
+                  <EyeOff size={13} /> Collapse Cards
                 </>
               ) : (
                 <>
-                  <Eye size={13} /> Show All 13 Cards
+                  <Eye size={13} /> Expand All Cards
                 </>
               )}
             </button>
           </div>
 
-          {/* Players List with Revealed 13 Cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div className="result-sheet-table-head">
+            <span>PLAYER & STATUS</span>
+            <span style={{ textAlign: 'right' }}>POINTS & NET PAYOUT</span>
+          </div>
+
+          <div className="result-sheet-rows-list">
             {allPlayers.map((p, pRankIdx) => {
               const won = p.isWinner;
               const expanded = isPlayerExpanded(p.playerId);
 
-              // Calculate player's card groups for display
-              let playerGroups: FormattedShowdownGroup[] = [];
+              // Group calculation matching the game table style
+              let playerGroups: ShowdownGroup[] = [];
               if (won) {
-                playerGroups = organizePlayerShowdownCards(
+                playerGroups = autoGroupShowdownCards(
                   p.hand,
                   gameState.cutJoker,
                   true,
@@ -599,263 +430,172 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
                 myVisualGroups.length > 0 &&
                 myVisualGroups.some((g) => g.cards.length > 0)
               ) {
-                // Preserves user's visual arrangement if available
                 playerGroups = myVisualGroups.map((g) => ({
-                  title: '',
                   type: g.groupType,
                   cards: g.cards,
                   pts: g.deadwoodPoints,
                 }));
               } else {
-                playerGroups = organizePlayerShowdownCards(
+                playerGroups = autoGroupShowdownCards(
                   p.hand,
                   gameState.cutJoker,
                   false
                 );
               }
 
-              const totalDisplayedCards =
-                playerGroups.reduce((sum, g) => sum + g.cards.length, 0) || p.hand.length;
+              const playerDetail = gameSettlement?.playerDetails?.[p.playerId];
+              let pLoss = playerDetail?.lossAmount;
+              let pRefund = playerDetail?.refundAmount;
+
+              if (pLoss === undefined) {
+                if (p.isWinner) {
+                  pLoss = 0;
+                  pRefund = 0;
+                } else if (isPointsBased) {
+                  const ptVal = stakeTier / maxPenaltyCap;
+                  const penalty = Math.min(maxPenaltyCap, Math.max(0, p.score));
+                  pLoss = Math.min(stakeTier, penalty * ptVal);
+                  pRefund = Math.max(0, stakeTier - pLoss);
+                } else {
+                  pLoss = stakeTier;
+                  pRefund = 0;
+                }
+              }
 
               return (
                 <div
                   key={p.playerId}
-                  className={`showdown-player-pod ${won ? 'winner' : ''}`}
+                  className={`result-sheet-row ${won ? 'winner-row' : ''}`}
                 >
-                  {/* Player Summary Row */}
+                  {/* Player Summary Line */}
                   <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      userSelect: 'none',
-                    }}
+                    className="result-row-summary"
                     onClick={() => togglePlayerExpanded(p.playerId)}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      {/* Rank Indicator Badge */}
+                    <div className="result-row-player">
                       <div
-                        style={{
-                          width: '32px',
-                          height: '32px',
-                          borderRadius: '50%',
-                          background: won
-                            ? 'linear-gradient(135deg, #fbbf24, #d97706)'
-                            : 'linear-gradient(135deg, #9f1d24, #5c1016)',
-                          color: won ? '#1a1a1a' : '#f8e7b0',
-                          border: won ? 'none' : '1px solid rgba(248, 231, 176, 0.35)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 900,
-                          fontSize: won ? '14px' : '12px',
-                          flexShrink: 0,
-                          boxShadow: won ? '0 0 10px rgba(251, 191, 36, 0.5)' : 'none',
-                        }}
+                        className={`result-row-rank ${
+                          won ? 'result-row-rank--winner' : 'result-row-rank--normal'
+                        }`}
                       >
-                        {won ? <Crown size={18} color="#1a1a1a" /> : `#${pRankIdx + 1}`}
+                        {won ? <Crown size={15} /> : `#${pRankIdx + 1}`}
                       </div>
 
-                      <div>
-                        <div
-                          style={{
-                            fontWeight: 800,
-                            fontSize: '15px',
-                            color: '#ffffff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                          }}
-                        >
-                          <span>{p.name}</span>
-                          {p.isMe && (
-                            <span
-                              style={{
-                                color: '#fbbf24',
-                                background: 'rgba(251, 191, 36, 0.15)',
-                                border: '1px solid rgba(251, 191, 36, 0.4)',
-                                fontSize: '10px',
-                                fontWeight: 900,
-                                padding: '1px 6px',
-                                borderRadius: '6px',
-                              }}
-                            >
-                              YOU
-                            </span>
-                          )}
+                      <div className="result-row-meta">
+                        <div className="result-row-name-line">
+                          <span className="result-row-name">{p.name}</span>
+                          {p.isMe && <span className="result-you-badge">YOU</span>}
                         </div>
 
-                        <div
-                          style={{
-                            fontSize: '11px',
-                            color: '#94a3b8',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            marginTop: '2px',
-                          }}
-                        >
+                        <div className="result-row-status">
                           {won ? (
-                            <span
-                              style={{
-                                color: '#86efac',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                fontWeight: 800,
-                              }}
-                            >
-                              <CheckCircle2 size={13} /> Winner (0 pts)
+                            <span className="result-row-status--winner">
+                              <CheckCircle2 size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                              Winner (0 pts)
                             </span>
                           ) : p.status === 'DROPPED' ? (
-                            <span
-                              style={{
-                                color: '#fbbf24',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                fontWeight: 800,
-                              }}
-                            >
-                              <AlertCircle size={13} /> Dropped Hand ({p.score} penalty)
+                            <span className="result-row-status--dropped">
+                              <AlertCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                              Dropped ({p.score} penalty)
                             </span>
                           ) : (
-                            <span
-                              style={{
-                                color: '#fca5a5',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                fontWeight: 700,
-                              }}
-                            >
-                              <AlertCircle size={13} /> Lost ({p.score} penalty)
+                            <span className="result-row-status--lost">
+                              <AlertCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                              Lost ({p.score} penalty)
                             </span>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                      {(() => {
-                        const playerDetail = gameSettlement?.playerDetails?.[p.playerId];
-                        let pLoss = playerDetail?.lossAmount;
-                        let pRefund = playerDetail?.refundAmount;
-
-                        if (pLoss === undefined) {
-                          if (p.isWinner) {
-                            pLoss = 0;
-                            pRefund = 0;
-                          } else if (isPointsBased) {
-                            const ptVal = stakeTier / maxPenaltyCap;
-                            const penalty = Math.min(maxPenaltyCap, Math.max(0, p.score));
-                            pLoss = Math.min(stakeTier, penalty * ptVal);
-                            pRefund = Math.max(0, stakeTier - pLoss);
-                          } else {
-                            pLoss = stakeTier;
-                            pRefund = 0;
-                          }
-                        }
-
-                        return (
-                          <div style={{ textAlign: 'right' }}>
-                            <div
-                              style={{
-                                fontWeight: 900,
-                                fontSize: '15px',
-                                color: won ? '#4ade80' : p.status === 'DROPPED' ? '#fbbf24' : '#f87171',
-                              }}
-                            >
-                              {won ? `+₹${Number(displayPrize).toFixed(2)}` : `-₹${Number(pLoss).toFixed(2)}`}
-                            </div>
-                            <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                              <span>{p.score} pts</span>
-                              {pRefund !== undefined && pRefund > 0 && (
-                                <span style={{ color: '#86efac' }}>
-                                  (+₹{Number(pRefund).toFixed(2)} refund)
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
+                    <div className="result-row-finances">
                       <div
-                        style={{
-                          color: '#f8e7b0',
-                          background: 'rgba(127, 29, 29, 0.55)',
-                          borderRadius: '50%',
-                          padding: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
+                        className={`result-row-delta ${
+                          won ? 'result-row-delta--win' : 'result-row-delta--loss'
+                        }`}
                       >
-                        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        {won ? `+₹${Number(displayPrize).toFixed(2)}` : `-₹${Number(pLoss).toFixed(2)}`}
+                      </div>
+
+                      <div className="result-row-score-sub">
+                        <span>{p.score} pts</span>
+                        {pRefund !== undefined && pRefund > 0 && (
+                          <span style={{ color: '#34d399', marginLeft: '6px' }}>
+                            (+₹{Number(pRefund).toFixed(2)} refund)
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Expanded 13 Cards Tray for this Player */}
+                  {/* Hand Groups - Clean table-like card fans, seamlessly in the row */}
                   {expanded && (
-                    <div style={{ marginTop: '6px', animation: 'fadeIn 0.2s ease-out' }}>
-                      <ShowdownCardTray
-                        groups={playerGroups}
-                        wildJoker={gameState.cutJoker}
-                        cardCount={totalDisplayedCards}
-                      />
+                    <div className="result-row-cards-tray">
+                      {playerGroups && playerGroups.length > 0 ? (
+                        playerGroups.map((group, gIdx) => {
+                          const config = GROUP_CONFIG[group.type] ?? GROUP_CONFIG.INVALID;
+                          return (
+                            <div key={gIdx} className="result-card-group">
+                              <div className="result-group-header">
+                                <span
+                                  className="result-group-badge"
+                                  style={{ color: config.color, background: config.bg }}
+                                >
+                                  {config.label}
+                                </span>
+                                {group.pts > 0 && (
+                                  <span className="result-group-pts">{group.pts} pts</span>
+                                )}
+                              </div>
+
+                              <div className="result-group-fan">
+                                {group.cards.map((c, cIdx) => (
+                                  <div
+                                    key={c.instanceId || `${gIdx}-${cIdx}`}
+                                    className="result-card-slot"
+                                    style={{ zIndex: cIdx + 1 }}
+                                  >
+                                    <CardView card={c} wildJoker={gameState.cutJoker} />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="result-cards-concealed">
+                          Cards concealed (Player dropped or sitting out)
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
-        </div>
+        </section>
+      </main>
 
-        {/* Action Buttons */}
-        <div className="showdown-footer">
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={handleLeave}
-            style={{
-              flex: 1,
-              padding: '12px',
-              fontSize: '13px',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-            }}
-          >
-            <LogOut size={16} />
-            Leave Table
-          </button>
+      {/* Sticky Bottom Action Bar */}
+      <footer className="result-bottom-bar">
+        <button
+          type="button"
+          className="result-btn-leave"
+          onClick={handleLeave}
+        >
+          <LogOut size={16} />
+          Leave Table
+        </button>
 
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={handleRematch}
-            style={{
-              flex: 1.6,
-              padding: '12px',
-              fontSize: '14px',
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)',
-              boxShadow: '0 4px 16px rgba(251, 191, 36, 0.35)',
-            }}
-          >
-            <RotateCcw size={16} />
-            Rematch Same Stake
-          </button>
-        </div>
-      </div>
+        <button
+          type="button"
+          className="result-btn-rematch"
+          onClick={handleRematch}
+        >
+          <RotateCcw size={17} />
+          Rematch Same Stake
+        </button>
+      </footer>
     </div>
   );
 };

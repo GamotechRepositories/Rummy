@@ -45,7 +45,6 @@ export const GameBoard: React.FC = () => {
     connectionStatus,
     errorMessage,
     leaveTable,
-    playerId,
     lastGameConfig,
     resumePending,
   } = useGameStore();
@@ -401,36 +400,48 @@ export const GameBoard: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="table-menu-head">
-              <h2 className="table-menu-title">Table menu</h2>
-              <button type="button" className="table-menu-close" onClick={() => setMenuOpen(false)} aria-label="Close">
+              <div className="table-menu-title-wrap">
+                <span className="table-menu-icon">♠</span>
+                <h2 className="table-menu-title">Table Details</h2>
+              </div>
+              <button
+                type="button"
+                className="table-menu-close"
+                onClick={() => setMenuOpen(false)}
+                aria-label="Close"
+              >
                 <X size={16} />
               </button>
             </div>
 
-            <p className="table-menu-name">
-              {variantName} · {maxSeats} players
-            </p>
+            <div className="table-menu-badge-wrap">
+              <span className="table-menu-name">
+                {variantName} · {maxSeats} Players
+              </span>
+            </div>
 
             <div className="table-menu-rows">
               {isPointsRummy ? (
                 <>
                   <div className="table-menu-row">
                     <span>Point value</span>
-                    <span>{stakeLabel}</span>
+                    <span className="table-menu-value--gold">{stakeLabel}</span>
                   </div>
                   <div className="table-menu-row">
                     <span>Max penalty</span>
-                    <span>80 pts (₹{entryFee.toFixed(2)})</span>
+                    <span className="table-menu-value--penalty">
+                      {gameState?.rulesetId?.includes('21') || gameState?.rulesetId === 'RUMMY_21' ? '120 pts' : '80 pts'} (₹{entryFee.toFixed(2)})
+                    </span>
                   </div>
                 </>
               ) : (
                 <div className="table-menu-row">
                   <span>Entry fee</span>
-                  <span>₹{entryFee.toFixed(2)}</span>
+                  <span className="table-menu-value--gold">₹{entryFee.toFixed(2)}</span>
                 </div>
               )}
               <div className="table-menu-row">
-                <span>Table</span>
+                <span>Table ID</span>
                 <span className="table-menu-id">{gameState?.tableId ?? 'T1'}</span>
               </div>
             </div>
@@ -440,15 +451,15 @@ export const GameBoard: React.FC = () => {
               className="table-menu-leave"
               onClick={() => {
                 setMenuOpen(false);
-                if (gameState?.gameStatus === 'IN_PROGRESS') {
+                if (gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped) {
                   setConfirmLeaveOpen(true);
                 } else {
                   handleLeaveTable();
                 }
               }}
             >
-              <LogOut size={15} />
-              Leave table
+              <LogOut size={16} />
+              Leave Table
             </button>
           </div>
         </div>
@@ -456,100 +467,61 @@ export const GameBoard: React.FC = () => {
 
       {/* Safe Leave Confirmation Modal */}
       {confirmLeaveOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-            backdropFilter: 'blur(6px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1100,
-            padding: '16px',
-          }}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: '380px',
-              background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
-              borderRadius: '20px',
-              border: '1px solid rgba(239, 68, 68, 0.5)',
-              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.8), 0 0 30px rgba(239, 68, 68, 0.25)',
-              padding: '24px',
-              textAlign: 'center',
-            }}
-          >
-            <div
-              style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '50%',
-                background: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid rgba(239, 68, 68, 0.4)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#f87171',
-                marginBottom: '14px',
-              }}
+        <div className="royal-dialog-backdrop" role="presentation">
+          <div className="royal-dialog-card" role="dialog" aria-label="Confirm Leave Table">
+            <button
+              type="button"
+              className="royal-dialog-close"
+              onClick={() => setConfirmLeaveOpen(false)}
+              aria-label="Close"
             >
-              <ShieldAlert size={26} />
+              <X size={18} />
+            </button>
+
+            <div className="royal-dialog-crest-wrap">
+              <div className="royal-dialog-crest-glow" />
+              <div className="royal-dialog-crest-badge">
+                <LogOut size={26} color="#fbbf24" style={{ transform: 'translateX(-1px)' }} />
+              </div>
             </div>
 
-            <h3
-              style={{
-                margin: '0 0 8px',
-                fontSize: '18px',
-                fontWeight: 800,
-                color: '#ffffff',
-              }}
-            >
-              Leave Active Game?
-            </h3>
-
-            <p
-              style={{
-                margin: '0 0 20px',
-                fontSize: '13px',
-                color: '#94a3b8',
-                lineHeight: 1.5,
-              }}
-            >
-              The hand is currently in progress.
-              <br />
-              Leaving now will result in an immediate forfeit with{' '}
-              <strong style={{ color: '#fca5a5' }}>
-                maximum penalty ({gameState?.rulesetId?.includes('21') || gameState?.rulesetId === 'RUMMY_21' ? 120 : 80} points)
-              </strong>.
+            <h3 className="royal-dialog-title">Leave Active Table?</h3>
+            <p className="royal-dialog-subtitle">
+              Your hand is currently live. Leaving the table mid-game will forfeit the round.
             </p>
 
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div className="royal-dialog-penalty-box">
+              <div className="royal-dialog-penalty-label">
+                <span className="royal-dialog-penalty-tag">
+                  <ShieldAlert size={13} />
+                  Forfeit Penalty
+                </span>
+                <span className="royal-dialog-penalty-desc">
+                  Max penalty points will apply
+                </span>
+              </div>
+              <div className="royal-dialog-penalty-badge">
+                +{gameState?.rulesetId?.includes('21') || gameState?.rulesetId === 'RUMMY_21' ? 120 : 80} PTS
+              </div>
+            </div>
+
+            <div className="royal-dialog-actions">
               <button
                 type="button"
-                className="btn-primary"
+                className="royal-btn-gold"
                 onClick={() => setConfirmLeaveOpen(false)}
-                style={{ flex: 1.2, padding: '10px', fontSize: '13px' }}
               >
                 Resume Game
               </button>
               <button
                 type="button"
-                className="btn-danger"
+                className="royal-btn-danger"
                 onClick={() => {
                   setConfirmLeaveOpen(false);
                   handleLeaveTable();
                 }}
-                style={{
-                  flex: 1,
-                  padding: '10px',
-                  fontSize: '13px',
-                  fontWeight: 800,
-                  background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
-                }}
               >
-                Leave Anyway
+                Leave Table
               </button>
             </div>
           </div>

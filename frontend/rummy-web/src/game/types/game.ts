@@ -98,6 +98,8 @@ export interface PlayerGameView {
   viewerStatus?: PlayerStatus;
   winningGroups?: { cards: CardInstance[] }[];
   viewerSeatIndex?: number;
+  rulesetId?: string;
+  viewerDropped?: boolean;
 }
 
 export type GroupValidationType = 'PURE_SEQUENCE' | 'IMPURE_SEQUENCE' | 'SET' | 'INVALID';

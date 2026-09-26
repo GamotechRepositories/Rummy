@@ -48,6 +48,7 @@ export const ActionControls: React.FC = () => {
   const drawPhase = isDrawPhase(isMyTurn, turnPhase);
   const discardPhase = isDiscardPhase(isMyTurn, turnPhase);
   const isRummy21 = gameState.rulesetId?.includes('21') || gameState.rulesetId === 'RUMMY_21';
+  const isPool201 = gameState.rulesetId?.includes('201') ?? false;
   const wildJoker = gameState.cutJoker ?? null;
   const pureCount = groups.filter((g) => g.groupType === 'PURE_SEQUENCE').length;
   const neededPure = isRummy21 ? 3 : 1;
@@ -67,7 +68,11 @@ export const ActionControls: React.FC = () => {
   };
 
   const isFirstTurn = (gameState.discardHistory?.length ?? 0) <= 1;
-  const dropPenaltyPoints = isRummy21 ? (isFirstTurn ? 30 : 60) : (isFirstTurn ? 20 : 40);
+  const dropPenaltyPoints = isRummy21
+    ? (isFirstTurn ? 30 : 60)
+    : isPool201
+      ? (isFirstTurn ? 25 : 50)
+      : (isFirstTurn ? 20 : 40);
 
   const handleOpenDeclare = () => {
     if (selectedCardIds.length !== 1) return;
@@ -258,29 +263,56 @@ export const ActionControls: React.FC = () => {
 
       {confirmDropOpen &&
         createPortal(
-          <div className="drop-confirm-overlay" role="presentation">
-            <div className="drop-confirm-card" role="dialog" aria-label="Confirm drop">
-              <div className="drop-confirm-icon">
-                <Flag size={24} />
+          <div className="royal-dialog-backdrop" role="presentation">
+            <div className="royal-dialog-card" role="dialog" aria-label="Confirm drop">
+              <button
+                type="button"
+                className="royal-dialog-close"
+                onClick={() => setConfirmDropOpen(false)}
+                aria-label="Close"
+              >
+                <XCircle size={18} />
+              </button>
+
+              <div className="royal-dialog-crest-wrap">
+                <div className="royal-dialog-crest-glow royal-dialog-crest-glow--amber" />
+                <div className="royal-dialog-crest-badge">
+                  <Flag size={26} color="#fbbf24" />
+                </div>
               </div>
-              <h3>Confirm Drop ({dropPenaltyPoints} Pts)?</h3>
-              <p>
-                Are you sure you want to drop this hand?
-                <br />
-                <strong>
-                  {isFirstTurn ? 'First Drop' : 'Middle Drop'}: {dropPenaltyPoints} penalty points
-                </strong>{' '}
-                will be added to your score.
+
+              <h3 className="royal-dialog-title">Drop This Hand?</h3>
+              <p className="royal-dialog-subtitle">
+                You will fold this hand safely and sit out until the next deal starts.
               </p>
-              <div className="drop-confirm-actions">
+
+              <div className="royal-dialog-penalty-box">
+                <div className="royal-dialog-penalty-label">
+                  <span className="royal-dialog-penalty-tag">
+                    {isFirstTurn ? 'FIRST DROP PENALTY' : 'MIDDLE DROP PENALTY'}
+                  </span>
+                  <span className="royal-dialog-penalty-desc">
+                    Will be added to your score
+                  </span>
+                </div>
+                <div className="royal-dialog-penalty-badge">
+                  +{dropPenaltyPoints} PTS
+                </div>
+              </div>
+
+              <div className="royal-dialog-actions">
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className="royal-btn-gold"
                   onClick={() => setConfirmDropOpen(false)}
                 >
-                  Cancel
+                  Keep Playing
                 </button>
-                <button type="button" className="btn-danger" onClick={handleConfirmDrop}>
+                <button
+                  type="button"
+                  className="royal-btn-danger"
+                  onClick={handleConfirmDrop}
+                >
                   Confirm Drop
                 </button>
               </div>
