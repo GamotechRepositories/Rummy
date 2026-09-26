@@ -9,6 +9,7 @@ import { DealAnimation, type DealTarget } from './DealAnimation';
 import { DeclareModal } from './DeclareModal';
 import { LogOut, Wifi, AlertCircle, Menu, X, ShieldAlert } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
+import { FullscreenToggle } from './FullscreenToggle';
 import { soundEngine } from '../audio/soundEngine';
 import { GameResultModal } from './GameResultModal';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
@@ -279,6 +280,7 @@ export const GameBoard: React.FC = () => {
             </div>
             <div className="board-hud-right">
               <SoundToggle compact />
+              <FullscreenToggle compact />
               <button
                 id="btn-table-menu"
                 type="button"
@@ -456,6 +458,10 @@ export const GameBoard: React.FC = () => {
               <div className="table-menu-row">
                 <span>Table ID</span>
                 <span className="table-menu-id">{gameState?.tableId ?? 'T1'}</span>
+              </div>
+              <div className="table-menu-row">
+                <span>Display mode</span>
+                <FullscreenToggle compact showLabel style={{ padding: '3px 8px', fontSize: '11px' }} />
               </div>
             </div>
 

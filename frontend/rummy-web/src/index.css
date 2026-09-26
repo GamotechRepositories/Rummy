@@ -235,21 +235,25 @@ h1, h2, h3, h4, .font-display {
   flex-shrink: 0;
 }
 
-.board-hud-menu {
+.board-hud-menu,
+.board-hud-right .btn-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 34px;
   height: 34px;
+  padding: 0 !important;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(8, 16, 12, 0.78);
   color: #e8edf2;
   cursor: pointer;
   backdrop-filter: blur(8px);
+  box-sizing: border-box;
 }
 
-.board-hud-menu:hover {
+.board-hud-menu:hover,
+.board-hud-right .btn-secondary:hover {
   border-color: rgba(245, 215, 110, 0.55);
   color: #f5d76e;
 }
@@ -4857,31 +4861,53 @@ h1, h2, h3, h4, .font-display {
   position: fixed;
   inset: 0;
   width: 100vw;
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   z-index: 1500;
   display: flex;
   flex-direction: column;
   background: #080204;
   background: radial-gradient(120% 70% at 50% -10%, #3e0c15 0%, #160408 50%, #080204 100%);
   color: #f8fafc;
-  overflow: hidden;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   animation: fadeIn 0.25s ease-out;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 175, 55, 0.45) rgba(10, 4, 6, 0.85);
+}
+
+.result-page-screen::-webkit-scrollbar {
+  width: 10px;
+}
+.result-page-screen::-webkit-scrollbar-track {
+  background: rgba(10, 4, 6, 0.85);
+}
+.result-page-screen::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(212, 175, 55, 0.5) 0%, rgba(180, 83, 9, 0.6) 100%);
+  border-radius: 6px;
+  border: 2px solid rgba(10, 4, 6, 0.85);
+}
+.result-page-screen::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(251, 191, 36, 0.8) 0%, rgba(217, 119, 6, 0.85) 100%);
 }
 
 /* Top App Bar */
 .result-top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex-shrink: 0;
   height: 52px;
   min-height: 52px;
   padding: 0 clamp(14px, 3vw, 32px);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(14, 5, 8, 0.85);
-  backdrop-filter: blur(12px);
+  background: rgba(14, 5, 8, 0.94);
+  backdrop-filter: blur(14px);
   border-bottom: 1px solid rgba(212, 175, 55, 0.25);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  z-index: 10;
 }
 
 .result-top-left {
@@ -4955,25 +4981,27 @@ h1, h2, h3, h4, .font-display {
 
 /* Page Scrollable Body */
 .result-page-content {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: clamp(14px, 2.5vw, 24px) clamp(14px, 3vw, 28px);
+  flex: 1 0 auto;
+  min-height: auto;
   width: 100%;
-  max-width: 1040px;
-  margin: 0 auto;
+  max-width: 100%;
+  margin: 0;
+  overflow: visible;
+  padding: clamp(14px, 2.5vw, 24px) clamp(14px, 3vw, 28px);
+  padding-bottom: 30px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  box-sizing: border-box;
+  align-items: center;
+  gap: 18px;
 }
 
-.result-page-content::-webkit-scrollbar {
-  width: 6px;
-}
-.result-page-content::-webkit-scrollbar-thumb {
-  background: rgba(212, 175, 55, 0.3);
-  border-radius: 4px;
+.result-page-content > * {
+  width: 100%;
+  max-width: 1080px;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
 }
 
 /* Hero Winner & Pot Banner (Seamless on page background, not a card box) */
@@ -4982,21 +5010,8 @@ h1, h2, h3, h4, .font-display {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 12px;
-  padding: 6px 0 10px;
-}
-
-.result-hero-crown {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #fbbf24 0%, #b45309 100%);
-  border: 2px solid #fff2a8;
-  box-shadow: 0 0 20px rgba(251, 191, 36, 0.45), inset 0 2px 4px rgba(255, 255, 255, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #1a0e02;
+  gap: 10px;
+  padding: 4px 0 8px;
 }
 
 .result-hero-title {
@@ -5068,7 +5083,7 @@ h1, h2, h3, h4, .font-display {
   color: #f87171;
 }
 
-/* Unified Scoreboard Sheet (Single Ledger, No individual card per player) */
+/* Unified Scoreboard Sheet (Directly expands in size to show all players without inner scroller) */
 .result-scoreboard-sheet {
   display: flex;
   flex-direction: column;
@@ -5076,7 +5091,10 @@ h1, h2, h3, h4, .font-display {
   border: 1px solid rgba(212, 175, 55, 0.32);
   border-radius: 14px;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
-  overflow: hidden;
+  overflow: visible;
+  height: auto;
+  min-height: auto;
+  max-height: none;
 }
 
 .result-sheet-header {
@@ -5086,6 +5104,8 @@ h1, h2, h3, h4, .font-display {
   padding: 10px 18px;
   background: linear-gradient(90deg, rgba(38, 12, 16, 0.85) 0%, rgba(20, 6, 9, 0.85) 100%);
   border-bottom: 1px solid rgba(212, 175, 55, 0.22);
+  border-top-left-radius: 13px;
+  border-top-right-radius: 13px;
 }
 
 .result-sheet-title {
@@ -5136,6 +5156,9 @@ h1, h2, h3, h4, .font-display {
 .result-sheet-rows-list {
   display: flex;
   flex-direction: column;
+  overflow: visible;
+  height: auto;
+  max-height: none;
 }
 
 /* Individual Row inside the Sheet (Subtle line divider only - NO separate cards!) */
@@ -5150,6 +5173,8 @@ h1, h2, h3, h4, .font-display {
 
 .result-sheet-row:last-child {
   border-bottom: none;
+  border-bottom-left-radius: 13px;
+  border-bottom-right-radius: 13px;
 }
 
 .result-sheet-row.winner-row {
@@ -5407,18 +5432,24 @@ h1, h2, h3, h4, .font-display {
   }
 }
 
-/* Sticky Bottom Action Bar */
+/* Bottom Action Bar (Placed directly under scoreboard) */
 .result-bottom-bar {
-  padding: 14px clamp(16px, 3vw, 32px);
-  background: rgba(14, 5, 8, 0.95);
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 1080px;
+  margin: 12px auto 44px;
+  padding: 16px clamp(16px, 3vw, 32px);
+  background: rgba(14, 5, 8, 0.85);
   backdrop-filter: blur(14px);
-  border-top: 1px solid rgba(212, 175, 55, 0.25);
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(212, 175, 55, 0.22);
+  border-radius: 14px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 16px;
-  z-index: 10;
+  z-index: 5;
+  box-sizing: border-box;
 }
 
 .result-btn-leave {

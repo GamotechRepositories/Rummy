@@ -3,7 +3,6 @@ import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import confetti from 'canvas-confetti';
 import {
-  Trophy,
   RotateCcw,
   LogOut,
   CheckCircle2,
@@ -11,11 +10,12 @@ import {
   Eye,
   EyeOff,
   Layers,
-  Crown,
   Sparkles,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
+import { SoundToggle } from './SoundToggle';
+import { FullscreenToggle } from './FullscreenToggle';
 import { CardView } from './CardView';
 import type { CardInstance, GroupValidationType } from '../types/game';
 import { evaluateCardGroup, getCardScore } from '../rules/clientValidator';
@@ -319,6 +319,8 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
         </div>
 
         <div className="result-top-right">
+          <SoundToggle compact />
+          <FullscreenToggle compact />
           <span className="result-table-id-pill">
             Table {gameState.tableId ?? 'T1'}
           </span>
@@ -329,10 +331,6 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
       <main className="result-page-content">
         {/* Winner Hero Banner (No card box - seamless header) */}
         <section className="result-hero-banner">
-          <div className="result-hero-crown">
-            {isWinner ? <Trophy size={28} /> : <Crown size={28} />}
-          </div>
-
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
             <h1 className="result-hero-title">
               {isWinner ? (
@@ -478,7 +476,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
                           won ? 'result-row-rank--winner' : 'result-row-rank--normal'
                         }`}
                       >
-                        {won ? <Crown size={15} /> : `#${pRankIdx + 1}`}
+                        #{pRankIdx + 1}
                       </div>
 
                       <div className="result-row-meta">
@@ -574,28 +572,28 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen }) => {
             })}
           </div>
         </section>
+
+        {/* Action Bar below Scoreboard */}
+        <footer className="result-bottom-bar">
+          <button
+            type="button"
+            className="result-btn-leave"
+            onClick={handleLeave}
+          >
+            <LogOut size={16} />
+            Leave Table
+          </button>
+
+          <button
+            type="button"
+            className="result-btn-rematch"
+            onClick={handleRematch}
+          >
+            <RotateCcw size={17} />
+            Rematch Same Stake
+          </button>
+        </footer>
       </main>
-
-      {/* Sticky Bottom Action Bar */}
-      <footer className="result-bottom-bar">
-        <button
-          type="button"
-          className="result-btn-leave"
-          onClick={handleLeave}
-        >
-          <LogOut size={16} />
-          Leave Table
-        </button>
-
-        <button
-          type="button"
-          className="result-btn-rematch"
-          onClick={handleRematch}
-        >
-          <RotateCcw size={17} />
-          Rematch Same Stake
-        </button>
-      </footer>
     </div>
   );
 };

@@ -15,6 +15,7 @@ import {
   Target,
 } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
+import { FullscreenToggle } from './FullscreenToggle';
 import { LandscapeGate } from './LandscapeGate';
 import { soundEngine } from '../audio/soundEngine';
 import { getApiBaseUrl } from '../utils/apiConfig';
@@ -404,6 +405,7 @@ export const LobbyScreen: React.FC = () => {
 
         <div className="lobby-top-actions">
           <SoundToggle compact />
+          <FullscreenToggle compact />
 
           {isEditingName ? (
             <input
@@ -524,8 +526,12 @@ export const LobbyScreen: React.FC = () => {
                 </span>
                 Change Variant
               </button>
-              <div className="stake-step">
-                Step 2 of 2: <strong>Configure Stakes</strong>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="stake-step">
+                  Step 2 of 2: <strong>Configure Stakes</strong>
+                </div>
+                <SoundToggle compact />
+                <FullscreenToggle compact />
               </div>
             </div>
 
@@ -551,8 +557,11 @@ export const LobbyScreen: React.FC = () => {
                   </span>
                   Change Variant
                 </button>
-                <div className="stake-step">
-                  Step 2 of 2: <strong>Configure Stakes</strong>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div className="stake-step">
+                    Step 2 of 2: <strong>Configure Stakes</strong>
+                  </div>
+                  <FullscreenToggle compact />
                 </div>
               </div>
 
@@ -895,6 +904,20 @@ export const LobbyScreen: React.FC = () => {
       {/* Matchmaking Overlay — Step 2 stake-card style */}
       {isMatchmaking && (
         <div className="mm-overlay">
+          <div
+            style={{
+              position: 'absolute',
+              top: '16px',
+              right: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              zIndex: 30,
+            }}
+          >
+            <SoundToggle compact />
+            <FullscreenToggle compact />
+          </div>
           <div className="stake-card mm-card">
             <span className="stake-suit stake-suit-tl">♠</span>
             <span className="stake-suit stake-suit-tr">♦</span>
