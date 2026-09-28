@@ -349,6 +349,10 @@ class GameSocketClient {
     this.sendMessage({ type: 'DROP' });
   }
 
+  public rejoinTable(): void {
+    this.sendMessage({ type: 'REJOIN' });
+  }
+
   /** Voluntary leave — clears server resume binding (and drops if still active). */
   public leaveTable(): void {
     const { tableId, playerId } = useGameStore.getState();

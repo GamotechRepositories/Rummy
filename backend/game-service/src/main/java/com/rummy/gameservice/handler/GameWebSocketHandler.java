@@ -273,6 +273,9 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 DropCommand cmd = new DropCommand(reqId, gameId, playerId, now);
                 tableActor.processCommand(cmd, reqId);
             }
+            case "REJOIN" -> {
+                tableActor.handleRejoin(playerId, reqId);
+            }
             default -> sendError(session, "UNKNOWN_COMMAND", "Unknown command type: " + type, reqId);
         }
     }

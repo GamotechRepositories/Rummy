@@ -47,4 +47,27 @@ public interface RummyRules {
      * Calculate losing penalty points for an undeclared hand.
      */
     int calculateLosingScore(List<CardGroup> groups, Card cutJoker);
+
+    /**
+     * Elimination threshold score (e.g. 101 for Pool 101, 201 for Pool 201).
+     * 0 indicates non-elimination variant (e.g. Points Rummy).
+     */
+    default int getEliminationThreshold() {
+        return 0;
+    }
+
+    /**
+     * Whether this ruleset is a multi-deal elimination game.
+     */
+    default boolean isEliminationGame() {
+        return getEliminationThreshold() > 0;
+    }
+
+    /**
+     * Maximum cumulative score of the highest active player allowing an eliminated player to re-join.
+     * Pool 101: 79. Pool 201: 174. 0 or negative indicates rejoin not allowed.
+     */
+    default int getRejoinMaxActiveThreshold() {
+        return 0;
+    }
 }

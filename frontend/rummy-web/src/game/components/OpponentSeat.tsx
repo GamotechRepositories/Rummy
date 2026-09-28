@@ -128,9 +128,15 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   }
 
   const dealInProgress = useGameStore((s) => s.dealInProgress);
-  const isCurrentTurn = activePlayerId === player.playerId && !dealInProgress;
+  const gameState = useGameStore((s) => s.gameState);
+  const threshold = gameState?.eliminationThreshold ?? 0;
+  const isPool = threshold > 0;
+  const isEliminated = player.status === 'ELIMINATED' || !!player.isEliminated;
+  const isCurrentTurn = activePlayerId === player.playerId && !dealInProgress && !isEliminated;
   const isDropped = player.status === 'DROPPED';
   const isDeclared = player.status === 'DECLARED';
+  const isDealer = seatNumber === gameState?.dealerSeatIndex;
+  const isDangerZone = isPool && !isEliminated && (player.cumulativeScore ?? 0) >= threshold * 0.75;
   const avatar = getAvatarForPlayer(player.displayName || player.playerId);
 
   // Inward card fan orientation
@@ -201,8 +207,35 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
           )}
         </div>
 
+        {/* Dealer Button Puck */}
+        {isDealer && (
+          <div className="dealer-puck" title="Dealer for this deal">
+            D
+          </div>
+        )}
+
         {/* Status Overlay Badges */}
-        {isDropped && (
+        {isEliminated && (
+          <span
+            style={{
+              position: 'absolute',
+              bottom: '-3px',
+              background: 'linear-gradient(135deg, #b91c1c, #7f1d1d)',
+              color: '#ffffff',
+              fontSize: '8px',
+              fontWeight: 900,
+              padding: '1px 5px',
+              borderRadius: '4px',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
+              border: '1px solid rgba(254, 202, 202, 0.4)',
+              zIndex: 15,
+            }}
+          >
+            OUT
+          </span>
+        )}
+
+        {!isEliminated && isDropped && (
           <span
             style={{
               position: 'absolute',
@@ -221,7 +254,7 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
           </span>
         )}
 
-        {isDeclared && (
+        {!isEliminated && isDeclared && (
           <span
             style={{
               position: 'absolute',
@@ -247,7 +280,7 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   const cardCount = displayCount ?? player.cardCount;
   const fanSize = Math.min(5, Math.max(0, cardCount));
 
-  const cardFanElement = hasRevealedCards ? (
+  const cardFanElement = isEliminated ? null : hasRevealedCards ? (
     <div
       className="opponent-card-fan"
       title={`${player.displayName}'s cards revealed for showdown`}
@@ -301,13 +334,14 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   return (
     <div
       id={`seat-${player.playerId}`}
-      className={`opponent-seat-pod pos-${position}${isCurrentTurn ? ' active-turn' : ''}`}
+      className={`opponent-seat-pod pos-${position}${isCurrentTurn ? ' active-turn' : ''}${isEliminated ? ' eliminated' : ''}`}
       style={{
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         gap: '4px',
         zIndex: isCurrentTurn ? 20 : 10,
+        opacity: isEliminated ? 0.65 : 1,
       }}
     >
       {/* Upper Pod: Avatar & Card Fan */}
@@ -328,11 +362,17 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
         style={{
           background: isCurrentTurn
             ? 'linear-gradient(135deg, rgba(26, 46, 32, 0.95), rgba(10, 22, 16, 0.95))'
-            : 'rgba(10, 22, 16, 0.88)',
+            : isEliminated
+              ? 'rgba(40, 10, 10, 0.85)'
+              : 'rgba(10, 22, 16, 0.88)',
           backdropFilter: 'blur(12px)',
           padding: '2px 10px',
           borderRadius: '14px',
-          border: isCurrentTurn ? '1.5px solid #fbbf24' : '1px solid rgba(255, 255, 255, 0.14)',
+          border: isCurrentTurn
+            ? '1.5px solid #fbbf24'
+            : isEliminated
+              ? '1px solid rgba(239, 68, 68, 0.4)'
+              : '1px solid rgba(255, 255, 255, 0.14)',
           boxShadow: isCurrentTurn ? '0 0 12px rgba(251, 191, 36, 0.35)' : '0 4px 10px rgba(0, 0, 0, 0.5)',
           textAlign: 'center',
           minWidth: '92px',
@@ -343,7 +383,7 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
           style={{
             fontSize: 'var(--ui-font-sm, 11px)',
             fontWeight: 800,
-            color: isCurrentTurn ? '#fef08a' : '#ffffff',
+            color: isCurrentTurn ? '#fef08a' : isEliminated ? '#fca5a5' : '#ffffff',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -351,10 +391,47 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
         >
           {player.displayName}
         </div>
-        {gameStatus === 'COMPLETED' && (
-          <div style={{ fontSize: '10px', color: 'var(--gold-light)', fontWeight: 800 }}>
-            {player.score} pts
-          </div>
+        {isPool ? (
+          isDangerZone ? (
+            <div
+              className="danger-zone-pill"
+              style={{
+                fontSize: '9.5px',
+                fontWeight: 900,
+                marginTop: '2px',
+                padding: '1px 6px',
+                borderRadius: '4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+              }}
+              title="Danger Zone: One drop or loss will eliminate this player!"
+            >
+              <span>🔥</span>
+              <span>{player.cumulativeScore ?? player.score ?? 0}/{threshold}</span>
+            </div>
+          ) : (
+            <div
+              style={{
+                fontSize: '10px',
+                fontWeight: 800,
+                marginTop: '1px',
+                color: isEliminated
+                  ? '#ef4444'
+                  : (player.cumulativeScore ?? 0) >= threshold * 0.5
+                    ? '#fcd34d'
+                    : '#6ee7b7',
+              }}
+            >
+              {isEliminated ? 'OUT' : `Score: ${player.cumulativeScore ?? player.score ?? 0}/${threshold}`}
+            </div>
+          )
+        ) : (
+          gameStatus === 'COMPLETED' && (
+            <div style={{ fontSize: '10px', color: 'var(--gold-light)', fontWeight: 800 }}>
+              {player.score} pts
+            </div>
+          )
         )}
       </div>
     </div>

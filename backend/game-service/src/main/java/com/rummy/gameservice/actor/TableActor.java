@@ -70,6 +70,13 @@ public final class TableActor {
     private int stakeTier = 100;
     private com.rummy.gameservice.wallet.GameSettlementResult lastSettlement;
 
+    private final List<PlayerGameView.DealScoreRecord> dealHistory = new CopyOnWriteArrayList<>();
+    private final List<String> lastEliminatedNames = new CopyOnWriteArrayList<>();
+    private ScheduledFuture<?> nextDealFuture;
+    private Integer nextDealCountdown = null;
+    private Instant nextDealScheduledAt = null;
+    private String tournamentWinnerId = null;
+
     public TableActor(String tableId,
                       GameState initialState,
                       RummyRules rules,
@@ -384,37 +391,99 @@ public final class TableActor {
                 persistenceService.recordGameEventAsync(state.getGameId(), event);
                 if (event instanceof com.rummy.engine.event.GameStartedEvent) {
                     persistenceService.recordGameStarted(state, tableId);
-                } else if (event instanceof com.rummy.engine.event.GameFinishedEvent finishedEvent) {
-                    persistenceService.recordGameFinished(state, tableId);
-                    if (walletService != null && stakeTier > 0) {
-                        try {
-                            List<String> playerIds = state.getPlayers().stream()
-                                    .map(PlayerState::getPlayerId)
-                                    .toList();
-                            this.lastSettlement = walletService.settleMatch(
-                                    state.getGameId(),
-                                    tableId,
-                                    rules.getRulesetId(),
-                                    java.math.BigDecimal.valueOf(stakeTier),
-                                    finishedEvent.winnerPlayerId(),
-                                    finishedEvent.finalScores(),
-                                    playerIds
-                            );
-                            if (this.lastSettlement != null) {
-                                broadcastMessage(WsServerMessage.of("GAME_SETTLEMENT", requestId, tableId, state.getSequence(), this.lastSettlement));
-                                log.info("[TableActor:{}] Settled game: pot={}, rake={}, netWinnerPrize={}",
-                                        tableId, lastSettlement.totalGrossPot(), lastSettlement.platformRakeAmount(), lastSettlement.netWinnerPrize());
-                            }
-                        } catch (Exception e) {
-                            log.error("[TableActor:{}] Settlement error for gameId={}: {}", tableId, state.getGameId(), e.getMessage(), e);
-                        }
-                    }
                 }
             }
-            if (event instanceof com.rummy.engine.event.GameFinishedEvent && sessionService != null) {
-                // Match over — no more soft-reconnect into this table
-                sessionService.clearAllHumanBindings(tableId);
-                log.info("[TableActor:{}] Cleared player session bindings after game finish", tableId);
+
+            if (event instanceof com.rummy.engine.event.GameFinishedEvent finishedEvent) {
+                boolean isPool = rules.isEliminationGame();
+                int threshold = rules.getEliminationThreshold();
+
+                if (isPool) {
+                    Map<String, Integer> currentCumulatives = new HashMap<>();
+                    List<String> freshlyEliminated = new ArrayList<>();
+                    for (PlayerState p : state.getPlayers()) {
+                        currentCumulatives.put(p.getPlayerId(), p.getCumulativeScore());
+                        if (p.getCumulativeScore() >= threshold && p.getStatus() != PlayerStatus.ELIMINATED) {
+                            p.markEliminated();
+                            freshlyEliminated.add(p.getDisplayName() != null ? p.getDisplayName() : p.getPlayerId());
+                            log.info("[TableActor:{}] Player {} eliminated with score {}/{}",
+                                    tableId, p.getPlayerId(), p.getCumulativeScore(), threshold);
+                        }
+                    }
+                    this.lastEliminatedNames.clear();
+                    this.lastEliminatedNames.addAll(freshlyEliminated);
+
+                    PlayerGameView.DealScoreRecord dealRecord = new PlayerGameView.DealScoreRecord(
+                            state.getDealNumber(),
+                            finishedEvent.winnerPlayerId(),
+                            new HashMap<>(finishedEvent.finalScores()),
+                            currentCumulatives
+                    );
+                    dealHistory.add(dealRecord);
+
+                    List<PlayerState> activeSurvivors = state.getPlayers().stream()
+                            .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
+                            .toList();
+
+                    if (activeSurvivors.size() > 1) {
+                        // Match continues! Next deal countdown in 5 seconds
+                        log.info("[TableActor:{}] Deal {} complete. {} survivors remain. Next deal in 5s...",
+                                tableId, state.getDealNumber(), activeSurvivors.size());
+
+                        this.nextDealCountdown = 5;
+                        this.nextDealScheduledAt = Instant.now().plusSeconds(5);
+
+                        Map<String, Object> poolEventPayload = new HashMap<>();
+                        poolEventPayload.put("dealNumber", state.getDealNumber());
+                        poolEventPayload.put("winnerPlayerId", finishedEvent.winnerPlayerId());
+                        poolEventPayload.put("dealScores", finishedEvent.finalScores());
+                        poolEventPayload.put("cumulativeScores", currentCumulatives);
+                        poolEventPayload.put("eliminatedPlayerIds", freshlyEliminated);
+                        poolEventPayload.put("survivorsRemaining", activeSurvivors.size());
+                        poolEventPayload.put("nextDealCountdownSeconds", 5);
+
+                        broadcastMessage(WsServerMessage.of("POOL_DEAL_COMPLETED", requestId, tableId, state.getSequence(), poolEventPayload));
+
+                        if (nextDealFuture != null && !nextDealFuture.isDone()) {
+                            nextDealFuture.cancel(false);
+                        }
+                        nextDealFuture = scheduler.schedule(() -> {
+                            synchronized (TableActor.this) {
+                                startNextDeal();
+                            }
+                        }, 5, TimeUnit.SECONDS);
+
+                    } else {
+                        // Match complete! 1 or 0 survivors remain
+                        PlayerState tournamentWinner = activeSurvivors.size() == 1
+                                ? activeSurvivors.get(0)
+                                : state.getPlayers().stream()
+                                        .min(Comparator.comparingInt(PlayerState::getCumulativeScore))
+                                        .orElse(state.getPlayers().get(0));
+                        this.tournamentWinnerId = tournamentWinner.getPlayerId();
+                        log.info("[TableActor:{}] POOL MATCH COMPLETED! Tournament winner is {} ({}) with score {}",
+                                tableId, tournamentWinner.getPlayerId(), tournamentWinner.getDisplayName(), tournamentWinner.getCumulativeScore());
+
+                        if (persistenceService != null) {
+                            persistenceService.recordGameFinished(state, tableId);
+                        }
+                        settleMatchWallet(tournamentWinner.getPlayerId(), currentCumulatives, requestId);
+                        if (sessionService != null) {
+                            sessionService.clearAllHumanBindings(tableId);
+                            log.info("[TableActor:{}] Cleared player session bindings after pool match finish", tableId);
+                        }
+                    }
+                } else {
+                    // Non-pool game (e.g. Points Rummy)
+                    if (persistenceService != null) {
+                        persistenceService.recordGameFinished(state, tableId);
+                    }
+                    settleMatchWallet(finishedEvent.winnerPlayerId(), finishedEvent.finalScores(), requestId);
+                    if (sessionService != null) {
+                        sessionService.clearAllHumanBindings(tableId);
+                        log.info("[TableActor:{}] Cleared player session bindings after game finish", tableId);
+                    }
+                }
             }
         }
 
@@ -445,7 +514,21 @@ public final class TableActor {
         WebSocketSession session = sessions.get(playerId);
         if (session != null && session.isOpen()) {
             try {
-                PlayerGameView view = PlayerGameView.from(state, playerId);
+                Integer remainingCountdown = null;
+                if (nextDealScheduledAt != null) {
+                    long secs = java.time.Duration.between(Instant.now(), nextDealScheduledAt).toSeconds();
+                    remainingCountdown = (int) Math.max(0, secs);
+                }
+                PlayerGameView view = PlayerGameView.from(
+                        state,
+                        playerId,
+                        rules.getEliminationThreshold(),
+                        dealHistory,
+                        remainingCountdown,
+                        tournamentWinnerId,
+                        stakeTier,
+                        new ArrayList<>(lastEliminatedNames)
+                );
                 WsServerMessage msg = WsServerMessage.of("GAME_VIEW", requestId, tableId, state.getSequence(), view);
                 String json = objectMapper.writeValueAsString(msg);
                 session.sendMessage(new TextMessage(json));
@@ -807,12 +890,158 @@ public final class TableActor {
         return lastSettlement;
     }
 
+    public List<PlayerGameView.DealScoreRecord> getDealHistory() {
+        return Collections.unmodifiableList(dealHistory);
+    }
+
+    private void settleMatchWallet(String winnerId, Map<String, Integer> finalScores, String requestId) {
+        if (walletService != null && stakeTier > 0) {
+            try {
+                List<String> playerIds = state.getPlayers().stream()
+                        .map(PlayerState::getPlayerId)
+                        .toList();
+                this.lastSettlement = walletService.settleMatch(
+                        state.getGameId(),
+                        tableId,
+                        rules.getRulesetId(),
+                        java.math.BigDecimal.valueOf(stakeTier),
+                        winnerId,
+                        finalScores,
+                        playerIds
+                );
+                if (this.lastSettlement != null) {
+                    broadcastMessage(WsServerMessage.of("GAME_SETTLEMENT", requestId, tableId, state.getSequence(), this.lastSettlement));
+                    log.info("[TableActor:{}] Settled game: pot={}, rake={}, netWinnerPrize={}",
+                            tableId, lastSettlement.totalGrossPot(), lastSettlement.platformRakeAmount(), lastSettlement.netWinnerPrize());
+                }
+            } catch (Exception e) {
+                log.error("[TableActor:{}] Settlement error for gameId={}: {}", tableId, state.getGameId(), e.getMessage(), e);
+            }
+        }
+    }
+
+    private synchronized void startNextDeal() {
+        this.nextDealCountdown = null;
+        this.nextDealScheduledAt = null;
+        this.lastEliminatedNames.clear();
+
+        if (state.getStatus() != GameStatus.COMPLETED) {
+            return;
+        }
+
+        long activeSurvivors = state.getPlayers().stream()
+                .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
+                .count();
+        if (activeSurvivors < 2) {
+            log.warn("[TableActor:{}] Cannot start next deal with fewer than 2 active players", tableId);
+            return;
+        }
+
+        log.info("[TableActor:{}] Starting next deal (Deal {})...", tableId, state.getDealNumber() + 1);
+        state.incrementDealNumber();
+
+        Deck freshDeck = Deck.createMultiPackDeck(
+                rules.getDeckCount(),
+                rules.getPrintedJokersPerDeck(),
+                new java.security.SecureRandom()
+        );
+        state.prepareForNewDeal(freshDeck);
+
+        for (PlayerState player : state.getPlayers()) {
+            if (player.getStatus() != PlayerStatus.ELIMINATED) {
+                player.setStatus(PlayerStatus.READY);
+            }
+        }
+
+        PlayerState starter = state.getPlayers().stream()
+                .filter(p -> p.getStatus() == PlayerStatus.READY)
+                .findFirst()
+                .orElse(null);
+
+        if (starter != null) {
+            processCommand(new StartGameCommand(
+                    UUID.randomUUID().toString(),
+                    state.getGameId(),
+                    starter.getPlayerId(),
+                    Instant.now()
+            ), "AUTO_NEXT_DEAL");
+        }
+    }
+
+    public synchronized boolean handleRejoin(String playerId, String requestId) {
+        if (!rules.isEliminationGame()) {
+            sendErrorToPlayer(playerId, "REJOIN_NOT_ALLOWED", "Rejoin is only available in elimination games", requestId);
+            return false;
+        }
+
+        PlayerState player = state.getPlayer(playerId).orElse(null);
+        if (player == null || player.getStatus() != PlayerStatus.ELIMINATED) {
+            sendErrorToPlayer(playerId, "NOT_ELIMINATED", "Player is not eliminated", requestId);
+            return false;
+        }
+
+        List<PlayerState> activeSurvivors = state.getPlayers().stream()
+                .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
+                .toList();
+
+        int maxActiveScore = activeSurvivors.stream()
+                .mapToInt(PlayerState::getCumulativeScore)
+                .max()
+                .orElse(0);
+
+        int rejoinCutoff = rules.getRejoinMaxActiveThreshold();
+        if (maxActiveScore > rejoinCutoff) {
+            sendErrorToPlayer(playerId, "SCORE_TOO_HIGH", "Cannot rejoin: Leader score is " + maxActiveScore + " (max allowed is " + rejoinCutoff + ")", requestId);
+            return false;
+        }
+
+        if (walletService != null && stakeTier > 0) {
+            try {
+                walletService.debit(
+                        playerId,
+                        java.math.BigDecimal.valueOf(stakeTier),
+                        "REJOIN_FEE",
+                        UUID.randomUUID().toString(),
+                        state.getGameId(),
+                        "Pool Rummy Rejoin Fee",
+                        Map.of("tableId", tableId)
+                );
+            } catch (Exception e) {
+                log.warn("[TableActor:{}] Failed to deduct rejoin fee for {}: {}", tableId, playerId, e.getMessage());
+            }
+        }
+
+        int newScore = maxActiveScore + 1;
+        player.setStatus(PlayerStatus.READY);
+        player.setScore(0);
+        player.setCumulativeScore(newScore);
+
+        log.info("[TableActor:{}] Player {} REJOINED table with starting score {}", tableId, playerId, newScore);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("playerId", playerId);
+        payload.put("displayName", player.getDisplayName());
+        payload.put("newScore", newScore);
+        payload.put("rejoinFee", stakeTier);
+        broadcastMessage(WsServerMessage.of("PLAYER_REJOINED", requestId, tableId, state.getSequence(), payload));
+
+        for (String pid : sessions.keySet()) {
+            if (state.getPlayer(pid).isPresent()) {
+                sendPlayerView(pid, requestId);
+            }
+        }
+        return true;
+    }
+
     public synchronized void destroy() {
         if (turnTimeoutFuture != null) {
             turnTimeoutFuture.cancel(true);
         }
         if (botTurnFuture != null) {
             botTurnFuture.cancel(true);
+        }
+        if (nextDealFuture != null) {
+            nextDealFuture.cancel(true);
         }
         cancelAutoBotFallback();
         botsOnlyWindDown = false;

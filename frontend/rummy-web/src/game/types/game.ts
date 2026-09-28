@@ -66,6 +66,22 @@ export interface TurnStateView {
   consecutiveMissedTurns: number;
 }
 
+export interface PlayerStanding {
+  playerId: string;
+  displayName: string;
+  seatIndex: number;
+  cumulativeScore: number;
+  isEliminated: boolean;
+  status: PlayerStatus;
+}
+
+export interface DealScoreRecord {
+  dealNumber: number;
+  winnerPlayerId: string;
+  roundScores: Record<string, number>;
+  cumulativeScores: Record<string, number>;
+}
+
 export interface OpponentView {
   playerId: string;
   displayName: string;
@@ -73,6 +89,8 @@ export interface OpponentView {
   status: PlayerStatus;
   cardCount: number;
   score: number;
+  cumulativeScore?: number;
+  isEliminated?: boolean;
   isBot: boolean;
   hand?: CardInstance[];
 }
@@ -100,6 +118,19 @@ export interface PlayerGameView {
   viewerSeatIndex?: number;
   rulesetId?: string;
   viewerDropped?: boolean;
+  dealNumber?: number;
+  eliminationThreshold?: number;
+  viewerCumulativeScore?: number;
+  viewerIsEliminated?: boolean;
+  standings?: PlayerStanding[];
+  dealHistory?: DealScoreRecord[];
+  nextDealCountdown?: number | null;
+  tournamentWinnerId?: string | null;
+  dealerSeatIndex?: number;
+  canRejoin?: boolean;
+  rejoinScore?: number;
+  rejoinFee?: number;
+  freshlyEliminatedNames?: string[];
 }
 
 export type GroupValidationType = 'PURE_SEQUENCE' | 'IMPURE_SEQUENCE' | 'SET' | 'INVALID';

@@ -7,11 +7,12 @@ import { PlayerHand } from './PlayerHand';
 import { ActionControls } from './ActionControls';
 import { DealAnimation, type DealTarget } from './DealAnimation';
 import { DeclareModal } from './DeclareModal';
-import { LogOut, Wifi, AlertCircle, Menu, X, ShieldAlert } from 'lucide-react';
+import { LogOut, Wifi, AlertCircle, Menu, X, ShieldAlert, Trophy } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { FullscreenToggle } from './FullscreenToggle';
 import { soundEngine } from '../audio/soundEngine';
 import { GameResultModal } from './GameResultModal';
+import { PoolScoreboardModal } from './PoolScoreboardModal';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
 
 function getPerimeterPosition(index: number, total: number): SeatPosition {
@@ -51,6 +52,7 @@ export const GameBoard: React.FC = () => {
   } = useGameStore();
 
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [scoreboardOpen, setScoreboardOpen] = React.useState(false);
   const [resumeFailed, setResumeFailed] = React.useState(false);
   const [dealPlaying, setDealPlaying] = React.useState(false);
   const [dealTargets, setDealTargets] = React.useState<DealTarget[]>([]);
@@ -196,6 +198,40 @@ export const GameBoard: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [arrivalNotice]);
 
+  const [eliminationNotice, setEliminationNotice] = useState<string | null>(null);
+  const seenEliminatedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const freshly = gameState?.freshlyEliminatedNames;
+    if (!freshly || freshly.length === 0) return;
+    const newlyEliminated = freshly.filter((name) => !seenEliminatedRef.current.has(name));
+    if (newlyEliminated.length > 0) {
+      for (const name of newlyEliminated) {
+        seenEliminatedRef.current.add(name);
+      }
+      soundEngine.play('lose');
+      setEliminationNotice(newlyEliminated.join(', '));
+      const timer = window.setTimeout(() => setEliminationNotice(null), 4500);
+      return () => window.clearTimeout(timer);
+    }
+  }, [gameState?.freshlyEliminatedNames]);
+
+  const [dealNotice, setDealNotice] = useState<string | null>(null);
+  const prevDealRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const curDeal = gameState?.dealNumber;
+    if (!curDeal) return;
+    if (prevDealRef.current !== null && curDeal > prevDealRef.current) {
+      soundEngine.play('deal');
+      setDealNotice(`Deal ${curDeal} Starting`);
+      const timer = window.setTimeout(() => setDealNotice(null), 3000);
+      prevDealRef.current = curDeal;
+      return () => window.clearTimeout(timer);
+    }
+    prevDealRef.current = curDeal;
+  }, [gameState?.dealNumber]);
+
   // Derived labels — plain consts (not hooks) so early return below is safe
   const rawRulesetId = (lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
   const entryFee = lastGameConfig?.entryFee ?? 8;
@@ -269,13 +305,48 @@ export const GameBoard: React.FC = () => {
         </div>
       )}
 
+      {dealNotice && (
+        <div className="board-arrival-toast" style={{ borderColor: 'rgba(251, 191, 36, 0.7)', color: '#fef08a' }} role="status">
+          🃏 {dealNotice}
+        </div>
+      )}
+
       <main className={`casino-table${dealPlaying ? ' deal-in-progress' : ''}`}>
         <div className="casino-table-stage" id="game-felt-table">
+          {eliminationNotice && (
+            <div className="board-elimination-toast" role="status">
+              <span className="board-elimination-icon">💀</span>
+              <div className="board-elimination-content">
+                <strong>PLAYER ELIMINATED!</strong>
+                <span>{eliminationNotice} crossed point threshold!</span>
+              </div>
+            </div>
+          )}
+
           {/* Top table plate — stake / pot / live (no turn pill, no joker here) */}
           <div className="board-hud" aria-label="Table status">
             <div className="board-info-plate">
               <div className="board-info-row">
                 <span className="board-info-variant">{tableHeaderSubtitle}</span>
+                {Boolean(gameState?.eliminationThreshold || rawRulesetId.includes('POOL')) && (
+                  <>
+                    <span className="board-info-sep" aria-hidden />
+                    <span
+                      style={{
+                        color: '#fef08a',
+                        fontWeight: 800,
+                        fontSize: '11px',
+                        letterSpacing: '0.4px',
+                        background: 'rgba(251, 191, 36, 0.15)',
+                        border: '1px solid rgba(251, 191, 36, 0.3)',
+                        borderRadius: '6px',
+                        padding: '1px 6px',
+                      }}
+                    >
+                      DEAL {gameState?.dealNumber ?? 1}
+                    </span>
+                  </>
+                )}
                 <span className="board-info-sep" aria-hidden />
                 <span className="board-info-pot">POT ₹{totalPot}</span>
                 <span
@@ -289,6 +360,31 @@ export const GameBoard: React.FC = () => {
               </div>
             </div>
             <div className="board-hud-right">
+              {Boolean(gameState?.eliminationThreshold || rawRulesetId.includes('POOL')) && (
+                <button
+                  id="btn-pool-scoreboard"
+                  type="button"
+                  onClick={() => {
+                    soundEngine.play('click');
+                    setScoreboardOpen(true);
+                  }}
+                  className="board-hud-menu"
+                  style={{
+                    color: '#fbbf24',
+                    border: '1px solid rgba(251, 191, 36, 0.4)',
+                    background: 'rgba(251, 191, 36, 0.12)',
+                    gap: '4px',
+                    padding: '0 8px',
+                    width: 'auto',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                  }}
+                  title="Live Pool Scoreboard"
+                >
+                  <Trophy size={14} />
+                  <span>Scores</span>
+                </button>
+              )}
               <SoundToggle compact />
               <FullscreenToggle compact />
               <button
@@ -404,7 +500,15 @@ export const GameBoard: React.FC = () => {
 
       <DeclareModal />
 
-      <GameResultModal isOpen={gameState?.gameStatus === 'COMPLETED'} />
+      <GameResultModal
+        isOpen={gameState?.gameStatus === 'COMPLETED'}
+        onOpenScoreboard={() => setScoreboardOpen(true)}
+      />
+
+      <PoolScoreboardModal
+        isOpen={scoreboardOpen}
+        onClose={() => setScoreboardOpen(false)}
+      />
 
       {/* Combined Table Details & Safe Leave Modal */}
       {menuOpen && (

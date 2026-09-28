@@ -107,6 +107,7 @@ public final class Pool101Rules implements RummyRules {
         return maximumPenalty;
     }
 
+    @Override
     public int getEliminationThreshold() {
         return ELIMINATION_THRESHOLD;
     }
@@ -119,5 +120,10 @@ public final class Pool101Rules implements RummyRules {
     @Override
     public int calculateLosingScore(List<CardGroup> groups, Card cutJoker) {
         return ScoreCalculator.calculateHandPoints(groups, cutJoker, maximumPenalty);
+    }
+
+    @Override
+    public int getRejoinMaxActiveThreshold() {
+        return 79;
     }
 }

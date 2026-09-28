@@ -84,29 +84,39 @@ public final class GameEngine {
     private EngineResult handleStartGame(GameState state, StartGameCommand cmd, RummyRules rules) {
         // Rematch / Play Next Deal after a finished hand
         if (state.getStatus() == GameStatus.COMPLETED || state.getStatus() == GameStatus.ABORTED) {
-            if (state.getPlayers().size() < rules.getMinPlayers()) {
-                return EngineResult.failure(state, "Not enough players to start a new deal (minimum " + rules.getMinPlayers() + ")");
+            long nonEliminatedCount = state.getPlayers().stream()
+                    .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
+                    .count();
+            if (nonEliminatedCount < rules.getMinPlayers()) {
+                return EngineResult.failure(state, "Not enough active players to start a new deal (minimum " + rules.getMinPlayers() + ")");
             }
             Deck freshDeck = Deck.createMultiPackDeck(
                     rules.getDeckCount(),
                     rules.getPrintedJokersPerDeck(),
                     new java.security.SecureRandom());
             state.prepareForNewDeal(freshDeck);
-            // Auto-ready seated players for immediate rematch
+            // Auto-ready seated non-eliminated players for immediate rematch
             for (PlayerState player : state.getPlayers()) {
-                player.setStatus(PlayerStatus.READY);
+                if (player.getStatus() != PlayerStatus.ELIMINATED) {
+                    player.setStatus(PlayerStatus.READY);
+                }
             }
         }
 
         if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
             return EngineResult.failure(state, "Cannot start game when status is " + state.getStatus());
         }
-        if (state.getPlayers().size() < rules.getMinPlayers()) {
-            return EngineResult.failure(state, "Not enough players to start (minimum " + rules.getMinPlayers() + ")");
+        long nonEliminatedCount = state.getPlayers().stream()
+                .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
+                .count();
+        if (nonEliminatedCount < rules.getMinPlayers()) {
+            return EngineResult.failure(state, "Not enough active players to start (minimum " + rules.getMinPlayers() + ")");
         }
-        boolean allReady = state.getPlayers().stream().allMatch(p -> p.getStatus() == PlayerStatus.READY);
+        boolean allReady = state.getPlayers().stream()
+                .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
+                .allMatch(p -> p.getStatus() == PlayerStatus.READY);
         if (!allReady) {
-            return EngineResult.failure(state, "All seated players must be READY before starting");
+            return EngineResult.failure(state, "All seated active players must be READY before starting");
         }
 
         state.setStatus(GameStatus.DEALING);
@@ -117,10 +127,12 @@ public final class GameEngine {
         CardInstance cutJoker = deck.draw();
         state.setCutJoker(cutJoker);
 
-        // Deal cards to each player
+        // Deal cards only to non-eliminated players
         for (PlayerState player : state.getPlayers()) {
-            player.addCards(deck.drawBatch(rules.getCardsPerPlayer()));
-            player.setStatus(PlayerStatus.ACTIVE);
+            if (player.getStatus() != PlayerStatus.ELIMINATED) {
+                player.addCards(deck.drawBatch(rules.getCardsPerPlayer()));
+                player.setStatus(PlayerStatus.ACTIVE);
+            }
         }
 
         // Initial face-up discard card
@@ -134,7 +146,7 @@ public final class GameEngine {
                 .orElseThrow();
 
         // Account for dealing animation so the first player's turn timer starts after card distribution
-        int totalCardsDealt = state.getPlayers().size() * rules.getCardsPerPlayer();
+        int totalCardsDealt = (int) (state.getPlayers().stream().filter(p -> p.getStatus() == PlayerStatus.ACTIVE).count() * rules.getCardsPerPlayer());
         long dealDurationMs = Math.max(0, totalCardsDealt - 1) * 120L + 460L + 280L;
         long dealDurationSeconds = (long) Math.ceil(dealDurationMs / 1000.0);
         long firstTurnTimeout = DEFAULT_TURN_TIMEOUT_SECONDS + dealDurationSeconds;
@@ -145,7 +157,10 @@ public final class GameEngine {
 
         long seq = state.nextSequence();
         String eventId = UUID.randomUUID().toString();
-        List<String> playerIds = state.getPlayers().stream().map(PlayerState::getPlayerId).toList();
+        List<String> playerIds = state.getPlayers().stream()
+                .filter(p -> p.getStatus() == PlayerStatus.ACTIVE)
+                .map(PlayerState::getPlayerId)
+                .toList();
 
         GameStartedEvent event = new GameStartedEvent(eventId, state.getGameId(), seq, cmd.timestamp(),
                 cutJoker, initialDiscard, playerIds, firstPlayer.getPlayerId(), turn.getTurnDeadline());
@@ -308,6 +323,8 @@ public final class GameEngine {
                     scoreMap.put(opponent.getPlayerId(), penalty);
                 } else if (opponent.getStatus() == PlayerStatus.DROPPED) {
                     scoreMap.put(opponent.getPlayerId(), opponent.getScore());
+                } else if (opponent.getStatus() == PlayerStatus.ELIMINATED) {
+                    scoreMap.put(opponent.getPlayerId(), 0);
                 }
             }
 
@@ -475,7 +492,11 @@ public final class GameEngine {
 
         Map<String, Integer> scoreMap = new HashMap<>();
         for (PlayerState p : state.getPlayers()) {
-            scoreMap.put(p.getPlayerId(), p.getScore());
+            if (p.getStatus() == PlayerStatus.ELIMINATED) {
+                scoreMap.put(p.getPlayerId(), 0);
+            } else {
+                scoreMap.put(p.getPlayerId(), p.getScore());
+            }
         }
 
         long finishSeq = state.nextSequence();

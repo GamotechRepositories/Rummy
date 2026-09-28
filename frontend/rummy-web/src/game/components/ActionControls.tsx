@@ -10,6 +10,8 @@ import {
   Layers,
   ArrowUpDown,
   XCircle,
+  Sparkles,
+  LogOut,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { isDiscardPhase, isDrawPhase } from '../utils/turnPhase';
@@ -29,8 +31,11 @@ export const ActionControls: React.FC = () => {
     groupSelectedCards,
     autoSortHand,
     dealInProgress,
+    leaveTable,
+    lastGameConfig,
   } = useGameStore();
   const [confirmDropOpen, setConfirmDropOpen] = React.useState(false);
+  const [confirmRejoinOpen, setConfirmRejoinOpen] = React.useState(false);
 
   const gameStatus = gameState?.gameStatus;
   const isMyTurn = gameState?.isMyTurn ?? false;
@@ -101,8 +106,15 @@ export const ActionControls: React.FC = () => {
     socketClient.draw(source);
   };
 
+  const threshold = gameState.eliminationThreshold || (isPool201 ? 201 : (gameState.rulesetId?.includes('101') ? 101 : 0));
+  const isPool = threshold > 0;
+  const viewerIsEliminated = gameState.viewerIsEliminated || gameState.viewerStatus === 'ELIMINATED';
+  const viewerCumulative = gameState.viewerCumulativeScore ?? gameState.viewerScore ?? 0;
+  const isDealer = gameState.viewerSeatIndex === gameState.dealerSeatIndex;
+  const isDangerZone = isPool && !viewerIsEliminated && viewerCumulative >= threshold * 0.75;
+
   const droppedOut =
-    gameState?.viewerStatus === 'DROPPED' && gameStatus === 'IN_PROGRESS';
+    (gameState?.viewerStatus === 'DROPPED' && gameStatus === 'IN_PROGRESS') || viewerIsEliminated;
 
   return (
     <div className="table-action-controls">
@@ -151,7 +163,7 @@ export const ActionControls: React.FC = () => {
 
         <div className="bcb-player">
           <div className="bcb-avatar-wrap">
-            {isMyTurn && !dealInProgress && (
+            {isMyTurn && !dealInProgress && !viewerIsEliminated && (
               <div className="bcb-timer">
                 <TurnTimerRing
                   turnDeadline={gameState.turnDeadline ?? null}
@@ -161,15 +173,60 @@ export const ActionControls: React.FC = () => {
                 />
               </div>
             )}
-            <div className={`bcb-avatar${isMyTurn && !dealInProgress ? ' on' : ''}`}>
+            <div className={`bcb-avatar${isMyTurn && !dealInProgress && !viewerIsEliminated ? ' on' : ''}${viewerIsEliminated ? ' eliminated' : ''}`}>
               <img className="bcb-avatar-photo" src={photoForCharacter(avatarId)} alt="" draggable={false} />
             </div>
+            {isDealer && (
+              <div className="dealer-puck" title="You are the dealer for this deal">
+                D
+              </div>
+            )}
           </div>
           <div className="bcb-player-meta">
-            <div className="bcb-player-name">
-              {displayName}
+            <div className="bcb-player-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>{displayName}</span>
+              {isPool && (
+                isDangerZone ? (
+                  <span
+                    className="danger-zone-pill"
+                    style={{
+                      fontSize: '9.5px',
+                      fontWeight: 900,
+                      padding: '1px 6px',
+                      borderRadius: '4px',
+                    }}
+                    title="Danger Zone: One drop or loss will eliminate you!"
+                  >
+                    <span>🔥</span>
+                    <span>DANGER: {viewerCumulative}/{threshold}</span>
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: '9.5px',
+                      fontWeight: 900,
+                      padding: '1px 6px',
+                      borderRadius: '4px',
+                      background: viewerIsEliminated
+                        ? 'rgba(239, 68, 68, 0.25)'
+                        : 'rgba(52, 211, 153, 0.15)',
+                      color: viewerIsEliminated ? '#fca5a5' : '#34d399',
+                      border: `1px solid ${viewerIsEliminated ? '#ef4444' : 'rgba(255,255,255,0.15)'}`,
+                    }}
+                  >
+                    {viewerIsEliminated ? 'OUT' : `Total: ${viewerCumulative}/${threshold}`}
+                  </span>
+                )
+              )}
             </div>
-            {gameStatus === 'IN_PROGRESS' && droppedOut && (
+            {gameStatus === 'IN_PROGRESS' && viewerIsEliminated && (
+              <div className="bcb-player-stats">
+                <span className="bcb-score" style={{ color: '#ef4444', fontWeight: 900 }}>ELIMINATED</span>
+                <span className="bcb-dot" aria-hidden />
+                <span className="bcb-pure" style={{ color: '#94a3b8' }}>Spectating remaining table</span>
+              </div>
+            )}
+            {gameStatus === 'IN_PROGRESS' && !viewerIsEliminated && droppedOut && (
               <div className="bcb-player-stats">
                 <span className="bcb-score">{gameState?.viewerScore ?? 0} pts</span>
                 <span className="bcb-dot" aria-hidden />
@@ -193,7 +250,20 @@ export const ActionControls: React.FC = () => {
         </div>
 
         <div className="bcb-actions">
-          {droppedOut && (
+          {viewerIsEliminated && (
+            <div
+              className="bcb-dropped"
+              style={{
+                background: 'linear-gradient(135deg, rgba(185, 28, 28, 0.25), rgba(69, 10, 10, 0.35))',
+                border: '1px solid rgba(239, 68, 68, 0.6)',
+                color: '#fca5a5',
+              }}
+            >
+              You reached {threshold} points and are eliminated · Spectating remaining table
+            </div>
+          )}
+
+          {!viewerIsEliminated && droppedOut && (
             <div className="bcb-dropped">Dropped · {gameState?.viewerScore ?? 0} pts · sitting out</div>
           )}
 
@@ -225,6 +295,42 @@ export const ActionControls: React.FC = () => {
                 }}
               />
               Dealing cards…
+            </div>
+          )}
+
+          {viewerIsEliminated && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {gameState.canRejoin && (
+                <button
+                  type="button"
+                  id="btn-spectator-rejoin"
+                  onClick={() => {
+                    soundEngine.play('click');
+                    setConfirmRejoinOpen(true);
+                  }}
+                  className="bcb-action bcb-action--primary"
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    boxShadow: '0 0 12px rgba(16, 185, 129, 0.45)',
+                  }}
+                >
+                  <Sparkles size={16} />
+                  Re-Join (₹{gameState.rejoinFee || lastGameConfig?.entryFee || 8})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.play('click');
+                  leaveTable();
+                }}
+                className="bcb-action bcb-action--danger"
+              >
+                <LogOut size={16} />
+                Leave Table
+              </button>
             </div>
           )}
 
@@ -346,6 +452,93 @@ export const ActionControls: React.FC = () => {
                   onClick={handleConfirmDrop}
                 >
                   Confirm Drop
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.getElementById('root') || document.body
+        )}
+
+      {confirmRejoinOpen &&
+        createPortal(
+          <div className="royal-dialog-backdrop" role="presentation">
+            <div className="royal-dialog-card" role="dialog" aria-label="Confirm Re-Join">
+              <button
+                type="button"
+                className="royal-dialog-close"
+                onClick={() => setConfirmRejoinOpen(false)}
+                aria-label="Close"
+              >
+                <XCircle size={18} />
+              </button>
+
+              <div className="royal-dialog-crest-wrap">
+                <div className="royal-dialog-crest-glow" style={{ background: 'rgba(16, 185, 129, 0.4)' }} />
+                <div className="royal-dialog-crest-badge" style={{ border: '2px solid #34d399' }}>
+                  <Sparkles size={26} color="#34d399" />
+                </div>
+              </div>
+
+              <h3 className="royal-dialog-title">Re-Join Table?</h3>
+              <p className="royal-dialog-subtitle">
+                You are re-entering this Pool tournament. You will participate from the next deal.
+              </p>
+
+              <div
+                className="royal-dialog-penalty-box"
+                style={{
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  border: '1px solid rgba(52, 211, 153, 0.35)',
+                }}
+              >
+                <div className="royal-dialog-penalty-label">
+                  <span className="royal-dialog-penalty-tag" style={{ color: '#6ee7b7' }}>
+                    ENTRY FEE: ₹{gameState.rejoinFee || lastGameConfig?.entryFee || 8}
+                  </span>
+                  <span className="royal-dialog-penalty-desc">
+                    Starting Score: <strong>{gameState.rejoinScore} pts</strong> (Leader + 1)
+                  </span>
+                </div>
+                <div
+                  className="royal-dialog-penalty-badge"
+                  style={{
+                    color: '#34d399',
+                    background: 'rgba(52, 211, 153, 0.15)',
+                    border: '1px solid rgba(52, 211, 153, 0.4)',
+                  }}
+                >
+                  {gameState.rejoinScore} PTS
+                </div>
+              </div>
+
+              <div className="royal-dialog-actions">
+                <button
+                  type="button"
+                  className="royal-btn-gold"
+                  onClick={() => setConfirmRejoinOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    padding: '10px 22px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #6ee7b7',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    boxShadow: '0 0 15px rgba(16, 185, 129, 0.4)',
+                  }}
+                  onClick={() => {
+                    setConfirmRejoinOpen(false);
+                    soundEngine.play('click');
+                    socketClient.rejoinTable();
+                  }}
+                >
+                  Confirm & Re-Join
                 </button>
               </div>
             </div>

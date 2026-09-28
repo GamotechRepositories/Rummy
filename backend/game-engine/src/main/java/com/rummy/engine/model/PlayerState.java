@@ -211,6 +211,10 @@ public final class PlayerState implements Serializable {
         this.cumulativeScore += points;
     }
 
+    public void setCumulativeScore(int cumulativeScore) {
+        this.cumulativeScore = cumulativeScore;
+    }
+
     public long getChipBalance() {
         return chipBalance;
     }

@@ -86,4 +86,45 @@ class TableActorTest {
         assertThat(hasGameView).isTrue();
         assertThat(hasGameEvent).isTrue();
     }
+
+    @Test
+    @DisplayName("Pool Rummy: Deal finish under threshold records deal history and does not eliminate player")
+    void testPoolRummyMultiDealAndElimination() {
+        Deck deck = Deck.createStandard13CardDeck();
+        GameState poolState = new GameState("G_POOL", "T_POOL", "POOL_101", "1.0.0", List.of(), deck);
+        TableActor poolActor = new TableActor("T_POOL", poolState, new com.rummy.engine.rules.Pool101Rules(), new GameEngine(), objectMapper, scheduler);
+
+        Instant now = Instant.now();
+        poolActor.processCommand(new JoinCommand("c1", "G_POOL", "P1", "Player 1", 0, false, now), "req-1");
+        poolActor.processCommand(new JoinCommand("c2", "G_POOL", "P2", "Player 2", 1, false, now), "req-2");
+        poolActor.processCommand(new ReadyCommand("c3", "G_POOL", "P1", now), "req-3");
+        poolActor.processCommand(new ReadyCommand("c4", "G_POOL", "P2", now), "req-4");
+        poolActor.processCommand(new StartGameCommand("c5", "G_POOL", "P1", now), "req-5");
+
+        assertThat(poolActor.getState().getStatus()).isEqualTo(GameStatus.IN_PROGRESS);
+
+        // Player 2 drops in Deal 1 (first drop = 20 pts)
+        poolActor.processCommand(new DropCommand("c6", "G_POOL", "P2", now), "req-6");
+
+        // Deal 1 is COMPLETED because P2 dropped, but P2's score is 20 < 101, so neither is ELIMINATED
+        assertThat(poolActor.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
+        assertThat(poolActor.getState().getPlayer("P2").orElseThrow().getCumulativeScore()).isEqualTo(20);
+        assertThat(poolActor.getState().getPlayer("P2").orElseThrow().getStatus()).isEqualTo(PlayerStatus.DROPPED);
+        assertThat(poolActor.getDealHistory()).hasSize(1);
+        assertThat(poolActor.getDealHistory().get(0).dealNumber()).isEqualTo(1);
+        assertThat(poolActor.getDealHistory().get(0).winnerPlayerId()).isEqualTo("P1");
+
+        // Test Re-join: If player P2 is eliminated with 105 points while P1 has 0 points
+        PlayerState p2 = poolActor.getState().getPlayer("P2").orElseThrow();
+        p2.setCumulativeScore(105);
+        p2.markEliminated();
+
+        // Attempt rejoin for P2: max active is P1 with 0 points (<= 79)
+        boolean rejoinded = poolActor.handleRejoin("P2", "req-rejoin");
+        assertThat(rejoinded).isTrue();
+        assertThat(p2.getStatus()).isEqualTo(PlayerStatus.READY);
+        assertThat(p2.getCumulativeScore()).isEqualTo(1); // 0 + 1 = 1
+
+        poolActor.destroy();
+    }
 }

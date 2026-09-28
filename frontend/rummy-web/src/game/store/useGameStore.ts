@@ -311,7 +311,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const viewerDropped = view.viewerStatus === 'DROPPED' && view.gameStatus === 'IN_PROGRESS';
     const nextSelected = viewerDropped ? [] : selectedCardIds.filter((id) => handIds.has(id));
 
-    if (view.gameStatus === 'COMPLETED' || view.gameStatus === 'ABORTED') {
+    const isTournamentOver =
+      view.gameStatus === 'ABORTED' ||
+      (view.gameStatus === 'COMPLETED' && (!view.eliminationThreshold || !!view.tournamentWinnerId));
+
+    if (isTournamentOver) {
       clearActiveSessionLocal();
     }
 

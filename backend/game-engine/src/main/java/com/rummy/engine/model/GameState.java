@@ -27,6 +27,8 @@ public final class GameState implements Serializable {
     private GameStatus status;
     private String winnerPlayerId;
     private List<CardGroup> winningGroups;
+    private int dealNumber = 1;
+    private int dealerSeatIndex = 0;
     private final Instant createdAt;
     private Instant finishedAt;
 
@@ -50,6 +52,7 @@ public final class GameState implements Serializable {
         this.status = GameStatus.WAITING_FOR_PLAYERS;
         this.winnerPlayerId = null;
         this.winningGroups = null;
+        this.dealNumber = 1;
         this.createdAt = Instant.now();
         this.finishedAt = null;
     }
@@ -95,6 +98,7 @@ public final class GameState implements Serializable {
 
     /**
      * Reset table for another deal while keeping seated players.
+     * Non-eliminated players are prepared for a new deal; eliminated players retain their ELIMINATED status.
      */
     public void prepareForNewDeal(Deck freshDeck) {
         Objects.requireNonNull(freshDeck, "freshDeck must not be null");
@@ -107,9 +111,47 @@ public final class GameState implements Serializable {
         this.winningGroups = null;
         this.finishedAt = null;
         this.status = GameStatus.WAITING_FOR_PLAYERS;
+        rotateDealer();
         for (PlayerState player : players) {
-            player.prepareForNewDeal();
+            if (player.getStatus() != PlayerStatus.ELIMINATED) {
+                player.prepareForNewDeal();
+            }
         }
+    }
+
+    public int getDealerSeatIndex() {
+        return dealerSeatIndex;
+    }
+
+    public void setDealerSeatIndex(int dealerSeatIndex) {
+        this.dealerSeatIndex = dealerSeatIndex;
+    }
+
+    public void rotateDealer() {
+        List<PlayerState> active = players.stream()
+                .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
+                .sorted(Comparator.comparingInt(PlayerState::getSeatIndex))
+                .toList();
+        if (!active.isEmpty()) {
+            int current = this.dealerSeatIndex;
+            PlayerState next = active.stream()
+                    .filter(p -> p.getSeatIndex() > current)
+                    .findFirst()
+                    .orElse(active.get(0));
+            this.dealerSeatIndex = next.getSeatIndex();
+        }
+    }
+
+    public int getDealNumber() {
+        return dealNumber;
+    }
+
+    public void setDealNumber(int dealNumber) {
+        this.dealNumber = dealNumber;
+    }
+
+    public void incrementDealNumber() {
+        this.dealNumber++;
     }
 
     public CardInstance takeTopDiscard() {
