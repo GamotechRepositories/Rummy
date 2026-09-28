@@ -7,7 +7,7 @@ import { PlayerHand } from './PlayerHand';
 import { ActionControls } from './ActionControls';
 import { DealAnimation, type DealTarget } from './DealAnimation';
 import { DeclareModal } from './DeclareModal';
-import { LogOut, Wifi, AlertCircle, Menu, X, ShieldAlert, Trophy } from 'lucide-react';
+import { LogOut, Wifi, AlertCircle, Menu, X, ShieldAlert } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { FullscreenToggle } from './FullscreenToggle';
 import { soundEngine } from '../audio/soundEngine';
@@ -252,7 +252,6 @@ export const GameBoard: React.FC = () => {
     ? `₹${pointValue >= 1 ? pointValue.toFixed(0) : pointValue.toFixed(2)}/pt`
     : `Entry ₹${entryFee}`;
 
-  const tableHeaderSubtitle = `${variantName} · ${stakeLabel} · ${maxSeats} Players`;
   const totalPot = ((opponents.length + 1) * entryFee).toFixed(2);
 
   if (!gameState) {
@@ -327,35 +326,31 @@ export const GameBoard: React.FC = () => {
           <div className="board-hud" aria-label="Table status">
             <div className="board-info-plate">
               <div className="board-info-row">
-                <span className="board-info-variant">{tableHeaderSubtitle}</span>
+                <span className="board-info-variant">
+                  <span className="board-info-variant-title">{variantName}</span>
+                  <span className="board-info-variant-stake"> · {stakeLabel}</span>
+                  <span className="board-info-variant-seats"> · {maxSeats} Players</span>
+                </span>
                 {Boolean(gameState?.eliminationThreshold || rawRulesetId.includes('POOL')) && (
                   <>
                     <span className="board-info-sep" aria-hidden />
-                    <span
-                      style={{
-                        color: '#fef08a',
-                        fontWeight: 800,
-                        fontSize: '11px',
-                        letterSpacing: '0.4px',
-                        background: 'rgba(251, 191, 36, 0.15)',
-                        border: '1px solid rgba(251, 191, 36, 0.3)',
-                        borderRadius: '6px',
-                        padding: '1px 6px',
-                      }}
-                    >
-                      DEAL {gameState?.dealNumber ?? 1}
+                    <span className="board-info-deal">
+                      <span className="board-info-deal-full">DEAL {gameState?.dealNumber ?? 1}</span>
+                      <span className="board-info-deal-short">D{gameState?.dealNumber ?? 1}</span>
                     </span>
                   </>
                 )}
                 <span className="board-info-sep" aria-hidden />
-                <span className="board-info-pot">POT ₹{totalPot}</span>
+                <span className="board-info-pot">
+                  <span className="board-info-pot-label">POT </span>₹{totalPot}
+                </span>
                 <span
                   className={`board-info-live${
                     connectionStatus === 'CONNECTED' ? ' ok' : ''
                   }`}
                 >
                   <Wifi size={10} />
-                  {connectionStatus === 'CONNECTED' ? 'Live' : '…'}
+                  <span className="board-info-live-text">{connectionStatus === 'CONNECTED' ? 'Live' : '…'}</span>
                 </span>
               </div>
             </div>
@@ -368,21 +363,10 @@ export const GameBoard: React.FC = () => {
                     soundEngine.play('click');
                     setScoreboardOpen(true);
                   }}
-                  className="board-hud-menu"
-                  style={{
-                    color: '#fbbf24',
-                    border: '1px solid rgba(251, 191, 36, 0.4)',
-                    background: 'rgba(251, 191, 36, 0.12)',
-                    gap: '4px',
-                    padding: '0 8px',
-                    width: 'auto',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                  }}
-                  title="Live Pool Scoreboard"
+                  className="board-hud-scores-btn"
+                  title="Pool Scoreboard"
                 >
-                  <Trophy size={14} />
-                  <span>Scores</span>
+                  Scores
                 </button>
               )}
               <SoundToggle compact />

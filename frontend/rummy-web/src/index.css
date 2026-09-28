@@ -176,24 +176,32 @@ h1, h2, h3, h4, .font-display {
 }
 
 .board-info-plate {
-  background: rgba(8, 16, 12, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: clamp(8px, 0.9cqw, 10px);
-  padding: clamp(4px, 0.9cqh, 7px) clamp(8px, 1cqw, 12px);
+  background: rgba(8, 16, 12, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: clamp(6px, 1vw, 10px);
+  padding: clamp(3px, 0.6vh, 6px) clamp(6px, 0.8vw, 12px);
   backdrop-filter: blur(10px);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-  max-width: min(420px, 70%);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  max-width: calc(100vw - 230px);
+  display: flex;
+  align-items: center;
+  flex-shrink: 1;
+  overflow: hidden;
 }
 
 .board-info-row {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: clamp(4px, 0.7cqw, 8px) clamp(6px, 0.9cqw, 10px);
+  flex-wrap: nowrap;
+  gap: clamp(4px, 0.6vw, 8px);
+  white-space: nowrap;
 }
 
 .board-info-variant {
-  font-size: var(--ui-font, 12px);
+  display: inline-flex;
+  align-items: center;
+  font-size: clamp(10px, 0.85vw, 12.5px);
   font-weight: 650;
   color: #e8edf2;
   letter-spacing: 0.01em;
@@ -202,30 +210,92 @@ h1, h2, h3, h4, .font-display {
 
 .board-info-sep {
   width: 1px;
-  height: 12px;
+  height: clamp(10px, 1.2vh, 13px);
   background: rgba(255, 255, 255, 0.18);
   flex-shrink: 0;
 }
 
+.board-info-deal {
+  display: inline-flex;
+  align-items: center;
+  color: #fef08a;
+  font-weight: 800;
+  font-size: clamp(9.5px, 0.75vw, 11px);
+  letter-spacing: 0.4px;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 5px;
+  padding: 1px clamp(4px, 0.4vw, 6px);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.board-info-deal-short {
+  display: none;
+}
+
 .board-info-pot {
-  font-size: var(--ui-font, 12px);
+  font-size: clamp(10.5px, 0.85vw, 12.5px);
   font-weight: 750;
   color: #f5d76e;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .board-info-live {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: var(--ui-font-sm, 11px);
+  gap: 3px;
+  font-size: clamp(9.5px, 0.75vw, 11px);
   font-weight: 700;
   color: #f0c14b;
-  margin-left: 2px;
+  margin-left: 1px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .board-info-live.ok {
   color: #5eead4;
+}
+
+@media (max-width: 900px) {
+  .board-info-variant-seats {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .board-info-plate {
+    max-width: calc(100vw - 200px);
+    padding: 3px 8px;
+  }
+  .board-info-row {
+    gap: 5px;
+  }
+}
+
+@media (max-width: 580px) {
+  .board-info-variant-stake {
+    display: none;
+  }
+  .board-info-deal-full {
+    display: none;
+  }
+  .board-info-deal-short {
+    display: inline;
+  }
+  .board-info-pot-label {
+    display: none;
+  }
+}
+
+@media (max-width: 440px) {
+  .board-info-live-text {
+    display: none;
+  }
+  .board-info-plate {
+    max-width: calc(100vw - 165px);
+  }
 }
 
 .board-hud-right {
@@ -258,6 +328,41 @@ h1, h2, h3, h4, .font-display {
   color: #f5d76e;
 }
 
+.board-hud-scores-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 16, 12, 0.78);
+  color: #e8edf2;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-sizing: border-box;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: all 0.16s ease;
+  user-select: none;
+}
+
+.board-hud-scores-btn:hover {
+  border-color: rgba(245, 215, 110, 0.6);
+  background: rgba(18, 28, 22, 0.9);
+  color: #f5d76e;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4), 0 0 10px rgba(245, 215, 110, 0.12);
+}
+
+.board-hud-scores-btn:active {
+  transform: translateY(1px);
+}
+
 /* ========== POOL RUMMY SPECIALIZED UI ========== */
 .dealer-puck {
   position: absolute;
@@ -267,16 +372,17 @@ h1, h2, h3, h4, .font-display {
   height: 20px;
   border-radius: 50%;
   background: linear-gradient(135deg, #fbbf24 0%, #b45309 100%);
-  border: 1.5px solid #fef08a;
-  color: #1e1000;
+  border: 1.5px solid #ffffff;
+  color: #1a0a00;
   font-weight: 900;
   font-size: 10.5px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7), 0 0 10px rgba(251, 191, 36, 0.6);
-  z-index: 25;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.85), 0 0 10px rgba(251, 191, 36, 0.75);
+  z-index: 40 !important;
   user-select: none;
+  pointer-events: none;
 }
 
 .danger-zone-pill {
@@ -346,473 +452,135 @@ h1, h2, h3, h4, .font-display {
   color: #fca5a5;
 }
 
-/* ========== POOL RUMMY LUXURY SCOREBOARD MODAL ========== */
-.pool-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1250;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: rgba(4, 8, 18, 0.82);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  animation: fadeIn 0.2s ease-out;
-}
-
-.pool-modal-card {
-  position: relative;
-  width: 100%;
-  max-width: 880px;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  border-radius: 24px;
-  background: radial-gradient(circle at 50% 0%, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98) 65%, rgba(4, 7, 18, 0.99) 100%);
-  border: 1.5px solid rgba(251, 191, 36, 0.45);
-  box-shadow: 0 30px 70px -10px rgba(0, 0, 0, 0.85),
-              0 0 40px rgba(245, 158, 11, 0.22),
-              inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  overflow: hidden;
-  animation: popInBounce 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.pool-modal-header {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 24px;
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.18) 0%, rgba(15, 23, 42, 0.6) 100%);
-  border-bottom: 1px solid rgba(251, 191, 36, 0.25);
-}
-
-.pool-header-left {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.pool-header-trophy {
-  width: 46px;
-  height: 46px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #fbbf24 0%, #b45309 100%);
-  border: 1.5px solid #fef08a;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #1a0f00;
-  box-shadow: 0 0 20px rgba(251, 191, 36, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.4);
-  flex-shrink: 0;
-}
-
-.pool-header-title-block {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.pool-header-title {
-  font-size: 20px;
-  font-weight: 900;
-  letter-spacing: 0.5px;
-  background: linear-gradient(180deg, #ffffff 0%, #fef08a 55%, #f59e0b 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  margin: 0;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
-}
-
-.pool-header-chips {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 2px;
-}
-
-.pool-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-}
-
-.pool-chip--deal {
-  background: rgba(251, 191, 36, 0.18);
-  border: 1px solid rgba(251, 191, 36, 0.45);
-  color: #fef08a;
-}
-
-.pool-chip--limit {
-  background: rgba(239, 68, 68, 0.18);
-  border: 1px solid rgba(239, 68, 68, 0.45);
-  color: #fca5a5;
-}
-
-.pool-chip--active {
-  background: rgba(16, 185, 129, 0.18);
-  border: 1px solid rgba(16, 185, 129, 0.45);
-  color: #6ee7b7;
-}
-
-.pool-modal-close {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.pool-modal-close:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.6);
-  color: #fca5a5;
-  transform: rotate(90deg) scale(1.08);
-}
-
-.pool-table-body-wrap {
-  overflow-x: auto;
+/* ========== POOL SCOREBOARD (MATCHING ROYAL DIALOG DESIGN) ========== */
+.royal-dialog-card.royal-dialog-card--scoreboard {
+  width: min(880px, 95vw) !important;
+  max-width: 880px !important;
+  max-height: min(92vh, 700px);
+  padding: 26px 32px 24px;
   overflow-y: auto;
-  padding: 16px 22px;
-  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 175, 55, 0.4) transparent;
 }
 
-.pool-table-body-wrap::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+.royal-dialog-card.royal-dialog-card--scoreboard::-webkit-scrollbar {
+  width: 5px;
 }
-.pool-table-body-wrap::-webkit-scrollbar-thumb {
-  background: rgba(251, 191, 36, 0.25);
+
+.royal-dialog-card.royal-dialog-card--scoreboard::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.35);
   border-radius: 4px;
 }
 
-.pool-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0 8px;
-  font-size: 13.5px;
+.royal-dialog-card.royal-dialog-card--scoreboard::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.pool-th {
+.royal-scoreboard-wrap {
+  margin: 0 0 16px;
   padding: 8px 14px;
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
+  background: rgba(12, 4, 7, 0.65);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 175, 55, 0.3) transparent;
+}
+
+.royal-scoreboard-wrap::-webkit-scrollbar {
+  height: 4px;
+}
+
+.royal-scoreboard-wrap::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.3);
+  border-radius: 4px;
+}
+
+.royal-scoreboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+
+.royal-scoreboard-table th {
+  padding: 8px 10px;
   color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.pool-tr {
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  transition: all 0.2s ease;
+.royal-scoreboard-table td {
+  padding: 10px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
 }
 
-.pool-tr:hover {
-  background: rgba(30, 41, 59, 0.7);
-  border-color: rgba(251, 191, 36, 0.3);
+.royal-scoreboard-table tr:first-child td {
+  border-top: none;
 }
 
-.pool-tr--viewer {
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.16) 0%, rgba(15, 23, 42, 0.8) 100%) !important;
-  border: 1.5px solid rgba(251, 191, 36, 0.55) !important;
-  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.15);
+.royal-scoreboard-row--viewer {
+  background: rgba(212, 175, 55, 0.08);
 }
 
-.pool-tr--danger {
-  border: 1.5px solid rgba(239, 68, 68, 0.6) !important;
-  background: linear-gradient(90deg, rgba(239, 68, 68, 0.15) 0%, rgba(15, 23, 42, 0.75) 100%) !important;
+.royal-scoreboard-row--eliminated {
+  opacity: 0.55;
 }
 
-.pool-tr--eliminated {
-  opacity: 0.6;
-  background: rgba(239, 68, 68, 0.06) !important;
-  border-color: rgba(239, 68, 68, 0.25) !important;
+.royal-score-pill {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 12px;
 }
 
-.pool-player-cell {
-  padding: 12px 16px;
-  border-radius: 12px 0 0 12px;
-}
-
-.pool-player-inner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.pool-rank-badge {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 900;
-  color: #94a3b8;
-  flex-shrink: 0;
-}
-
-.pool-rank-badge--crown {
-  font-size: 18px;
-  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.7));
-}
-
-.pool-avatar-ring {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: #1e293b;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-.pool-avatar-ring--leader {
-  border-color: #fbbf24;
-  box-shadow: 0 0 12px rgba(251, 191, 36, 0.6);
-}
-
-.pool-avatar-ring--danger {
-  border-color: #ef4444;
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
-}
-
-.pool-player-details {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.pool-player-name-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.pool-player-name {
-  font-size: 14px;
-  font-weight: 800;
-  color: #f8fafc;
-}
-
-.pool-player-badges-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.pool-badge-you {
-  font-size: 9px;
-  font-weight: 900;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: linear-gradient(135deg, #d97706, #b45309);
-  color: #fff;
-  letter-spacing: 0.4px;
-}
-
-.pool-badge-dealer {
-  width: 17px;
-  height: 17px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #fbbf24, #b45309);
-  border: 1px solid #fef08a;
-  color: #1a0f00;
-  font-size: 9.5px;
-  font-weight: 900;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-}
-
-.pool-badge-danger {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 9.5px;
-  font-weight: 900;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(239, 68, 68, 0.28);
-  border: 1px solid rgba(239, 68, 68, 0.7);
-  color: #fca5a5;
-  animation: pulseDanger 1.4s infinite ease-in-out;
-}
-
-.pool-deal-score-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  padding: 4px 10px;
-  border-radius: 8px;
-  font-weight: 800;
-  font-size: 12.5px;
-}
-
-.pool-deal-score-pill--won {
-  background: rgba(16, 185, 129, 0.18);
-  border: 1px solid rgba(16, 185, 129, 0.45);
+.royal-score-pill--win {
   color: #34d399;
+  font-weight: 800;
 }
 
-.pool-deal-score-pill--penalty {
-  background: rgba(239, 68, 68, 0.14);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  color: #f87171;
-}
-
-.pool-deal-score-pill--empty {
-  color: #475569;
-}
-
-.pool-score-col {
-  padding: 10px 16px;
-  text-align: center;
-  min-width: 140px;
-}
-
-.pool-score-num {
-  font-size: 15px;
-  font-weight: 900;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 3px;
-}
-
-.pool-score-max {
-  font-size: 11px;
-  font-weight: 700;
-  color: #64748b;
-}
-
-.pool-progress-track {
-  width: 100%;
-  height: 6px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-  margin: 5px 0 3px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.pool-progress-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.4s ease;
-}
-
-.pool-score-subtext {
-  font-size: 10.5px;
-  font-weight: 700;
-}
-
-.pool-status-cell {
-  padding: 10px 16px;
-  text-align: right;
-  border-radius: 0 12px 12px 0;
-}
-
-.pool-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 8px;
-  font-size: 11.5px;
-  font-weight: 900;
-  letter-spacing: 0.4px;
-}
-
-.pool-status-pill--active {
-  background: rgba(16, 185, 129, 0.18);
-  border: 1px solid rgba(16, 185, 129, 0.5);
-  color: #6ee7b7;
-}
-
-.pool-status-pill--eliminated {
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid rgba(239, 68, 68, 0.6);
+.royal-score-pill--penalty {
   color: #fca5a5;
 }
 
-.pool-modal-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 24px;
-  background: rgba(8, 14, 26, 0.95);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+.royal-score-bar-bg {
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 4px;
 }
 
-.pool-footer-cards {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  flex-wrap: wrap;
+.royal-score-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #d97706, #fbbf24);
+  transition: width 0.3s ease;
 }
 
-.pool-footer-card {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 11.5px;
-  color: #94a3b8;
+.royal-score-bar-fill--danger {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
 }
 
-.pool-footer-card strong {
-  color: #e2e8f0;
-}
-
-.pool-footer-close-btn {
-  padding: 10px 24px;
-  border-radius: 12px;
-  font-weight: 900;
-  font-size: 13px;
-  letter-spacing: 0.5px;
-  border: 1px solid #fef08a;
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  color: #1a0f00;
-  cursor: pointer;
-  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.35);
-  transition: all 0.15s ease;
-  flex-shrink: 0;
-}
-
-.pool-footer-close-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 22px rgba(245, 158, 11, 0.5);
-  filter: brightness(1.08);
+@media (max-width: 640px) {
+  .royal-dialog-card--scoreboard {
+    width: 96vw;
+    padding: 18px 12px 16px;
+  }
+  .royal-scoreboard-wrap {
+    padding: 6px 8px;
+    margin-bottom: 12px;
+  }
+  .royal-scoreboard-table th,
+  .royal-scoreboard-table td {
+    padding: 7px 6px;
+    font-size: 11px;
+  }
 }
 
 /* Joker sits with closed deck */
@@ -2161,6 +1929,13 @@ h1, h2, h3, h4, .font-display {
   animation: modalPopIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   margin: auto;
   box-sizing: border-box;
+}
+
+.royal-dialog-card.royal-dialog-card--scoreboard {
+  width: min(880px, 95vw) !important;
+  max-width: 880px !important;
+  max-height: min(92vh, 700px);
+  padding: 26px 32px 24px;
 }
 
 .royal-dialog-close {

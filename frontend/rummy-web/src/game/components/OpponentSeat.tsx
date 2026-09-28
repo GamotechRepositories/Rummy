@@ -207,13 +207,6 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
           )}
         </div>
 
-        {/* Dealer Button Puck */}
-        {isDealer && (
-          <div className="dealer-puck" title="Dealer for this deal">
-            D
-          </div>
-        )}
-
         {/* Status Overlay Badges */}
         {isEliminated && (
           <span
@@ -273,6 +266,13 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
           </span>
         )}
       </div>
+
+      {/* Dealer Button Puck - placed above bezel and timer ring */}
+      {isDealer && (
+        <div className="dealer-puck" title="Dealer for this deal">
+          D
+        </div>
+      )}
     </div>
   );
 
@@ -423,7 +423,7 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
                     : '#6ee7b7',
               }}
             >
-              {isEliminated ? 'OUT' : `Score: ${player.cumulativeScore ?? player.score ?? 0}/${threshold}`}
+              {isEliminated ? 'OUT' : `${player.cumulativeScore ?? player.score ?? 0}/${threshold}`}
             </div>
           )
         ) : (

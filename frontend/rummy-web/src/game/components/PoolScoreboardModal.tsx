@@ -1,6 +1,6 @@
 import React from 'react';
 import { useGameStore } from '../store/useGameStore';
-import { X, Trophy, ShieldAlert, ShieldCheck, User, Flame, Sparkles, Scale } from 'lucide-react';
+import { X, Trophy } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { socketClient } from '../websocket/GameSocketClient';
 import { photoForCharacter, getAvatarForPlayer } from '../utils/avatarUtils';
@@ -99,66 +99,66 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
 
   return (
     <div
-      className="pool-modal-overlay"
+      className="royal-dialog-backdrop"
+      role="presentation"
       onClick={onClose}
     >
       <div
-        className="pool-modal-card"
+        className="royal-dialog-card royal-dialog-card--scoreboard"
+        style={{ width: 'min(880px, 95vw)', maxWidth: '880px' }}
+        role="dialog"
+        aria-label="Pool Scoreboard"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal Header */}
-        <div className="pool-modal-header">
-          <div className="pool-header-left">
-            <div className="pool-header-trophy">
-              <Trophy size={24} />
-            </div>
-            <div className="pool-header-title-block">
-              <div className="pool-header-title-row">
-                <h2 className="pool-header-title">
-                  Pool {threshold} Tournament
-                </h2>
-              </div>
-              <div className="pool-header-chips">
-                <span className="pool-chip pool-chip--deal">
-                  🎯 Deal {currentDeal}
-                </span>
-                <span className="pool-chip pool-chip--limit">
-                  💀 Limit: {threshold} pts
-                </span>
-                <span className="pool-chip pool-chip--active">
-                  👥 {activeSurvivors}/{allPlayers.length} Active Survivors
-                </span>
-              </div>
-            </div>
-          </div>
+        {/* Close Button */}
+        <button
+          type="button"
+          className="royal-dialog-close"
+          onClick={() => {
+            soundEngine.play('click');
+            onClose();
+          }}
+          aria-label="Close"
+        >
+          <X size={18} />
+        </button>
 
-          <button
-            type="button"
-            className="pool-modal-close"
-            onClick={() => {
-              soundEngine.play('click');
-              onClose();
-            }}
-            title="Close scoreboard"
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
+        {/* Crest */}
+        <div className="royal-dialog-crest-wrap">
+          <div className="royal-dialog-crest-glow royal-dialog-crest-glow--amber" />
+          <div className="royal-dialog-crest-badge">
+            <Trophy size={26} color="#fbbf24" />
+          </div>
         </div>
 
-        {/* Table Container */}
-        <div className="pool-table-body-wrap">
-          <table className="pool-table">
+        {/* Title & Subtitle */}
+        <h3 className="royal-dialog-title">
+          Pool {threshold} Scoreboard
+        </h3>
+        <p className="royal-dialog-subtitle">
+          Deal {currentDeal} in progress · {activeSurvivors} of {allPlayers.length} players active
+        </p>
+
+        {/* Variant Badge */}
+        <div className="table-menu-badge-wrap" style={{ padding: '0 0 14px', display: 'flex', justifyContent: 'center' }}>
+          <span className="table-menu-name">
+            ♠ Pool {threshold} · Elimination at {threshold} pts
+          </span>
+        </div>
+
+        {/* Scoreboard Table Section */}
+        <div className="royal-scoreboard-wrap">
+          <table className="royal-scoreboard-table">
             <thead>
               <tr>
-                <th className="pool-th" style={{ width: '38%' }}>Player</th>
+                <th style={{ textAlign: 'left', minWidth: '150px' }}>Player</th>
                 {Array.from({ length: maxRecordedDeals }).map((_, idx) => (
-                  <th key={idx} className="pool-th" style={{ textAlign: 'center' }}>
+                  <th key={idx} style={{ textAlign: 'center', minWidth: '60px' }}>
                     Deal {idx + 1}
                   </th>
                 ))}
-                <th className="pool-th" style={{ textAlign: 'center', width: '22%' }}>Total Penalty</th>
-                <th className="pool-th" style={{ textAlign: 'right', width: '18%' }}>Status</th>
+                <th style={{ textAlign: 'center', minWidth: '110px' }}>Total Points</th>
+                <th style={{ textAlign: 'right', minWidth: '85px' }}>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -168,114 +168,85 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
                 const isDanger = !p.isEliminated && p.cumulativeScore >= threshold * 0.75;
                 const percent = Math.min(100, Math.round((p.cumulativeScore / threshold) * 100));
 
-                let barColor = 'linear-gradient(90deg, #10b981, #34d399)';
-                let textColor = '#34d399';
-                let subtext = `${threshold - p.cumulativeScore} pts to elimination`;
-                let subtextColor = '#94a3b8';
+                let scoreColor = '#34d399';
+                if (p.isEliminated) scoreColor = '#ef4444';
+                else if (isDanger) scoreColor = '#f87171';
+                else if (p.cumulativeScore >= threshold * 0.5) scoreColor = '#fbbf24';
 
-                if (p.isEliminated) {
-                  barColor = 'linear-gradient(90deg, #b91c1c, #ef4444)';
-                  textColor = '#ef4444';
-                  subtext = 'ELIMINATED';
-                  subtextColor = '#ef4444';
-                } else if (isDanger) {
-                  barColor = 'linear-gradient(90deg, #f97316, #ef4444)';
-                  textColor = '#f87171';
-                  subtext = `🔥 DANGER ZONE (${threshold - p.cumulativeScore} pts left)`;
-                  subtextColor = '#f87171';
-                } else if (p.cumulativeScore >= threshold * 0.5) {
-                  barColor = 'linear-gradient(90deg, #d97706, #fbbf24)';
-                  textColor = '#fbbf24';
-                  subtext = `${threshold - p.cumulativeScore} pts to elimination`;
-                  subtextColor = '#fbbf24';
-                }
-
-                const trClass = `pool-tr ${p.isViewer ? 'pool-tr--viewer' : ''} ${isDanger ? 'pool-tr--danger' : ''} ${p.isEliminated ? 'pool-tr--eliminated' : ''}`;
+                const rowClass = `${p.isViewer ? 'royal-scoreboard-row--viewer' : ''} ${p.isEliminated ? 'royal-scoreboard-row--eliminated' : ''}`;
 
                 return (
-                  <tr key={p.id} className={trClass}>
+                  <tr key={p.id} className={rowClass}>
                     {/* Player Info */}
-                    <td className="pool-player-cell">
-                      <div className="pool-player-inner">
-                        <div className={`pool-rank-badge ${isLeader ? 'pool-rank-badge--crown' : ''}`}>
-                          {isLeader ? '👑' : `#${rankIdx + 1}`}
-                        </div>
-
-                        <div className={`pool-avatar-ring ${isLeader ? 'pool-avatar-ring--leader' : ''} ${isDanger ? 'pool-avatar-ring--danger' : ''}`}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            overflow: 'hidden',
+                            border: `1.5px solid ${isLeader ? '#fbbf24' : 'rgba(255,255,255,0.2)'}`,
+                            background: '#1e293b',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
                           {p.avatarPhoto ? (
                             <img src={p.avatarPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           ) : (
-                            <User size={18} color="#94a3b8" />
+                            <span style={{ fontSize: '11px', color: '#94a3b8' }}>#</span>
                           )}
                         </div>
 
-                        <div className="pool-player-details">
-                          <div className="pool-player-name-line">
-                            <span className="pool-player-name" style={{ color: p.isViewer ? '#fef08a' : '#f8fafc' }}>
-                              {p.name}
-                            </span>
-                            {p.isViewer && <span className="pool-badge-you">YOU</span>}
+                        <div style={{ textAlign: 'left' }}>
+                          <div style={{ fontWeight: 800, color: p.isViewer ? '#fde047' : '#f8fafc', fontSize: '12.5px' }}>
+                            {p.name}
+                            {p.isViewer && <span style={{ color: '#fbbf24', marginLeft: '4px', fontSize: '10.5px' }}>(You)</span>}
                           </div>
-
-                          <div className="pool-player-badges-row">
-                            {isDealer && (
-                              <span className="pool-badge-dealer" title="Dealer for current deal">
-                                D
-                              </span>
-                            )}
-                            {isDanger && (
-                              <span className="pool-badge-danger">
-                                🔥 DANGER
-                              </span>
-                            )}
-                            {p.isBot && <span style={{ fontSize: '10px', color: '#64748b' }}>AI Player</span>}
-                            {isLeader && !p.isEliminated && (
-                              <span style={{ fontSize: '10px', fontWeight: 800, color: '#fbbf24' }}>Table Leader</span>
-                            )}
+                          <div style={{ fontSize: '10.5px', color: '#94a3b8', marginTop: '1px' }}>
+                            {isLeader && <span style={{ color: '#fbbf24', marginRight: '6px' }}>Leader</span>}
+                            {isDealer && <span style={{ color: '#fde047', marginRight: '6px' }}>Dealer</span>}
+                            {isDanger && <span style={{ color: '#f87171', marginRight: '6px' }}>Danger</span>}
+                            {p.isBot && <span>AI</span>}
                           </div>
                         </div>
                       </div>
                     </td>
 
-                    {/* Deal Scores */}
+                    {/* Deal Breakdown */}
                     {p.roundScores.map((pts, dIdx) => (
-                      <td key={dIdx} style={{ padding: '10px 8px', textAlign: 'center' }}>
+                      <td key={dIdx} style={{ textAlign: 'center' }}>
                         {pts === 0 ? (
-                          <span className="pool-deal-score-pill pool-deal-score-pill--won">✓ 0</span>
+                          <span className="royal-score-pill royal-score-pill--win">0</span>
                         ) : pts !== null ? (
-                          <span className="pool-deal-score-pill pool-deal-score-pill--penalty">+{pts}</span>
+                          <span className="royal-score-pill royal-score-pill--penalty">+{pts}</span>
                         ) : (
-                          <span className="pool-deal-score-pill pool-deal-score-pill--empty">—</span>
+                          <span style={{ color: '#64748b' }}>—</span>
                         )}
                       </td>
                     ))}
 
-                    {/* Penalty Score Bar */}
-                    <td className="pool-score-col">
-                      <div className="pool-score-num" style={{ color: textColor }}>
-                        <span>{p.cumulativeScore}</span>
-                        <span className="pool-score-max">/ {threshold}</span>
+                    {/* Total Penalty Points */}
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ fontWeight: 800, fontSize: '13px', color: scoreColor }}>
+                        {p.cumulativeScore} <span style={{ fontSize: '10.5px', color: '#64748b' }}>/ {threshold}</span>
                       </div>
-                      <div className="pool-progress-track">
+                      <div className="royal-score-bar-bg">
                         <div
-                          className="pool-progress-fill"
-                          style={{
-                            width: `${percent}%`,
-                            background: barColor,
-                          }}
+                          className={`royal-score-bar-fill ${isDanger || p.isEliminated ? 'royal-score-bar-fill--danger' : ''}`}
+                          style={{ width: `${percent}%` }}
                         />
-                      </div>
-                      <div className="pool-score-subtext" style={{ color: subtextColor }}>
-                        {subtext}
                       </div>
                     </td>
 
                     {/* Status */}
-                    <td className="pool-status-cell">
+                    <td style={{ textAlign: 'right' }}>
                       {p.isEliminated ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
-                          <span className="pool-status-pill pool-status-pill--eliminated">
-                            <ShieldAlert size={12} />
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
+                          <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '11px' }}>
                             ELIMINATED
                           </span>
                           {p.isViewer && gameState.canRejoin && (
@@ -286,28 +257,22 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
                                 socketClient.rejoinTable();
                               }}
                               style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                background: 'linear-gradient(135deg, #10b981, #059669)',
-                                border: '1px solid #6ee7b7',
-                                color: '#fff',
-                                fontSize: '11px',
+                                background: 'transparent',
+                                border: '1px solid #34d399',
+                                color: '#34d399',
+                                borderRadius: '4px',
+                                padding: '2px 6px',
+                                fontSize: '10px',
                                 fontWeight: 800,
-                                padding: '4px 10px',
-                                borderRadius: '8px',
                                 cursor: 'pointer',
-                                boxShadow: '0 0 10px rgba(16, 185, 129, 0.45)',
                               }}
                             >
-                              <Sparkles size={12} />
                               Re-Join @ {gameState.rejoinScore}
                             </button>
                           )}
                         </div>
                       ) : (
-                        <span className="pool-status-pill pool-status-pill--active">
-                          <ShieldCheck size={12} />
+                        <span style={{ color: '#34d399', fontWeight: 800, fontSize: '11px' }}>
                           ACTIVE
                         </span>
                       )}
@@ -319,33 +284,19 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="pool-modal-footer">
-          <div className="pool-footer-cards">
-            <div className="pool-footer-card">
-              <Flame size={15} color="#f59e0b" />
-              <span>
-                <strong>Drop Penalties:</strong> 1st = {threshold === 201 ? '25' : '20'} · Mid = {threshold === 201 ? '50' : '40'} · Cap = 80 pts
-              </span>
-            </div>
-            <div className="pool-footer-card">
-              <Scale size={15} color="#34d399" />
-              <span>
-                <strong>Re-Join Rule:</strong> Allowed if leader ≤ {threshold === 201 ? '174' : '79'} pts (Re-enter at Leader + 1)
-              </span>
-            </div>
-          </div>
 
+
+        {/* Action Button matching Leave Table modal */}
+        <div className="royal-dialog-actions" style={{ maxWidth: '320px', margin: '0 auto', width: '100%' }}>
           <button
             type="button"
-            id="btn-close-scoreboard"
-            className="pool-footer-close-btn"
+            className="royal-btn-gold"
             onClick={() => {
               soundEngine.play('click');
               onClose();
             }}
           >
-            Close Scoreboard
+            Resume Game
           </button>
         </div>
       </div>

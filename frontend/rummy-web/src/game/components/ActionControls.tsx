@@ -214,7 +214,7 @@ export const ActionControls: React.FC = () => {
                       border: `1px solid ${viewerIsEliminated ? '#ef4444' : 'rgba(255,255,255,0.15)'}`,
                     }}
                   >
-                    {viewerIsEliminated ? 'OUT' : `Total: ${viewerCumulative}/${threshold}`}
+                    {viewerIsEliminated ? 'OUT' : `${viewerCumulative}/${threshold}`}
                   </span>
                 )
               )}

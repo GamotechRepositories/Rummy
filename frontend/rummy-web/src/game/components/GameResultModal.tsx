@@ -725,7 +725,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
 
                           <div className="result-row-score-sub">
                             <span style={{ fontWeight: 800, color: p.isEliminated ? '#ef4444' : '#fbbf24' }}>
-                              Total: {p.cumulativeScore}/{threshold}
+                              {p.cumulativeScore}/{threshold}
                             </span>
                           </div>
                         </>
