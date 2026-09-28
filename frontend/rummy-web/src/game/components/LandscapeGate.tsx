@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, Smartphone } from 'lucide-react';
+import { RefreshCw, Smartphone, RotateCw } from 'lucide-react';
 import { useRequiresLandscape } from '../hooks/useRequiresLandscape';
 import { soundEngine } from '../audio/soundEngine';
 
@@ -11,12 +11,15 @@ interface LandscapeGateProps {
 
 /**
  * Real-rummy style mobile gate: blocks play screens in portrait until the
- * device is rotated to landscape (optional Screen Orientation lock).
- *
- * Visibility = React detection OR CSS media-query backup (DevTools / odd UAs).
+ * device is rotated to landscape (or forced via Enable landscape).
  */
 export const LandscapeGate: React.FC<LandscapeGateProps> = ({ enabled, children }) => {
-  const { needsRotate, requestLandscape } = useRequiresLandscape(enabled);
+  const {
+    needsRotate,
+    simulatedLandscape,
+    toggleFlip,
+    requestLandscape,
+  } = useRequiresLandscape(enabled);
 
   React.useEffect(() => {
     document.body.classList.toggle('force-landscape-screens', enabled);
@@ -40,45 +43,62 @@ export const LandscapeGate: React.FC<LandscapeGateProps> = ({ enabled, children 
         {children}
       </div>
 
-      <div
-        className={
-          needsRotate
-            ? 'rotate-device-overlay is-visible'
-            : 'rotate-device-overlay rotate-device-overlay--media'
-        }
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="rotate-title"
-      >
-        <div className="rotate-device-card">
-          <div className="rotate-device-icon-wrap" aria-hidden>
-            <Smartphone className="rotate-device-phone" size={56} strokeWidth={1.6} />
-            <RefreshCw className="rotate-device-arrow" size={22} strokeWidth={2.4} />
-          </div>
-
-          <h2 id="rotate-title" className="rotate-device-title">
-            Rotate your phone
-          </h2>
-          <p className="rotate-device-copy">
-            This table is built for landscape — like real online rummy. Turn your device sideways to
-            continue.
-          </p>
-
-          <button
-            type="button"
-            className="rotate-device-btn"
-            onClick={() => {
+      {simulatedLandscape && (
+        <button
+          type="button"
+          className="simulated-flip-badge"
+          onClick={(e) => {
+            e.stopPropagation();
+            try {
               soundEngine.play('click');
-              void requestLandscape();
-            }}
-          >
-            Enable landscape
-          </button>
-          <p className="rotate-device-hint">
-            Tap the button to allow rotation lock, or rotate the phone yourself.
-          </p>
+            } catch {
+              // ignore audio error
+            }
+            toggleFlip();
+          }}
+          title="Flip orientation 180°"
+          aria-label="Flip screen 180 degrees"
+        >
+          <RotateCw size={13} />
+          <span>Flip 180°</span>
+        </button>
+      )}
+
+      {needsRotate && (
+        <div
+          className="rotate-device-overlay is-visible"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rotate-title"
+        >
+          <div className="rotate-device-card">
+            <div className="rotate-device-icon-wrap" aria-hidden>
+              <Smartphone className="rotate-device-phone" size={56} strokeWidth={1.6} />
+              <RefreshCw className="rotate-device-arrow" size={22} strokeWidth={2.4} />
+            </div>
+
+            <h2 id="rotate-title" className="rotate-device-title">
+              Rotate your phone
+            </h2>
+
+            <button
+              type="button"
+              className="rotate-device-btn"
+              onClick={() => {
+                try {
+                  soundEngine.play('click');
+                } catch {
+                  // ignore audio error
+                }
+                void requestLandscape();
+              }}
+            >
+              Enable landscape
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 };
+

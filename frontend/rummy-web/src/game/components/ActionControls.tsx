@@ -350,7 +350,7 @@ export const ActionControls: React.FC = () => {
               </div>
             </div>
           </div>,
-          document.body
+          document.getElementById('root') || document.body
         )}
     </div>
   );

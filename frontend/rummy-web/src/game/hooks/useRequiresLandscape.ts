@@ -29,31 +29,109 @@ function isLikelyTouchOrPhone(): boolean {
   return ua || coarse || isCompactPlayViewport();
 }
 
-/** Try locking orientation to landscape if supported, without forcing full-screen takeover. */
-export async function tryLockLandscape(): Promise<void> {
+/**
+ * Try locking orientation to landscape.
+ * On mobile browsers (Chromium on Android), orientation.lock() requires the
+ * document to be in fullscreen mode first.
+ */
+export async function tryLockLandscape(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  let locked = false;
+
+  // 1. Enter fullscreen if supported (required for screen.orientation.lock on Android)
+  try {
+    const doc = document as Document & {
+      webkitFullscreenElement?: Element;
+      mozFullScreenElement?: Element;
+      msFullscreenElement?: Element;
+    };
+    const docEl = document.documentElement as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void>;
+      mozRequestFullScreen?: () => Promise<void>;
+      msRequestFullscreen?: () => Promise<void>;
+    };
+
+    const isFs = Boolean(
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement
+    );
+
+    if (!isFs) {
+      const reqFs =
+        docEl.requestFullscreen ||
+        docEl.webkitRequestFullscreen ||
+        docEl.mozRequestFullScreen ||
+        docEl.msRequestFullscreen;
+
+      if (reqFs) {
+        await reqFs.call(docEl);
+      }
+    }
+  } catch (err) {
+    console.warn('requestFullscreen warning:', err);
+  }
+
+  // 2. Lock screen orientation to landscape
   try {
     const orientation = screen.orientation as ScreenOrientation & {
       lock?: (orientation: string) => Promise<void>;
     };
-    if (orientation?.lock) {
+    if (orientation && typeof orientation.lock === 'function') {
       await orientation.lock('landscape');
+      locked = true;
+    } else if ((screen as any).lockOrientation) {
+      locked = Boolean((screen as any).lockOrientation('landscape'));
+    } else if ((screen as any).webkitLockOrientation) {
+      locked = Boolean((screen as any).webkitLockOrientation('landscape'));
+    } else if ((screen as any).mozLockOrientation) {
+      locked = Boolean((screen as any).mozLockOrientation('landscape'));
     }
-  } catch {
-    // ignore — overlay will prompt manual rotate if needed
+  } catch (err) {
+    console.warn('orientation.lock warning:', err);
   }
+
+  return locked;
 }
 
 export function useRequiresLandscape(enabled: boolean) {
   const [needsRotate, setNeedsRotate] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [simulatedLandscape, setSimulatedLandscape] = useState(false);
+  const [isFlipped, setIsFlipped] = useState(false);
 
   const recompute = useCallback(() => {
+    if (!enabled) {
+      setNeedsRotate(false);
+      setSimulatedLandscape(false);
+      return;
+    }
+
     const compact = isCompactPlayViewport();
     const mobileLike = isLikelyTouchOrPhone();
     setIsMobile(mobileLike);
+
+    const currentlyPortrait = isPortrait();
+
+    // If native landscape is active, clear simulated landscape
+    if (!currentlyPortrait) {
+      setSimulatedLandscape(false);
+      setNeedsRotate(false);
+      return;
+    }
+
+    // If already in simulated landscape (user tapped Enable landscape with auto-rotate off),
+    // don't show the gate
+    if (simulatedLandscape) {
+      setNeedsRotate(false);
+      return;
+    }
+
     // Require landscape for play screens whenever viewport is portrait + compact
-    setNeedsRotate(Boolean(enabled && isPortrait() && compact));
-  }, [enabled]);
+    setNeedsRotate(Boolean(compact));
+  }, [enabled, simulatedLandscape]);
 
   useEffect(() => {
     recompute();
@@ -78,20 +156,50 @@ export function useRequiresLandscape(enabled: boolean) {
     document.body.classList.toggle('landscape-gate-active', needsRotate);
     document.body.classList.toggle(
       'mobile-landscape-play',
-      Boolean(enabled && isMobile && !needsRotate)
+      Boolean(enabled && isMobile && (!needsRotate || simulatedLandscape))
     );
+    document.body.classList.toggle('simulated-landscape', simulatedLandscape);
+    document.body.classList.toggle('simulated-flipped', Boolean(simulatedLandscape && isFlipped));
+
     return () => {
       document.body.classList.remove('landscape-gate-active');
       document.body.classList.remove('mobile-landscape-play');
+      document.body.classList.remove('simulated-landscape');
+      document.body.classList.remove('simulated-flipped');
     };
-  }, [needsRotate, enabled, isMobile]);
+  }, [needsRotate, enabled, isMobile, simulatedLandscape, isFlipped]);
+
+  const toggleFlip = useCallback(() => {
+    setIsFlipped((prev) => !prev);
+  }, []);
 
   const requestLandscape = useCallback(async () => {
+    // 1. Try native fullscreen + orientation lock
     await tryLockLandscape();
-    // Give iOS a tick after orientationchange
-    window.setTimeout(recompute, 120);
-    recompute();
-  }, [recompute]);
 
-  return { needsRotate, isMobile, requestLandscape };
+    // 2. Wait a tick for browser window resize/orientationchange
+    await new Promise((resolve) => setTimeout(resolve, 180));
+
+    // 3. Check if native landscape resolved
+    if (!isPortrait()) {
+      setSimulatedLandscape(false);
+      setNeedsRotate(false);
+      return;
+    }
+
+    // 4. Fallback for Auto-Rotate OFF / iOS / unsupported lock:
+    // Force landscape mode via CSS virtual landscape so user can play immediately!
+    setSimulatedLandscape(true);
+    setNeedsRotate(false);
+  }, []);
+
+  return {
+    needsRotate,
+    isMobile,
+    simulatedLandscape,
+    isFlipped,
+    toggleFlip,
+    requestLandscape,
+  };
 }
+
