@@ -419,7 +419,14 @@ export const LobbyScreen: React.FC = () => {
               className="lobby-name-input"
             />
           ) : (
-            <button type="button" className="lobby-link-btn" onClick={() => setIsEditingName(true)}>
+            <button
+              type="button"
+              className="lobby-link-btn"
+              onClick={() => {
+                soundEngine.play('click');
+                setIsEditingName(true);
+              }}
+            >
               {localName || 'Player'}
               <Pencil size={12} strokeWidth={2} />
             </button>
@@ -440,7 +447,14 @@ export const LobbyScreen: React.FC = () => {
           <div className="lobby-balance">
             <Coins size={14} />
             <span>₹ {walletBalance.toLocaleString()}</span>
-            <button type="button" className="lobby-add-btn" onClick={() => setIsWalletOpen(true)}>
+            <button
+              type="button"
+              className="lobby-add-btn"
+              onClick={() => {
+                soundEngine.play('click');
+                setIsWalletOpen(true);
+              }}
+            >
               Add Cash
             </button>
           </div>
@@ -883,7 +897,7 @@ export const LobbyScreen: React.FC = () => {
                 className="stake-play-btn"
                 onClick={() => {
                   soundEngine.unlock();
-                  soundEngine.play('click');
+                  soundEngine.playOldClick();
                   void handlePlay();
                 }}
                 disabled={isMatchmaking}

@@ -5,6 +5,7 @@
 
 type SoundName =
   | 'click'
+  | 'oldClick'
   | 'select'
   | 'draw'
   | 'discard'
@@ -23,6 +24,12 @@ type SoundName =
 const MUTE_KEY = 'rummy_sound_muted';
 
 const SOUND_FILES = {
+  'coin-click': ['/sounds/mixkit-arcade-game-jump-coin-216.wav'],
+  'win': [
+    encodeURI('/sounds/u_ss015dykrt-brass-fanfare-with-timpani-and-winchimes-reverberated-146260 (1).mp3'),
+    '/sounds/u_ss015dykrt-brass-fanfare-with-timpani-and-winchimes-reverberated-146260 (1).mp3',
+  ],
+  'lose': ['/sounds/floraphonic-brass-fail-8-a-207130.mp3'],
   'deal-1': ['/sounds/card-deal.wav', '/sounds/card-deal.mp3'],
   'deal-2': ['/sounds/card-deal-2.wav', '/sounds/card-deal-2.mp3'],
   'slide-1': ['/sounds/card-slide.wav', '/sounds/card-slide.mp3'],
@@ -38,12 +45,42 @@ class SoundEngine {
   private sampleBuffers: Map<string, AudioBuffer> = new Map();
   private samplesLoading = false;
   private noiseBuffer: AudioBuffer | null = null;
+  private coinAudioPool: HTMLAudioElement[] = [];
+  private coinAudioIndex = 0;
+  private winAudio: HTMLAudioElement | null = null;
+  private loseAudio: HTMLAudioElement | null = null;
+  private lastWinPlay = 0;
+  private lastLosePlay = 0;
 
   constructor() {
     try {
       this.muted = localStorage.getItem(MUTE_KEY) === '1';
     } catch {
       this.muted = false;
+    }
+
+    // Pre-initialize HTML5 audio fallback pool for instant zero-latency clicks & end-game sounds
+    if (typeof Audio !== 'undefined') {
+      try {
+        for (let i = 0; i < 4; i++) {
+          const a = new Audio('/sounds/mixkit-arcade-game-jump-coin-216.wav');
+          a.volume = 0.65;
+          this.coinAudioPool.push(a);
+        }
+        this.winAudio = new Audio(
+          encodeURI('/sounds/u_ss015dykrt-brass-fanfare-with-timpani-and-winchimes-reverberated-146260 (1).mp3')
+        );
+        this.winAudio.volume = 0.8;
+        this.loseAudio = new Audio('/sounds/floraphonic-brass-fail-8-a-207130.mp3');
+        this.loseAudio.volume = 0.75;
+      } catch {
+        // ignore
+      }
+    }
+
+    // Automatically preload Web Audio sample buffers as soon as possible
+    if (typeof window !== 'undefined') {
+      setTimeout(() => this.preloadSamples(), 0);
     }
   }
 
@@ -309,6 +346,133 @@ class SoundEngine {
     noise.stop(t0 + dur + 0.02);
   }
 
+  /**
+   * Play arcade coin sound for button clicks.
+   * Uses decoded Web Audio buffer from /sounds/mixkit-arcade-game-jump-coin-216.wav
+   * with HTML5 audio fallback for instantaneous response.
+   */
+  playButtonClick(): void {
+    if (this.muted) return;
+    const ctx = this.ensureCtx();
+    if (!ctx) {
+      this.playCoinFallback();
+      return;
+    }
+    if (ctx.state === 'suspended') void ctx.resume();
+
+    const sample = this.sampleBuffers.get('coin-click');
+    if (sample) {
+      this.playBuffer(sample, {
+        volume: 0.65,
+        playbackRate: 1.0,
+      });
+      return;
+    }
+
+    if (this.playCoinFallback()) {
+      return;
+    }
+
+    this.tone(ctx, 880, 0.04, 'sine', 0.08);
+  }
+
+  private playCoinFallback(): boolean {
+    if (typeof Audio === 'undefined') return false;
+    try {
+      if (this.coinAudioPool.length === 0) {
+        for (let i = 0; i < 4; i++) {
+          const a = new Audio('/sounds/mixkit-arcade-game-jump-coin-216.wav');
+          a.volume = 0.65;
+          this.coinAudioPool.push(a);
+        }
+      }
+      const audio = this.coinAudioPool[this.coinAudioIndex % this.coinAudioPool.length];
+      this.coinAudioIndex++;
+      audio.currentTime = 0;
+      void audio.play().catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Old classic subtle sine click */
+  playOldClick(): void {
+    if (this.muted) return;
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') void ctx.resume();
+    this.tone(ctx, 880, 0.04, 'sine', 0.08);
+  }
+
+  /**
+   * Play brass fanfare with timpani and winchimes when player wins.
+   * Source: /sounds/u_ss015dykrt-brass-fanfare-with-timpani-and-winchimes-reverberated-146260 (1).mp3
+   */
+  playWin(): void {
+    if (this.muted) return;
+    const now = performance.now();
+    if (now - this.lastWinPlay < 2500) return;
+    this.lastWinPlay = now;
+
+    const ctx = this.ensureCtx();
+    if (ctx && ctx.state === 'suspended') void ctx.resume();
+
+    const sample = this.sampleBuffers.get('win');
+    if (sample && ctx) {
+      this.playBuffer(sample, { volume: 0.82, playbackRate: 1.0 });
+      return;
+    }
+
+    if (this.winAudio) {
+      try {
+        this.winAudio.currentTime = 0;
+        void this.winAudio.play().catch(() => {});
+        return;
+      } catch {
+        // fallback
+      }
+    }
+
+    if (ctx) {
+      this.arpeggio(ctx, [523, 659, 784, 1046], 0.09, 0.1);
+    }
+  }
+
+  /**
+   * Play brass fail sound when player loses.
+   * Source: /sounds/floraphonic-brass-fail-8-a-207130.mp3
+   */
+  playLose(): void {
+    if (this.muted) return;
+    const now = performance.now();
+    if (now - this.lastLosePlay < 2500) return;
+    this.lastLosePlay = now;
+
+    const ctx = this.ensureCtx();
+    if (ctx && ctx.state === 'suspended') void ctx.resume();
+
+    const sample = this.sampleBuffers.get('lose');
+    if (sample && ctx) {
+      this.playBuffer(sample, { volume: 0.78, playbackRate: 1.0 });
+      return;
+    }
+
+    if (this.loseAudio) {
+      try {
+        this.loseAudio.currentTime = 0;
+        void this.loseAudio.play().catch(() => {});
+        return;
+      } catch {
+        // fallback
+      }
+    }
+
+    if (ctx) {
+      this.sweep(ctx, 400, 180, 0.25, 0.1);
+    }
+  }
+
   play(name: SoundName): void {
     if (this.muted) return;
     const now = performance.now();
@@ -322,7 +486,10 @@ class SoundEngine {
 
     switch (name) {
       case 'click':
-        this.tone(ctx, 880, 0.04, 'sine', 0.08);
+        this.playButtonClick();
+        break;
+      case 'oldClick':
+        this.playOldClick();
         break;
       case 'select':
         this.tone(ctx, 660, 0.05, 'triangle', 0.07);
@@ -343,10 +510,10 @@ class SoundEngine {
         this.chord(ctx, [440, 554], 0.18, 0.09);
         break;
       case 'win':
-        this.arpeggio(ctx, [523, 659, 784, 1046], 0.09, 0.1);
+        this.playWin();
         break;
       case 'lose':
-        this.sweep(ctx, 400, 180, 0.25, 0.1);
+        this.playLose();
         break;
       case 'error':
         this.tone(ctx, 180, 0.16, 'sawtooth', 0.06);
