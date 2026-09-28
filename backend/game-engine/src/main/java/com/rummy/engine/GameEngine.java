@@ -133,7 +133,13 @@ public final class GameEngine {
                 .min(Comparator.comparingInt(PlayerState::getSeatIndex))
                 .orElseThrow();
 
-        TurnState turn = TurnState.startTurn(1, firstPlayer.getPlayerId(), cmd.timestamp(), DEFAULT_TURN_TIMEOUT_SECONDS);
+        // Account for dealing animation so the first player's turn timer starts after card distribution
+        int totalCardsDealt = state.getPlayers().size() * rules.getCardsPerPlayer();
+        long dealDurationMs = Math.max(0, totalCardsDealt - 1) * 120L + 460L + 280L;
+        long dealDurationSeconds = (long) Math.ceil(dealDurationMs / 1000.0);
+        long firstTurnTimeout = DEFAULT_TURN_TIMEOUT_SECONDS + dealDurationSeconds;
+
+        TurnState turn = TurnState.startTurn(1, firstPlayer.getPlayerId(), cmd.timestamp(), firstTurnTimeout);
         state.setTurnState(turn);
         state.setStatus(GameStatus.IN_PROGRESS);
 

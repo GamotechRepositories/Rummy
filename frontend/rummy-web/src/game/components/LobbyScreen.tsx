@@ -235,7 +235,6 @@ export const LobbyScreen: React.FC = () => {
     soundEngine.play('click');
     setSelectedVariant(variant);
     setCurrentPage('CONFIGURE_TABLE');
-    void tryLockLandscape();
   };
 
   const handlePlay = async (customConfig?: { rulesetId: string; entryFee: number; maxPlayers: number }) => {
@@ -561,6 +560,7 @@ export const LobbyScreen: React.FC = () => {
                   <div className="stake-step">
                     Step 2 of 2: <strong>Configure Stakes</strong>
                   </div>
+                  <SoundToggle compact />
                   <FullscreenToggle compact />
                 </div>
               </div>

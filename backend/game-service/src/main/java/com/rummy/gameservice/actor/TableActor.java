@@ -526,6 +526,12 @@ public final class TableActor {
 
         // Random 3–6s think time so the seat feels like a human, not an instant AI.
         long thinkSeconds = ThreadLocalRandom.current().nextInt(3, 7);
+        if (turn.getTurnNumber() == 1) {
+            int totalCards = state.getPlayers().size() * rules.getCardsPerPlayer();
+            long dealDurationMs = Math.max(0, totalCards - 1) * 120L + 460L + 280L;
+            long dealSeconds = (long) Math.ceil(dealDurationMs / 1000.0);
+            thinkSeconds += dealSeconds;
+        }
         log.info("[TableActor:{}] Bot {} thinking for {}s before acting", tableId, activePlayerId, thinkSeconds);
 
         if (botTurnFuture != null && !botTurnFuture.isDone()) {

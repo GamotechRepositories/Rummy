@@ -152,7 +152,13 @@ class GameSocketClient {
           // Sound cues from state transitions
           if (!prev && next.gameStatus === 'IN_PROGRESS') {
             soundEngine.play('deal');
-          } else if (prev && !prev.isMyTurn && next.isMyTurn && next.gameStatus === 'IN_PROGRESS') {
+          } else if (
+            prev &&
+            prev.gameStatus === 'IN_PROGRESS' &&
+            !prev.isMyTurn &&
+            next.isMyTurn &&
+            next.gameStatus === 'IN_PROGRESS'
+          ) {
             soundEngine.play('turn');
           } else if (
             prev?.gameStatus === 'IN_PROGRESS' &&

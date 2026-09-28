@@ -3,6 +3,7 @@ import type { OpponentView } from '../types/game';
 import { TurnTimerRing } from './TurnTimerRing';
 import { getAvatarForPlayer } from '../utils/avatarUtils';
 import { UserPlus } from 'lucide-react';
+import { useGameStore } from '../store/useGameStore';
 
 export type SeatPosition =
   | 'left'
@@ -126,7 +127,8 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
     );
   }
 
-  const isCurrentTurn = activePlayerId === player.playerId;
+  const dealInProgress = useGameStore((s) => s.dealInProgress);
+  const isCurrentTurn = activePlayerId === player.playerId && !dealInProgress;
   const isDropped = player.status === 'DROPPED';
   const isDeclared = player.status === 'DECLARED';
   const avatar = getAvatarForPlayer(player.displayName || player.playerId);

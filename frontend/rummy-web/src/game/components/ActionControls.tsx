@@ -28,6 +28,7 @@ export const ActionControls: React.FC = () => {
     groups,
     groupSelectedCards,
     autoSortHand,
+    dealInProgress,
   } = useGameStore();
   const [confirmDropOpen, setConfirmDropOpen] = React.useState(false);
 
@@ -150,7 +151,7 @@ export const ActionControls: React.FC = () => {
 
         <div className="bcb-player">
           <div className="bcb-avatar-wrap">
-            {isMyTurn && (
+            {isMyTurn && !dealInProgress && (
               <div className="bcb-timer">
                 <TurnTimerRing
                   turnDeadline={gameState.turnDeadline ?? null}
@@ -160,7 +161,7 @@ export const ActionControls: React.FC = () => {
                 />
               </div>
             )}
-            <div className={`bcb-avatar${isMyTurn ? ' on' : ''}`}>
+            <div className={`bcb-avatar${isMyTurn && !dealInProgress ? ' on' : ''}`}>
               <img className="bcb-avatar-photo" src={photoForCharacter(avatarId)} alt="" draggable={false} />
             </div>
           </div>
@@ -196,7 +197,38 @@ export const ActionControls: React.FC = () => {
             <div className="bcb-dropped">Dropped · {gameState?.viewerScore ?? 0} pts · sitting out</div>
           )}
 
-          {gameStatus === 'IN_PROGRESS' && !droppedOut && !discardPhase && (
+          {gameStatus === 'IN_PROGRESS' && dealInProgress && (
+            <div
+              className="bcb-dealing-pill"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 16px',
+                borderRadius: '999px',
+                background: 'rgba(251, 191, 36, 0.12)',
+                border: '1px solid rgba(251, 191, 36, 0.4)',
+                color: '#fef08a',
+                fontSize: '12px',
+                fontWeight: 700,
+                letterSpacing: '0.4px',
+              }}
+            >
+              <span
+                style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: '#fbbf24',
+                  boxShadow: '0 0 8px #fbbf24',
+                  animation: 'pulse 1.2s infinite ease-in-out',
+                }}
+              />
+              Dealing cards…
+            </div>
+          )}
+
+          {gameStatus === 'IN_PROGRESS' && !droppedOut && !discardPhase && !dealInProgress && (
             <>
               <button
                 id="btn-action-draw-deck"
@@ -221,7 +253,7 @@ export const ActionControls: React.FC = () => {
             </>
           )}
 
-          {gameStatus === 'IN_PROGRESS' && !droppedOut && discardPhase && (
+          {gameStatus === 'IN_PROGRESS' && !droppedOut && discardPhase && !dealInProgress && (
             <>
               <button
                 id="btn-action-discard"
@@ -246,7 +278,7 @@ export const ActionControls: React.FC = () => {
             </>
           )}
 
-          {gameStatus === 'IN_PROGRESS' && !droppedOut && (
+          {gameStatus === 'IN_PROGRESS' && !droppedOut && !dealInProgress && (
             <button
               id="btn-action-drop"
               type="button"

@@ -29,22 +29,8 @@ function isLikelyTouchOrPhone(): boolean {
   return ua || coarse || isCompactPlayViewport();
 }
 
-/** Call from a user gesture (e.g. Play / variant tap) for best lock success rate. */
+/** Try locking orientation to landscape if supported, without forcing full-screen takeover. */
 export async function tryLockLandscape(): Promise<void> {
-  try {
-    const docEl = document.documentElement as HTMLElement & {
-      webkitRequestFullscreen?: () => Promise<void> | void;
-    };
-    if (!document.fullscreenElement) {
-      if (docEl.requestFullscreen) {
-        await docEl.requestFullscreen();
-      } else if (docEl.webkitRequestFullscreen) {
-        await docEl.webkitRequestFullscreen();
-      }
-    }
-  } catch {
-    // ignore
-  }
   try {
     const orientation = screen.orientation as ScreenOrientation & {
       lock?: (orientation: string) => Promise<void>;
@@ -53,7 +39,7 @@ export async function tryLockLandscape(): Promise<void> {
       await orientation.lock('landscape');
     }
   } catch {
-    // ignore — overlay will prompt manual rotate
+    // ignore — overlay will prompt manual rotate if needed
   }
 }
 

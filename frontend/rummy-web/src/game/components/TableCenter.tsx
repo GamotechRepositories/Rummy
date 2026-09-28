@@ -21,9 +21,10 @@ export const TableCenter: React.FC = () => {
     discardHistory = [],
   } = gameState;
 
+  const dealInProgress = useGameStore((s) => s.dealInProgress);
   const waiting = gameState.gameStatus === 'WAITING_FOR_PLAYERS';
-  const canDraw = isDrawPhase(isMyTurn, turnPhase);
-  const canDiscardOrFinish = isDiscardPhase(isMyTurn, turnPhase);
+  const canDraw = !dealInProgress && isDrawPhase(isMyTurn, turnPhase);
+  const canDiscardOrFinish = !dealInProgress && isDiscardPhase(isMyTurn, turnPhase);
   const canTakeOpen = canDraw && !!topDiscard;
   const canDiscardHere = canDiscardOrFinish && selectedCardIds.length === 1;
   const canDeclare = canDiscardOrFinish && selectedCardIds.length === 1;

@@ -33,6 +33,7 @@ interface GameStoreState {
   lastKnownHand: CardInstance[];
   /** Soft-reconnect in progress (waiting for first GAME_VIEW). */
   resumePending: boolean;
+  dealInProgress: boolean;
 
   // Actions
   setConnectionStatus: (status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING') => void;
@@ -40,6 +41,7 @@ interface GameStoreState {
   setDisplayName: (displayName: string) => void;
   setAvatarId: (avatarId: string) => void;
   setHasJoinedTable: (joined: boolean) => void;
+  setDealInProgress: (inProgress: boolean) => void;
   leaveTable: () => void;
   setGameSettlement: (settlement: GameSettlementResult | null) => void;
   setResumePending: (pending: boolean) => void;
@@ -196,6 +198,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   autoMatchmakePending: false,
   lastKnownHand: [],
   resumePending: false,
+  dealInProgress: false,
 
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 
@@ -221,6 +224,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   setHasJoinedTable: (joined) => set({ hasJoinedTable: joined }),
+
+  setDealInProgress: (inProgress) => set({ dealInProgress: inProgress }),
 
   setGameSettlement: (settlement) => set({ gameSettlement: settlement }),
 
@@ -249,6 +254,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({
       hasJoinedTable: false,
       resumePending: false,
+      dealInProgress: false,
       gameState: null,
       gameSettlement: null,
       groups: [],

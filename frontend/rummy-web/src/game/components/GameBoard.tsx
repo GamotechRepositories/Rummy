@@ -59,6 +59,16 @@ export const GameBoard: React.FC = () => {
   const prevStatusRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
+    useGameStore.getState().setDealInProgress(dealPlaying);
+  }, [dealPlaying]);
+
+  React.useEffect(() => {
+    return () => {
+      useGameStore.getState().setDealInProgress(false);
+    };
+  }, []);
+
+  React.useEffect(() => {
     if (!resumePending || gameState) return;
     socketClient.ensureTableJoined();
     const t = window.setTimeout(() => {
@@ -382,7 +392,11 @@ export const GameBoard: React.FC = () => {
             }}
             onComplete={() => {
               setDealPlaying(false);
+              useGameStore.getState().setDealInProgress(false);
               setDealtCounts(null);
+              if (useGameStore.getState().gameState?.isMyTurn) {
+                soundEngine.play('turn');
+              }
             }}
           />
         </div>
