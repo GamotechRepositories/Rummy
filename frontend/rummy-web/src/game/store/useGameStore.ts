@@ -3,8 +3,12 @@ import type { CardInstance, GameSettlementResult, PlayerGameView, VisualCardGrou
 import { evaluateCardGroup, getCardScore } from '../rules/clientValidator';
 import {
   clearActiveSessionLocal,
+  clearPersistedCardGroups,
   getOrCreatePlayerId,
   persistActiveSession,
+  persistCardGroups,
+  readPersistedActiveTable,
+  readPersistedCardGroups,
   readPersistedDisplayName,
   readPersistedLastConfig,
 } from '../utils/sessionResume';
@@ -152,6 +156,8 @@ const getStoredPlayerId = (): string => getOrCreatePlayerId();
 
 const initialDisplayName = readPersistedDisplayName() || 'RoyalAce';
 const initialLastConfig = readPersistedLastConfig();
+const initialActiveTable = readPersistedActiveTable() || 'TBL_ROYAL_01';
+const initialGroups = readPersistedCardGroups(initialActiveTable) || [];
 
 /** Backend CardInstance may nest suit/rank under `card` and use `deckNumber`. */
 function normalizeCard(raw: unknown): CardInstance {
@@ -181,7 +187,7 @@ function normalizeHand(hand: unknown[] | undefined | null): CardInstance[] {
 }
 
 export const useGameStore = create<GameStoreState>((set, get) => ({
-  tableId: 'TBL_ROYAL_01',
+  tableId: initialActiveTable,
   playerId: getStoredPlayerId(),
   displayName: initialDisplayName,
   avatarId: readOrCreateAvatarId(),
@@ -189,7 +195,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   hasJoinedTable: false,
   gameState: null,
   gameSettlement: null,
-  groups: [],
+  groups: initialGroups,
   selectedCardIds: [],
   isDeclareModalOpen: false,
   errorMessage: null,
@@ -267,7 +273,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   updateGameState: (view) => {
-    const { groups, selectedCardIds, lastKnownHand } = get();
+    const { groups, selectedCardIds, lastKnownHand, gameState: prevGameState } = get();
     const hand = normalizeHand(view.hand || []);
     const cutJoker = view.cutJoker ? normalizeCard(view.cutJoker) : null;
     const topDiscard = view.topDiscard ? normalizeCard(view.topDiscard) : null;
@@ -302,10 +308,31 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       turnPhase: view.turnPhase,
     };
 
+    // If deal changed, clear previous deal's groups
+    const isNewGame = Boolean(
+      prevGameState?.gameId && view.gameId && prevGameState.gameId !== view.gameId
+    );
+    if (isNewGame) {
+      clearPersistedCardGroups();
+    }
+
+    // If in-memory groups is empty or came from previous game, try restoring from storage
+    const restoredGroups = !isNewGame && groups.length === 0
+      ? (readPersistedCardGroups(view.tableId, view.gameId) || [])
+      : [];
+
+    const effectiveExistingGroups = isNewGame
+      ? []
+      : groups.length > 0
+        ? groups
+        : restoredGroups;
+
     const updatedGroups =
       hand.length === 0
-        ? (groups.length > 0 ? groups : organizeHandIntoGroups([], nextLastKnown, cutJoker))
-        : organizeHandIntoGroups(groups, hand, cutJoker);
+        ? (effectiveExistingGroups.length > 0
+            ? effectiveExistingGroups
+            : organizeHandIntoGroups([], nextLastKnown, cutJoker))
+        : organizeHandIntoGroups(effectiveExistingGroups, hand, cutJoker);
 
     const handIds = new Set(effectiveHand.map((c) => c.instanceId));
     const viewerDropped = view.viewerStatus === 'DROPPED' && view.gameStatus === 'IN_PROGRESS';
@@ -317,6 +344,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     if (isTournamentOver) {
       clearActiveSessionLocal();
+      clearPersistedCardGroups();
+    } else if (
+      view.gameStatus === 'IN_PROGRESS' &&
+      updatedGroups.length > 0 &&
+      !viewerDropped
+    ) {
+      persistCardGroups(view.tableId, view.gameId, updatedGroups);
     }
 
     set({
@@ -384,11 +418,18 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       });
     }
 
+    const { tableId } = get();
+    const activeTable = gameState?.tableId || tableId;
+    const activeGame = gameState?.gameId;
+    if (activeTable && remainingGroups.length > 0) {
+      persistCardGroups(activeTable, activeGame, remainingGroups);
+    }
+
     set({ groups: remainingGroups, selectedCardIds: [] });
   },
 
   moveCardsToGroup: (cardIds, targetGroupId) => {
-    const { groups, gameState } = get();
+    const { groups, gameState, tableId } = get();
     if (gameState?.viewerStatus === 'DROPPED') return;
     if (!cardIds.length) return;
 
@@ -451,11 +492,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       }
     }
 
+    const activeTable = gameState?.tableId || tableId;
+    const activeGame = gameState?.gameId;
+    if (activeTable && remainingGroups.length > 0) {
+      persistCardGroups(activeTable, activeGame, remainingGroups);
+    }
+
     set({ groups: remainingGroups, selectedCardIds: [] });
   },
 
   ungroupCard: (cardId) => {
-    const { groups, gameState } = get();
+    const { groups, gameState, tableId } = get();
     let targetCard: CardInstance | null = null;
     const nextGroups: VisualCardGroup[] = [];
 
@@ -489,11 +536,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       });
     }
 
+    const activeTable = gameState?.tableId || tableId;
+    const activeGame = gameState?.gameId;
+    if (activeTable && nextGroups.length > 0) {
+      persistCardGroups(activeTable, activeGame, nextGroups);
+    }
+
     set({ groups: nextGroups });
   },
 
   autoSortHand: () => {
-    const { gameState } = get();
+    const { gameState, tableId } = get();
     if (gameState?.viewerStatus === 'DROPPED') return;
     const hand = gameState?.hand;
     if (!hand || !hand.length) return;
@@ -524,6 +577,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ),
       })
     );
+
+    const activeTable = gameState?.tableId || tableId;
+    const activeGame = gameState?.gameId;
+    if (activeTable) {
+      persistCardGroups(activeTable, activeGame, newGroups, true);
+    }
 
     set({ groups: newGroups, selectedCardIds: [] });
   },

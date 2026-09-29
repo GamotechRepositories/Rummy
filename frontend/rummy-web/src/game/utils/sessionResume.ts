@@ -1,11 +1,21 @@
 import { getApiBaseUrl } from './apiConfig';
+import type { VisualCardGroup } from '../types/game';
 
 const KEYS = {
   playerId: 'rummy_player_id',
   activeTable: 'rummy_active_table',
   displayName: 'rummy_display_name',
   lastConfig: 'rummy_last_game_config',
+  cardGroups: 'rummy_card_groups',
 } as const;
+
+export interface PersistedCardGroupData {
+  tableId: string;
+  gameId?: string;
+  groups: VisualCardGroup[];
+  isSorted?: boolean;
+  savedAt: number;
+}
 
 function storageGet(key: string): string | null {
   try {
@@ -57,6 +67,56 @@ export function persistActiveSession(opts: {
 
 export function clearActiveSessionLocal(): void {
   storageRemove(KEYS.activeTable);
+  clearPersistedCardGroups();
+}
+
+export function persistCardGroups(
+  tableId: string,
+  gameId: string | undefined,
+  groups: VisualCardGroup[],
+  isSorted?: boolean
+): void {
+  if (!tableId || !groups || groups.length === 0) return;
+  const data: PersistedCardGroupData = {
+    tableId,
+    gameId,
+    groups,
+    isSorted: isSorted ?? (groups.length > 1),
+    savedAt: Date.now(),
+  };
+  storageSet(KEYS.cardGroups, JSON.stringify(data));
+}
+
+export function readPersistedCardGroups(
+  expectedTableId?: string,
+  expectedGameId?: string
+): VisualCardGroup[] | null {
+  const raw = storageGet(KEYS.cardGroups);
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw) as PersistedCardGroupData;
+    if (!data || !Array.isArray(data.groups) || data.groups.length === 0) {
+      return null;
+    }
+    if (expectedTableId && data.tableId && data.tableId !== expectedTableId) {
+      return null;
+    }
+    if (expectedGameId && data.gameId && data.gameId !== expectedGameId) {
+      return null;
+    }
+    // Safeguard: discard data older than 2 hours
+    if (data.savedAt && Date.now() - data.savedAt > 2 * 60 * 60 * 1000) {
+      storageRemove(KEYS.cardGroups);
+      return null;
+    }
+    return data.groups;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPersistedCardGroups(): void {
+  storageRemove(KEYS.cardGroups);
 }
 
 export function readPersistedDisplayName(): string | null {
