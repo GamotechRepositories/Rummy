@@ -159,4 +159,51 @@ describe('Card Groups Persistence Across Page Refresh', () => {
     expect(customGroup).toBeDefined();
     expect(customGroup!.cards.map((c) => c.instanceId)).toEqual(['c1', 'c2', 'c3']);
   });
+
+  it('deals fresh cards cleanly on Deal 2 without retaining Deal 1 groups', () => {
+    // 1. Deal 1 starts
+    useGameStore.getState().updateGameState({ ...mockGameView, dealNumber: 1 });
+    useGameStore.getState().autoSortHand();
+    expect(useGameStore.getState().groups.length).toBeGreaterThan(1);
+
+    // 2. Deal 1 finishes
+    useGameStore.getState().updateGameState({
+      ...mockGameView,
+      dealNumber: 1,
+      gameStatus: 'COMPLETED',
+      winnerId: 'P1',
+    });
+
+    // 3. Deal 2 starts with fresh hand of cards
+    const freshDeal2Hand: CardInstance[] = [
+      { instanceId: 'd2_c1', suit: 'HEARTS', rank: 'ACE', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c2', suit: 'HEARTS', rank: 'TWO', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c3', suit: 'HEARTS', rank: 'THREE', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c4', suit: 'SPADES', rank: 'FIVE', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c5', suit: 'SPADES', rank: 'SIX', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c6', suit: 'SPADES', rank: 'SEVEN', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c7', suit: 'CLUBS', rank: 'TEN', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c8', suit: 'CLUBS', rank: 'JACK', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c9', suit: 'CLUBS', rank: 'QUEEN', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c10', suit: 'DIAMONDS', rank: 'TWO', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c11', suit: 'DIAMONDS', rank: 'THREE', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c12', suit: 'DIAMONDS', rank: 'FOUR', deckIndex: 1, printedJoker: false },
+      { instanceId: 'd2_c13', suit: 'DIAMONDS', rank: 'FIVE', deckIndex: 1, printedJoker: false },
+    ];
+
+    useGameStore.getState().updateGameState({
+      ...mockGameView,
+      dealNumber: 2,
+      gameStatus: 'IN_PROGRESS',
+      hand: freshDeal2Hand,
+    });
+
+    const deal2Groups = useGameStore.getState().groups;
+    // Total cards in Deal 2 groups must be 13 and all must be from freshDeal2Hand
+    const deal2Cards = deal2Groups.flatMap((g) => g.cards);
+    expect(deal2Cards).toHaveLength(13);
+    expect(deal2Cards.every((c) => c.instanceId.startsWith('d2_'))).toBe(true);
+    // None of Deal 1 cards should remain
+    expect(deal2Cards.some((c) => c.instanceId === 'c1')).toBe(false);
+  });
 });

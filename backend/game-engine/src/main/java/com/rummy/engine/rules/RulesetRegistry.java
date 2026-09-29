@@ -16,6 +16,8 @@ public final class RulesetRegistry {
         register(new Pool101Rules());
         register(new Pool201Rules());
         register(new DealsRummyRules());
+        register(new DealsRummyRules("DEALS_2", 2));
+        register(new DealsRummyRules("DEALS_3", 3));
         register(new TwentyOneCardRummyRules());
         register(new GinRummyRules());
         register(new Rummy500Rules());
@@ -24,7 +26,6 @@ public final class RulesetRegistry {
 
         registerAlias("INDIAN_POINTS", "POINTS_13");
         registerAlias("POINTS", "POINTS_13");
-        registerAlias("DEALS_2", "DEALS_RUMMY");
         registerAlias("DEALS", "DEALS_RUMMY");
         registerAlias("21_CARD", "RUMMY_21");
         registerAlias("TWENTY_ONE", "RUMMY_21");

@@ -70,4 +70,26 @@ public interface RummyRules {
     default int getRejoinMaxActiveThreshold() {
         return 0;
     }
+
+    /**
+     * Total deals for fixed-deal variants (e.g. 2 or 3 deals).
+     * 1 indicates single-deal format (e.g. Points Rummy).
+     */
+    default int getTotalDeals() {
+        return 1;
+    }
+
+    /**
+     * Whether this ruleset is a fixed multi-deal game (Deals Rummy).
+     */
+    default boolean isDealsGame() {
+        return getTotalDeals() > 1;
+    }
+
+    /**
+     * Starting chips per player in Deals Rummy: totalDeals * maximumPenalty.
+     */
+    default int getInitialChipsPerPlayer() {
+        return getTotalDeals() * getMaximumPenalty();
+    }
 }

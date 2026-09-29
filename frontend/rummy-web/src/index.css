@@ -5530,6 +5530,67 @@ h1, h2, h3, h4, .font-display {
   color: #f87171;
 }
 
+/* Multi-Deal Scoreboard Table on Results Screen */
+.result-multi-deal-card {
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 6, 9, 0.88);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  margin-bottom: 4px;
+  width: 100%;
+}
+
+.result-multi-deal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: linear-gradient(90deg, rgba(48, 16, 22, 0.9) 0%, rgba(22, 8, 12, 0.9) 100%);
+  border-bottom: 1px solid rgba(212, 175, 55, 0.25);
+  border-top-left-radius: 13px;
+  border-top-right-radius: 13px;
+}
+
+.result-multi-deal-title {
+  font-family: var(--font-royal, 'Cinzel', serif);
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #fde047;
+  letter-spacing: 0.6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-multi-deal-badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.result-multi-deal-table-wrap {
+  padding: 8px 16px 14px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 175, 55, 0.3) transparent;
+}
+
+.result-multi-deal-table-wrap::-webkit-scrollbar {
+  height: 4px;
+}
+
+.result-multi-deal-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.3);
+  border-radius: 4px;
+}
+
 /* Unified Scoreboard Sheet (Directly expands in size to show all players without inner scroller) */
 .result-scoreboard-sheet {
   display: flex;

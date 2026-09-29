@@ -15,10 +15,12 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
 
   if (!isOpen || !gameState) return null;
 
+  const isDeals = (gameState.totalDeals ?? 0) > 1 || (gameState.rulesetId ?? '').toUpperCase().includes('DEAL');
+  const totalDeals = gameState.totalDeals ?? (gameState.rulesetId?.includes('3') ? 3 : 2);
   const threshold = gameState.eliminationThreshold || (gameState.rulesetId?.includes('201') ? 201 : 101);
   const currentDeal = gameState.dealNumber ?? 1;
   const history = gameState.dealHistory ?? [];
-  const maxRecordedDeals = Math.max(history.length, 1);
+  const maxRecordedDeals = Math.max(history.length, isDeals ? totalDeals : 1);
 
   // Collate all seated players (viewer + opponents)
   interface RowPlayer {
@@ -28,6 +30,7 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
     isBot: boolean;
     seatIndex: number;
     cumulativeScore: number;
+    chipBalance: number;
     isEliminated: boolean;
     roundScores: (number | null)[];
     avatarPhoto?: string | null;
@@ -38,6 +41,7 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
   // 1. Viewer
   const viewerCum = gameState.viewerCumulativeScore ?? 0;
   const viewerElim = gameState.viewerIsEliminated || gameState.viewerStatus === 'ELIMINATED';
+  const viewerChips = gameState.viewerChipBalance ?? 0;
   const viewerRounds: (number | null)[] = [];
   for (let d = 1; d <= maxRecordedDeals; d++) {
     const rec = history.find(h => h.dealNumber === d);
@@ -55,6 +59,7 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
     isBot: false,
     seatIndex: gameState.viewerSeatIndex ?? 0,
     cumulativeScore: viewerCum,
+    chipBalance: viewerChips,
     isEliminated: viewerElim,
     roundScores: viewerRounds,
     avatarPhoto: photoForCharacter(avatarId),
@@ -64,6 +69,8 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
   for (const opp of gameState.opponents ?? []) {
     const oppCum = opp.cumulativeScore ?? opp.score ?? 0;
     const oppElim = opp.isEliminated || opp.status === 'ELIMINATED';
+    const oppStanding = gameState.standings?.find(s => s.playerId === opp.playerId);
+    const oppChips = opp.chipBalance ?? oppStanding?.chipBalance ?? 0;
     const oppRounds: (number | null)[] = [];
     for (let d = 1; d <= maxRecordedDeals; d++) {
       const rec = history.find(h => h.dealNumber === d);
@@ -82,18 +89,23 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
       isBot: opp.isBot,
       seatIndex: opp.seatIndex,
       cumulativeScore: oppCum,
+      chipBalance: oppChips,
       isEliminated: oppElim,
       roundScores: oppRounds,
       avatarPhoto: av.photo,
     });
   }
 
-  // Sort: Active first, ordered by lowest cumulative score (leaders at top)
-  allPlayers.sort((a, b) => {
-    if (a.isEliminated && !b.isEliminated) return 1;
-    if (!a.isEliminated && b.isEliminated) return -1;
-    return a.cumulativeScore - b.cumulativeScore;
-  });
+  // Sort: For Deals Rummy, highest chip balance first. For Pool, lowest cumulative score first
+  if (isDeals) {
+    allPlayers.sort((a, b) => b.chipBalance - a.chipBalance);
+  } else {
+    allPlayers.sort((a, b) => {
+      if (a.isEliminated && !b.isEliminated) return 1;
+      if (!a.isEliminated && b.isEliminated) return -1;
+      return a.cumulativeScore - b.cumulativeScore;
+    });
+  }
 
   const activeSurvivors = allPlayers.filter(p => !p.isEliminated).length;
 
@@ -133,16 +145,20 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
 
         {/* Title & Subtitle */}
         <h3 className="royal-dialog-title">
-          Pool {threshold} Scoreboard
+          {isDeals ? `${totalDeals} Deals Scoreboard` : `Pool ${threshold} Scoreboard`}
         </h3>
         <p className="royal-dialog-subtitle">
-          Deal {currentDeal} in progress · {activeSurvivors} of {allPlayers.length} players active
+          {isDeals
+            ? `Deal ${currentDeal} of ${totalDeals} · Player with most chips after ${totalDeals} deals wins!`
+            : `Deal ${currentDeal} in progress · ${activeSurvivors} of ${allPlayers.length} players active`}
         </p>
 
         {/* Variant Badge */}
         <div className="table-menu-badge-wrap" style={{ padding: '0 0 14px', display: 'flex', justifyContent: 'center' }}>
           <span className="table-menu-name">
-            ♠ Pool {threshold} · Elimination at {threshold} pts
+            {isDeals
+              ? `🪙 Deals Rummy · ${totalDeals} Deals · Starting Chips: ${totalDeals * 80}`
+              : `♠ Pool ${threshold} · Elimination at ${threshold} pts`}
           </span>
         </div>
 
@@ -157,7 +173,9 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
                     Deal {idx + 1}
                   </th>
                 ))}
-                <th style={{ textAlign: 'center', minWidth: '110px' }}>Total Points</th>
+                <th style={{ textAlign: 'center', minWidth: '110px' }}>
+                  {isDeals ? 'Chips Balance' : 'Total Points'}
+                </th>
                 <th style={{ textAlign: 'right', minWidth: '85px' }}>Status</th>
               </tr>
             </thead>
@@ -209,7 +227,8 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
                           <div style={{ fontSize: '10.5px', color: '#94a3b8', marginTop: '1px' }}>
                             {isLeader && <span style={{ color: '#fbbf24', marginRight: '6px' }}>Leader</span>}
                             {isDealer && <span style={{ color: '#fde047', marginRight: '6px' }}>Dealer</span>}
-                            {isDanger && <span style={{ color: '#f87171', marginRight: '6px' }}>Danger</span>}
+                            {!isDeals && isDanger && <span style={{ color: '#f87171', marginRight: '6px' }}>Danger</span>}
+                            {isDeals && <span style={{ color: '#fbbf24', marginRight: '6px' }}>🪙 {p.chipBalance}</span>}
                             {p.isBot && <span>AI</span>}
                           </div>
                         </div>
@@ -229,22 +248,37 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
                       </td>
                     ))}
 
-                    {/* Total Penalty Points */}
+                    {/* Total Penalty Points or Chips */}
                     <td style={{ textAlign: 'center' }}>
-                      <div style={{ fontWeight: 800, fontSize: '13px', color: scoreColor }}>
-                        {p.cumulativeScore} <span style={{ fontSize: '10.5px', color: '#64748b' }}>/ {threshold}</span>
-                      </div>
-                      <div className="royal-score-bar-bg">
-                        <div
-                          className={`royal-score-bar-fill ${isDanger || p.isEliminated ? 'royal-score-bar-fill--danger' : ''}`}
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
+                      {isDeals ? (
+                        <div style={{ fontWeight: 900, fontSize: '13.5px', color: '#fbbf24', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <span>🪙</span>
+                          <span>{p.chipBalance}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ fontWeight: 800, fontSize: '13px', color: scoreColor }}>
+                            {p.cumulativeScore} <span style={{ fontSize: '10.5px', color: '#64748b' }}>/ {threshold}</span>
+                          </div>
+                          <div className="royal-score-bar-bg">
+                            <div
+                              className={`royal-score-bar-fill ${isDanger || p.isEliminated ? 'royal-score-bar-fill--danger' : ''}`}
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                        </>
+                      )}
                     </td>
 
                     {/* Status */}
                     <td style={{ textAlign: 'right' }}>
-                      {p.isEliminated ? (
+                      {isDeals ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                          <span style={{ color: isLeader ? '#fbbf24' : '#94a3b8', fontWeight: 800, fontSize: '11.5px' }}>
+                            {isLeader ? '👑 Leader' : `Rank #${rankIdx + 1}`}
+                          </span>
+                        </div>
+                      ) : p.isEliminated ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
                           <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '11px' }}>
                             ELIMINATED

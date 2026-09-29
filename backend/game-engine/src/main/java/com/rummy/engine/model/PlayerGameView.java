@@ -52,7 +52,9 @@ public record PlayerGameView(
         boolean canRejoin,
         int rejoinScore,
         int rejoinFee,
-        List<String> freshlyEliminatedNames
+        List<String> freshlyEliminatedNames,
+        int totalDeals,
+        long viewerChipBalance
 ) implements Serializable {
 
     public record OpponentView(
@@ -65,8 +67,24 @@ public record PlayerGameView(
             int cumulativeScore,
             boolean isEliminated,
             boolean isBot,
-            List<CardInstance> hand
+            List<CardInstance> hand,
+            long chipBalance
     ) implements Serializable {
+        public OpponentView(
+                String playerId,
+                String displayName,
+                int seatIndex,
+                PlayerStatus status,
+                int cardCount,
+                int score,
+                int cumulativeScore,
+                boolean isEliminated,
+                boolean isBot,
+                List<CardInstance> hand
+        ) {
+            this(playerId, displayName, seatIndex, status, cardCount, score, cumulativeScore, isEliminated, isBot, hand, 0L);
+        }
+
         public OpponentView(
                 String playerId,
                 String displayName,
@@ -76,7 +94,7 @@ public record PlayerGameView(
                 int score,
                 boolean isBot
         ) {
-            this(playerId, displayName, seatIndex, status, cardCount, score, score, status == PlayerStatus.ELIMINATED, isBot, List.of());
+            this(playerId, displayName, seatIndex, status, cardCount, score, score, status == PlayerStatus.ELIMINATED, isBot, List.of(), 0L);
         }
 
         public OpponentView(
@@ -89,7 +107,7 @@ public record PlayerGameView(
                 boolean isBot,
                 List<CardInstance> hand
         ) {
-            this(playerId, displayName, seatIndex, status, cardCount, score, score, status == PlayerStatus.ELIMINATED, isBot, hand);
+            this(playerId, displayName, seatIndex, status, cardCount, score, score, status == PlayerStatus.ELIMINATED, isBot, hand, 0L);
         }
     }
 
@@ -99,8 +117,20 @@ public record PlayerGameView(
             int seatIndex,
             int cumulativeScore,
             boolean isEliminated,
-            PlayerStatus status
-    ) implements Serializable {}
+            PlayerStatus status,
+            long chipBalance
+    ) implements Serializable {
+        public PlayerStanding(
+                String playerId,
+                String displayName,
+                int seatIndex,
+                int cumulativeScore,
+                boolean isEliminated,
+                PlayerStatus status
+        ) {
+            this(playerId, displayName, seatIndex, cumulativeScore, isEliminated, status, 0L);
+        }
+    }
 
     public record DealScoreRecord(
             int dealNumber,
@@ -203,11 +233,54 @@ public record PlayerGameView(
                 List.of(), List.of(), null, null, 0, false, 0, 0, List.of());
     }
 
+    public PlayerGameView(
+            String tableId,
+            String gameId,
+            String viewerPlayerId,
+            GameStatus gameStatus,
+            long sequence,
+            List<CardInstance> hand,
+            List<OpponentView> opponents,
+            CardInstance topDiscard,
+            CardInstance cutJoker,
+            int closedDeckRemaining,
+            String activePlayerId,
+            TurnPhase turnPhase,
+            Instant turnDeadline,
+            boolean isMyTurn,
+            String winnerId,
+            List<CardInstance> discardHistory,
+            int viewerScore,
+            PlayerStatus viewerStatus,
+            List<CardGroup> winningGroups,
+            int viewerSeatIndex,
+            String rulesetId,
+            int dealNumber,
+            int eliminationThreshold,
+            int viewerCumulativeScore,
+            boolean viewerIsEliminated,
+            List<PlayerStanding> standings,
+            List<DealScoreRecord> dealHistory,
+            Integer nextDealCountdown,
+            String tournamentWinnerId,
+            int dealerSeatIndex,
+            boolean canRejoin,
+            int rejoinScore,
+            int rejoinFee,
+            List<String> freshlyEliminatedNames
+    ) {
+        this(tableId, gameId, viewerPlayerId, gameStatus, sequence, hand, opponents, topDiscard, cutJoker, closedDeckRemaining,
+                activePlayerId, turnPhase, turnDeadline, isMyTurn, winnerId, discardHistory, viewerScore, viewerStatus,
+                winningGroups, viewerSeatIndex, rulesetId, dealNumber, eliminationThreshold, viewerCumulativeScore, viewerIsEliminated,
+                standings, dealHistory, nextDealCountdown, tournamentWinnerId, dealerSeatIndex, canRejoin, rejoinScore, rejoinFee,
+                freshlyEliminatedNames, 1, 0L);
+    }
+
     /**
      * Factory that projects a player-specific view from the authoritative GameState.
      */
     public static PlayerGameView from(GameState state, String viewerPlayerId) {
-        return from(state, viewerPlayerId, 0, List.of(), null, null, 0, List.of());
+        return from(state, viewerPlayerId, 0, List.of(), null, null, 0, List.of(), 1);
     }
 
     /**
@@ -219,7 +292,7 @@ public record PlayerGameView(
                                       List<DealScoreRecord> dealHistory,
                                       Integer nextDealCountdown,
                                       String tournamentWinnerId) {
-        return from(state, viewerPlayerId, eliminationThreshold, dealHistory, nextDealCountdown, tournamentWinnerId, 0, List.of());
+        return from(state, viewerPlayerId, eliminationThreshold, dealHistory, nextDealCountdown, tournamentWinnerId, 0, List.of(), 1);
     }
 
     public static PlayerGameView from(GameState state,
@@ -230,6 +303,18 @@ public record PlayerGameView(
                                       String tournamentWinnerId,
                                       int rejoinFee,
                                       List<String> freshlyEliminatedNames) {
+        return from(state, viewerPlayerId, eliminationThreshold, dealHistory, nextDealCountdown, tournamentWinnerId, rejoinFee, freshlyEliminatedNames, 1);
+    }
+
+    public static PlayerGameView from(GameState state,
+                                      String viewerPlayerId,
+                                      int eliminationThreshold,
+                                      List<DealScoreRecord> dealHistory,
+                                      Integer nextDealCountdown,
+                                      String tournamentWinnerId,
+                                      int rejoinFee,
+                                      List<String> freshlyEliminatedNames,
+                                      int totalDeals) {
         Objects.requireNonNull(state, "state must not be null");
         Objects.requireNonNull(viewerPlayerId, "viewerPlayerId must not be null");
 
@@ -248,7 +333,8 @@ public record PlayerGameView(
                     player.getSeatIndex(),
                     player.getCumulativeScore(),
                     player.getStatus() == PlayerStatus.ELIMINATED,
-                    player.getStatus()
+                    player.getStatus(),
+                    player.getChipBalance()
             ));
 
             if (!player.getPlayerId().equals(viewerPlayerId)) {
@@ -268,7 +354,8 @@ public record PlayerGameView(
                         player.getCumulativeScore(),
                         player.getStatus() == PlayerStatus.ELIMINATED,
                         player.isBot(),
-                        opponentHand
+                        opponentHand,
+                        player.getChipBalance()
                 ));
             }
         }
@@ -344,7 +431,9 @@ public record PlayerGameView(
                 canRejoin,
                 rejoinScore,
                 rejoinFee,
-                freshlyEliminatedNames != null ? freshlyEliminatedNames : List.of()
+                freshlyEliminatedNames != null ? freshlyEliminatedNames : List.of(),
+                totalDeals,
+                viewer.getChipBalance()
         );
     }
 }

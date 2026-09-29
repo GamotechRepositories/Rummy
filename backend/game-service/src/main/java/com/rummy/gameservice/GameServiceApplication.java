@@ -36,6 +36,9 @@ public class GameServiceApplication {
                                 if (key.equalsIgnoreCase("MONGODB_URI") || key.equalsIgnoreCase("SPRING_DATA_MONGODB_URI")) {
                                     System.setProperty("spring.data.mongodb.uri", val);
                                 }
+                                if (key.equalsIgnoreCase("PORT") || key.equalsIgnoreCase("SERVER_PORT")) {
+                                    System.setProperty("server.port", val);
+                                }
                             }
                         }
                     }

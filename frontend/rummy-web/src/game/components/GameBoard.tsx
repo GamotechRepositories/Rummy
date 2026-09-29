@@ -59,6 +59,7 @@ export const GameBoard: React.FC = () => {
   const [dealtCounts, setDealtCounts] = React.useState<Record<string, number> | null>(null);
   const dealPlayedKeyRef = React.useRef<string | null>(null);
   const prevStatusRef = React.useRef<string | null>(null);
+  const prevDealNumberRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
     useGameStore.getState().setDealInProgress(dealPlaying);
@@ -81,7 +82,7 @@ export const GameBoard: React.FC = () => {
     return () => window.clearTimeout(t);
   }, [resumePending, gameState]);
 
-  // Fresh deal → play dealer flight only on lobby→table transition (never on refresh/resume)
+  // Fresh deal → play dealer flight only on lobby→table transition or deal transitions (never on refresh/resume)
   useLayoutEffect(() => {
     if (!gameState) {
       // Keep prevStatus during soft-reconnect so refresh does not look like a new deal
@@ -89,26 +90,37 @@ export const GameBoard: React.FC = () => {
     }
 
     const status = gameState.gameStatus;
+    const dealNum = gameState.dealNumber ?? 1;
     const prev = prevStatusRef.current;
+    const prevDeal = prevDealNumberRef.current;
+
     prevStatusRef.current = status;
+    prevDealNumberRef.current = dealNum;
 
     if (status === 'WAITING_FOR_PLAYERS') {
       dealPlayedKeyRef.current = null;
       setDealPlaying(false);
+      useGameStore.getState().setDealInProgress(false);
       setDealTargets([]);
       setDealtCounts(null);
       return;
     }
 
-    const key = gameState.tableId;
+    const key = `${gameState.tableId}:${gameState.gameId ?? ''}:deal${dealNum}`;
     if (dealPlayedKeyRef.current === key) return;
 
     const handLen = gameState.hand?.length ?? 0;
     const freshPile = (gameState.discardHistory?.length ?? 0) <= 1;
-    // Only animate when we watched the lobby→deal transition in this tab session.
-    // prev == null means first paint after refresh/resume — skip animation.
+
+    // Only animate when we watched the lobby/deal transition in this tab session:
+    // 1. Initial deal from lobby (prev === 'WAITING_FOR_PLAYERS' || prev === 'DEALING')
+    // 2. Subsequent deals (prev === 'COMPLETED' or deal number changed)
+    // (prev == null means first paint after browser refresh/resume — skip animation)
     const watchedDealStart =
-      prev === 'WAITING_FOR_PLAYERS' || prev === 'DEALING';
+      prev === 'WAITING_FOR_PLAYERS' ||
+      prev === 'DEALING' ||
+      prev === 'COMPLETED' ||
+      (prevDeal != null && prevDeal !== dealNum);
 
     if (status === 'IN_PROGRESS' && handLen > 0 && freshPile && watchedDealStart) {
       dealPlayedKeyRef.current = key;
@@ -126,6 +138,7 @@ export const GameBoard: React.FC = () => {
       setDealTargets(seats);
       setDealtCounts({});
       setDealPlaying(true);
+      useGameStore.getState().setDealInProgress(true);
       return;
     }
 
@@ -133,6 +146,7 @@ export const GameBoard: React.FC = () => {
     if (status === 'IN_PROGRESS' && handLen > 0) {
       dealPlayedKeyRef.current = key;
       setDealPlaying(false);
+      useGameStore.getState().setDealInProgress(false);
       setDealtCounts(null);
     }
   }, [gameState]);
@@ -140,7 +154,10 @@ export const GameBoard: React.FC = () => {
   React.useEffect(() => {
     if (!gameState?.tableId) {
       dealPlayedKeyRef.current = null;
+      prevStatusRef.current = null;
+      prevDealNumberRef.current = null;
       setDealPlaying(false);
+      useGameStore.getState().setDealInProgress(false);
       setDealTargets([]);
       setDealtCounts(null);
     }
@@ -242,10 +259,18 @@ export const GameBoard: React.FC = () => {
   if (rawRulesetId.includes('POOL')) {
     variantName = rawRulesetId.includes('201') ? 'Pool 201' : 'Pool 101';
   } else if (rawRulesetId.includes('DEAL')) {
-    variantName = 'Deal Rummy';
+    const dealsCount = gameState?.totalDeals ?? (rawRulesetId.includes('3') ? 3 : 2);
+    variantName = `${dealsCount} Deals`;
   } else if (rawRulesetId.includes('21')) {
     variantName = '21-Card Rummy';
   }
+
+  const isMultiDeal = Boolean(
+    gameState?.eliminationThreshold ||
+    rawRulesetId.includes('POOL') ||
+    rawRulesetId.includes('DEAL') ||
+    (gameState?.totalDeals && gameState.totalDeals > 1)
+  );
 
   const pointValue = entryFee / 80;
   const stakeLabel = isPointsRummy
@@ -331,12 +356,16 @@ export const GameBoard: React.FC = () => {
                   <span className="board-info-variant-stake"> · {stakeLabel}</span>
                   <span className="board-info-variant-seats"> · {maxSeats} Players</span>
                 </span>
-                {Boolean(gameState?.eliminationThreshold || rawRulesetId.includes('POOL')) && (
+                {isMultiDeal && (
                   <>
                     <span className="board-info-sep" aria-hidden />
                     <span className="board-info-deal">
-                      <span className="board-info-deal-full">DEAL {gameState?.dealNumber ?? 1}</span>
-                      <span className="board-info-deal-short">D{gameState?.dealNumber ?? 1}</span>
+                      <span className="board-info-deal-full">
+                        DEAL {gameState?.dealNumber ?? 1}{gameState?.totalDeals ? ` OF ${gameState.totalDeals}` : ''}
+                      </span>
+                      <span className="board-info-deal-short">
+                        D{gameState?.dealNumber ?? 1}{gameState?.totalDeals ? `/${gameState.totalDeals}` : ''}
+                      </span>
                     </span>
                   </>
                 )}
@@ -355,7 +384,7 @@ export const GameBoard: React.FC = () => {
               </div>
             </div>
             <div className="board-hud-right">
-              {Boolean(gameState?.eliminationThreshold || rawRulesetId.includes('POOL')) && (
+              {isMultiDeal && (
                 <button
                   id="btn-pool-scoreboard"
                   type="button"
@@ -364,7 +393,7 @@ export const GameBoard: React.FC = () => {
                     setScoreboardOpen(true);
                   }}
                   className="board-hud-scores-btn"
-                  title="Pool Scoreboard"
+                  title="Scoreboard"
                 >
                   Scores
                 </button>

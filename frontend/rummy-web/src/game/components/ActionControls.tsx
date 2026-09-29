@@ -112,6 +112,8 @@ export const ActionControls: React.FC = () => {
   const viewerCumulative = gameState.viewerCumulativeScore ?? gameState.viewerScore ?? 0;
   const isDealer = gameState.viewerSeatIndex === gameState.dealerSeatIndex;
   const isDangerZone = isPool && !viewerIsEliminated && viewerCumulative >= threshold * 0.75;
+  const isDeals = (gameState.totalDeals ?? 0) > 1 || (gameState.rulesetId ?? '').toUpperCase().includes('DEAL');
+  const viewerChips = gameState.viewerChipBalance;
 
   const droppedOut =
     (gameState?.viewerStatus === 'DROPPED' && gameStatus === 'IN_PROGRESS') || viewerIsEliminated;
@@ -217,6 +219,25 @@ export const ActionControls: React.FC = () => {
                     {viewerIsEliminated ? 'OUT' : `${viewerCumulative}/${threshold}`}
                   </span>
                 )
+              )}
+              {isDeals && viewerChips !== undefined && (
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 900,
+                    padding: '2px 7px',
+                    borderRadius: '5px',
+                    background: 'rgba(251, 191, 36, 0.18)',
+                    color: '#fbbf24',
+                    border: '1px solid rgba(251, 191, 36, 0.45)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                  }}
+                >
+                  <span>🪙</span>
+                  <span>{viewerChips} Chips</span>
+                </span>
               )}
             </div>
             {gameStatus === 'IN_PROGRESS' && viewerIsEliminated && (

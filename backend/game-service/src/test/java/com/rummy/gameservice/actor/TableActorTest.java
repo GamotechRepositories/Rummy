@@ -6,6 +6,7 @@ import com.rummy.engine.EngineResult;
 import com.rummy.engine.GameEngine;
 import com.rummy.engine.command.*;
 import com.rummy.engine.model.*;
+import com.rummy.engine.rules.DealsRummyRules;
 import com.rummy.engine.rules.PointsRummyRules;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -126,5 +127,68 @@ class TableActorTest {
         assertThat(p2.getCumulativeScore()).isEqualTo(1); // 0 + 1 = 1
 
         poolActor.destroy();
+    }
+
+    @Test
+    @DisplayName("Deals Rummy: 2 Deals allocates 160 chips, transfers chips on deal finish, and crowns tournament winner after all deals")
+    void testDealsRummyMultiDealChipsAndProgression() {
+        Deck deck = Deck.createStandard13CardDeck();
+        GameState dealsState = new GameState("G_DEALS", "T_DEALS", "DEALS_2", "1.0.0", List.of(), deck);
+        TableActor dealsActor = new TableActor("T_DEALS", dealsState, new DealsRummyRules(2), new GameEngine(), objectMapper, scheduler);
+
+        Instant now = Instant.now();
+        dealsActor.processCommand(new JoinCommand("c1", "G_DEALS", "P1", "Player 1", 0, false, now), "req-1");
+        dealsActor.processCommand(new JoinCommand("c2", "G_DEALS", "P2", "Player 2", 1, false, now), "req-2");
+        dealsActor.processCommand(new ReadyCommand("c3", "G_DEALS", "P1", now), "req-3");
+        dealsActor.processCommand(new ReadyCommand("c4", "G_DEALS", "P2", now), "req-4");
+
+        // Start Deal 1
+        dealsActor.processCommand(new StartGameCommand("c5", "G_DEALS", "P1", now), "req-5");
+        assertThat(dealsActor.getState().getStatus()).isEqualTo(GameStatus.IN_PROGRESS);
+        assertThat(dealsActor.getState().getDealNumber()).isEqualTo(1);
+
+        // Initial chips: 2 deals * 80 = 160 chips per player
+        PlayerState p1 = dealsActor.getState().getPlayer("P1").orElseThrow();
+        PlayerState p2 = dealsActor.getState().getPlayer("P2").orElseThrow();
+        assertThat(p1.getChipBalance()).isEqualTo(160);
+        assertThat(p2.getChipBalance()).isEqualTo(160);
+
+        // Player 2 drops in Deal 1 (first drop = 20 pts penalty)
+        dealsActor.processCommand(new DropCommand("c6", "G_DEALS", "P2", now), "req-6");
+
+        // Deal 1 COMPLETED
+        assertThat(dealsActor.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
+        // P2 lost 20 chips -> 140
+        assertThat(p2.getChipBalance()).isEqualTo(140);
+        // P1 won 20 chips -> 180
+        assertThat(p1.getChipBalance()).isEqualTo(180);
+        assertThat(dealsActor.getDealHistory()).hasSize(1);
+        assertThat(dealsActor.getDealHistory().get(0).dealNumber()).isEqualTo(1);
+        assertThat(dealsActor.getDealHistory().get(0).winnerPlayerId()).isEqualTo("P1");
+        // Tournament is NOT yet finished because deal 1 < totalDeals 2
+        assertThat(dealsActor.getTournamentWinnerId()).isNull();
+
+        // Start Deal 2
+        dealsActor.startNextDeal();
+        assertThat(dealsActor.getState().getStatus()).isEqualTo(GameStatus.IN_PROGRESS);
+        assertThat(dealsActor.getState().getDealNumber()).isEqualTo(2);
+
+        // Chip balances are preserved across deals
+        assertThat(p1.getChipBalance()).isEqualTo(180);
+        assertThat(p2.getChipBalance()).isEqualTo(140);
+
+        // In Deal 2, P1 drops (first drop = 20 pts penalty)
+        dealsActor.processCommand(new DropCommand("c7", "G_DEALS", "P1", now), "req-7");
+
+        // Deal 2 finishes: P1 loses 20 chips -> 160, P2 gains 20 chips -> 160
+        assertThat(dealsActor.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
+        assertThat(p1.getChipBalance()).isEqualTo(160);
+        assertThat(p2.getChipBalance()).isEqualTo(160);
+        assertThat(dealsActor.getDealHistory()).hasSize(2);
+
+        // All 2 deals completed! Tournament winner must be selected
+        assertThat(dealsActor.getTournamentWinnerId()).isNotNull();
+
+        dealsActor.destroy();
     }
 }

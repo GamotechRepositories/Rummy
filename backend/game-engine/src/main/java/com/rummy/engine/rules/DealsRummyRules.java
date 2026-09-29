@@ -14,6 +14,7 @@ public final class DealsRummyRules implements RummyRules {
     public static final String RULESET_ID = "DEALS_RUMMY";
     public static final String RULESET_VERSION = "1.0.0";
 
+    private final String rulesetId;
     private final int totalDeals;
     private final int firstDropPenalty;
     private final int middleDropPenalty;
@@ -22,15 +23,25 @@ public final class DealsRummyRules implements RummyRules {
     private final int maximumPenalty;
 
     public DealsRummyRules() {
-        this(2, 20, 40, 40, 80, 80);
+        this(RULESET_ID, 2, 20, 40, 40, 80, 80);
     }
 
-    public DealsRummyRules(int totalDeals,
+    public DealsRummyRules(int totalDeals) {
+        this("DEALS_" + totalDeals, totalDeals, 20, 40, 40, 80, 80);
+    }
+
+    public DealsRummyRules(String rulesetId, int totalDeals) {
+        this(rulesetId, totalDeals, 20, 40, 40, 80, 80);
+    }
+
+    public DealsRummyRules(String rulesetId,
+                           int totalDeals,
                            int firstDropPenalty,
                            int middleDropPenalty,
                            int autoDropPenalty,
                            int wrongDeclarationPenalty,
                            int maximumPenalty) {
+        this.rulesetId = rulesetId != null ? rulesetId : RULESET_ID;
         this.totalDeals = totalDeals;
         this.firstDropPenalty = firstDropPenalty;
         this.middleDropPenalty = middleDropPenalty;
@@ -39,9 +50,18 @@ public final class DealsRummyRules implements RummyRules {
         this.maximumPenalty = maximumPenalty;
     }
 
+    public DealsRummyRules(int totalDeals,
+                           int firstDropPenalty,
+                           int middleDropPenalty,
+                           int autoDropPenalty,
+                           int wrongDeclarationPenalty,
+                           int maximumPenalty) {
+        this(RULESET_ID, totalDeals, firstDropPenalty, middleDropPenalty, autoDropPenalty, wrongDeclarationPenalty, maximumPenalty);
+    }
+
     @Override
     public String getRulesetId() {
-        return RULESET_ID;
+        return rulesetId;
     }
 
     @Override
@@ -64,8 +84,14 @@ public final class DealsRummyRules implements RummyRules {
         return 6;
     }
 
+    @Override
     public int getTotalDeals() {
         return totalDeals;
+    }
+
+    @Override
+    public boolean isDealsGame() {
+        return true;
     }
 
     @Override

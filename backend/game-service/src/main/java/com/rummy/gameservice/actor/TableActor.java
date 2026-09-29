@@ -389,16 +389,108 @@ public final class TableActor {
             }
             if (persistenceService != null) {
                 persistenceService.recordGameEventAsync(state.getGameId(), event);
-                if (event instanceof com.rummy.engine.event.GameStartedEvent) {
+            }
+            if (event instanceof com.rummy.engine.event.GameStartedEvent) {
+                if (rules.isDealsGame() && state.getDealNumber() == 1) {
+                    long initialChips = rules.getInitialChipsPerPlayer();
+                    for (PlayerState p : state.getPlayers()) {
+                        if (p.getChipBalance() <= 0) {
+                            p.setChipBalance(initialChips);
+                        }
+                    }
+                }
+                if (persistenceService != null) {
                     persistenceService.recordGameStarted(state, tableId);
                 }
             }
 
             if (event instanceof com.rummy.engine.event.GameFinishedEvent finishedEvent) {
                 boolean isPool = rules.isEliminationGame();
+                boolean isDeals = rules.isDealsGame();
                 int threshold = rules.getEliminationThreshold();
+                int totalDeals = rules.getTotalDeals();
 
-                if (isPool) {
+                if (isDeals) {
+                    String winnerId = finishedEvent.winnerPlayerId();
+                    int totalChipsWon = 0;
+
+                    for (PlayerState p : state.getPlayers()) {
+                        if (!p.getPlayerId().equals(winnerId)) {
+                            int penalty = finishedEvent.finalScores().getOrDefault(p.getPlayerId(), rules.getMaximumPenalty());
+                            p.setChipBalance(p.getChipBalance() - penalty);
+                            p.addCumulativeScore(penalty);
+                            totalChipsWon += penalty;
+                        }
+                    }
+
+                    PlayerState winner = state.getPlayer(winnerId).orElse(null);
+                    if (winner != null) {
+                        winner.setChipBalance(winner.getChipBalance() + totalChipsWon);
+                    }
+
+                    Map<String, Integer> currentChips = new HashMap<>();
+                    Map<String, Integer> currentCumulatives = new HashMap<>();
+                    for (PlayerState p : state.getPlayers()) {
+                        currentChips.put(p.getPlayerId(), (int) p.getChipBalance());
+                        currentCumulatives.put(p.getPlayerId(), p.getCumulativeScore());
+                    }
+
+                    PlayerGameView.DealScoreRecord dealRecord = new PlayerGameView.DealScoreRecord(
+                            state.getDealNumber(),
+                            finishedEvent.winnerPlayerId(),
+                            new HashMap<>(finishedEvent.finalScores()),
+                            currentChips
+                    );
+                    dealHistory.add(dealRecord);
+
+                    log.info("[TableActor:{}] DEALS Deal {}/{} complete. Winner {} gained {} chips. Current chips: {}",
+                            tableId, state.getDealNumber(), totalDeals, winnerId, totalChipsWon, currentChips);
+
+                    if (state.getDealNumber() < totalDeals) {
+                        log.info("[TableActor:{}] Deal {} complete. Next deal (Deal {}) in 5s...",
+                                tableId, state.getDealNumber(), state.getDealNumber() + 1);
+
+                        this.nextDealCountdown = 5;
+                        this.nextDealScheduledAt = Instant.now().plusSeconds(5);
+
+                        Map<String, Object> dealsEventPayload = new HashMap<>();
+                        dealsEventPayload.put("dealNumber", state.getDealNumber());
+                        dealsEventPayload.put("totalDeals", totalDeals);
+                        dealsEventPayload.put("winnerPlayerId", finishedEvent.winnerPlayerId());
+                        dealsEventPayload.put("dealScores", finishedEvent.finalScores());
+                        dealsEventPayload.put("chipBalances", currentChips);
+                        dealsEventPayload.put("nextDealCountdownSeconds", 5);
+
+                        broadcastMessage(WsServerMessage.of("DEALS_DEAL_COMPLETED", requestId, tableId, state.getSequence(), dealsEventPayload));
+
+                        if (nextDealFuture != null && !nextDealFuture.isDone()) {
+                            nextDealFuture.cancel(false);
+                        }
+                        nextDealFuture = scheduler.schedule(() -> {
+                            synchronized (TableActor.this) {
+                                startNextDeal();
+                            }
+                        }, 5, TimeUnit.SECONDS);
+
+                    } else {
+                        PlayerState tournamentWinner = state.getPlayers().stream()
+                                .max(Comparator.comparingLong(PlayerState::getChipBalance))
+                                .orElse(state.getPlayers().get(0));
+
+                        this.tournamentWinnerId = tournamentWinner.getPlayerId();
+                        log.info("[TableActor:{}] DEALS MATCH COMPLETED! Tournament winner is {} ({}) with {} chips",
+                                tableId, tournamentWinner.getPlayerId(), tournamentWinner.getDisplayName(), tournamentWinner.getChipBalance());
+
+                        if (persistenceService != null) {
+                            persistenceService.recordGameFinished(state, tableId);
+                        }
+                        settleMatchWallet(tournamentWinner.getPlayerId(), currentCumulatives, requestId);
+                        if (sessionService != null) {
+                            sessionService.clearAllHumanBindings(tableId);
+                            log.info("[TableActor:{}] Cleared player session bindings after deals match finish", tableId);
+                        }
+                    }
+                } else if (isPool) {
                     Map<String, Integer> currentCumulatives = new HashMap<>();
                     List<String> freshlyEliminated = new ArrayList<>();
                     for (PlayerState p : state.getPlayers()) {
@@ -527,7 +619,8 @@ public final class TableActor {
                         remainingCountdown,
                         tournamentWinnerId,
                         stakeTier,
-                        new ArrayList<>(lastEliminatedNames)
+                        new ArrayList<>(lastEliminatedNames),
+                        rules.getTotalDeals()
                 );
                 WsServerMessage msg = WsServerMessage.of("GAME_VIEW", requestId, tableId, state.getSequence(), view);
                 String json = objectMapper.writeValueAsString(msg);
@@ -894,6 +987,10 @@ public final class TableActor {
         return Collections.unmodifiableList(dealHistory);
     }
 
+    public String getTournamentWinnerId() {
+        return tournamentWinnerId;
+    }
+
     private void settleMatchWallet(String winnerId, Map<String, Integer> finalScores, String requestId) {
         if (walletService != null && stakeTier > 0) {
             try {
@@ -920,7 +1017,7 @@ public final class TableActor {
         }
     }
 
-    private synchronized void startNextDeal() {
+    synchronized void startNextDeal() {
         this.nextDealCountdown = null;
         this.nextDealScheduledAt = null;
         this.lastEliminatedNames.clear();

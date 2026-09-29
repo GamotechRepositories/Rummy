@@ -73,6 +73,7 @@ export interface PlayerStanding {
   cumulativeScore: number;
   isEliminated: boolean;
   status: PlayerStatus;
+  chipBalance?: number;
 }
 
 export interface DealScoreRecord {
@@ -93,6 +94,7 @@ export interface OpponentView {
   isEliminated?: boolean;
   isBot: boolean;
   hand?: CardInstance[];
+  chipBalance?: number;
 }
 
 export interface PlayerGameView {
@@ -131,6 +133,8 @@ export interface PlayerGameView {
   rejoinScore?: number;
   rejoinFee?: number;
   freshlyEliminatedNames?: string[];
+  totalDeals?: number;
+  viewerChipBalance?: number;
 }
 
 export type GroupValidationType = 'PURE_SEQUENCE' | 'IMPURE_SEQUENCE' | 'SET' | 'INVALID';

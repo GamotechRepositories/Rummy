@@ -12,6 +12,7 @@ const KEYS = {
 export interface PersistedCardGroupData {
   tableId: string;
   gameId?: string;
+  dealNumber?: number;
   groups: VisualCardGroup[];
   isSorted?: boolean;
   savedAt: number;
@@ -74,12 +75,14 @@ export function persistCardGroups(
   tableId: string,
   gameId: string | undefined,
   groups: VisualCardGroup[],
-  isSorted?: boolean
+  isSorted?: boolean,
+  dealNumber?: number
 ): void {
   if (!tableId || !groups || groups.length === 0) return;
   const data: PersistedCardGroupData = {
     tableId,
     gameId,
+    dealNumber,
     groups,
     isSorted: isSorted ?? (groups.length > 1),
     savedAt: Date.now(),
@@ -89,7 +92,8 @@ export function persistCardGroups(
 
 export function readPersistedCardGroups(
   expectedTableId?: string,
-  expectedGameId?: string
+  expectedGameId?: string,
+  expectedDealNumber?: number
 ): VisualCardGroup[] | null {
   const raw = storageGet(KEYS.cardGroups);
   if (!raw) return null;
@@ -102,6 +106,9 @@ export function readPersistedCardGroups(
       return null;
     }
     if (expectedGameId && data.gameId && data.gameId !== expectedGameId) {
+      return null;
+    }
+    if (expectedDealNumber != null && data.dealNumber != null && data.dealNumber !== expectedDealNumber) {
       return null;
     }
     // Safeguard: discard data older than 2 hours

@@ -11,6 +11,7 @@ import {
   EyeOff,
   Layers,
   Sparkles,
+  Trophy,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
@@ -19,6 +20,7 @@ import { FullscreenToggle } from './FullscreenToggle';
 import { CardView } from './CardView';
 import type { CardInstance, GroupValidationType } from '../types/game';
 import { evaluateCardGroup, getCardScore } from '../rules/clientValidator';
+import { photoForCharacter, getAvatarForPlayer } from '../utils/avatarUtils';
 
 interface GameResultModalProps {
   isOpen: boolean;
@@ -124,6 +126,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
     gameSettlement,
     playerId,
     displayName,
+    avatarId,
     groups: myVisualGroups,
     lastKnownHand,
     lastGameConfig,
@@ -142,9 +145,12 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
 
   const activeRulesetId = (gameSettlement?.rulesetId ?? gameState?.rulesetId ?? lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
   const isPool = Boolean(gameState?.eliminationThreshold || activeRulesetId.includes('POOL'));
+  const isDeals = Boolean((gameState?.totalDeals ?? 0) > 1 || activeRulesetId.includes('DEAL'));
+  const totalDeals = gameState?.totalDeals ?? (activeRulesetId.includes('3') ? 3 : 2);
   const threshold = gameState?.eliminationThreshold || (activeRulesetId.includes('201') ? 201 : 101);
-  const isPoolIntermediateDeal = isPool && !gameState?.tournamentWinnerId;
-  const isTournamentWinner = isPool && Boolean(gameState?.tournamentWinnerId);
+  const isMultiDealGame = isPool || isDeals;
+  const isIntermediateDeal = isMultiDealGame && !gameState?.tournamentWinnerId;
+  const isTournamentWinner = isMultiDealGame && Boolean(gameState?.tournamentWinnerId);
 
   const [dealCountdown, setDealCountdown] = useState<number>(gameState?.nextDealCountdown ?? 5);
 
@@ -155,12 +161,12 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
   }, [gameState?.nextDealCountdown]);
 
   useEffect(() => {
-    if (!isOpen || !isPoolIntermediateDeal) return;
+    if (!isOpen || !isIntermediateDeal) return;
     const interval = setInterval(() => {
       setDealCountdown((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
     return () => clearInterval(interval);
-  }, [isOpen, isPoolIntermediateDeal]);
+  }, [isOpen, isIntermediateDeal]);
 
   useEffect(() => {
     if (!isOpen || !isCompleted) return;
@@ -218,6 +224,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
         : [];
 
   const viewerCum = gameState.viewerCumulativeScore ?? (isWinner ? 0 : myScore);
+  const viewerChips = gameState.viewerChipBalance ?? 0;
   const viewerEliminated = Boolean(
     gameState.viewerIsEliminated ||
     gameState.viewerStatus === 'ELIMINATED' ||
@@ -233,9 +240,11 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
       status: myStatus,
       score: myScore,
       cumulativeScore: viewerCum,
+      chipBalance: viewerChips,
       isEliminated: viewerEliminated,
       hand: isWinner && rawWinnerCards.length > 0 ? rawWinnerCards : myShowdownCards,
       isBot: false,
+      avatarPhoto: photoForCharacter(avatarId),
     },
     ...opponents.map((opp) => {
       const isThisOpponentWinner = opp.playerId === winnerId;
@@ -243,11 +252,14 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
         ? rawWinnerCards
         : (opp.hand || []);
       const oppCum = opp.cumulativeScore ?? opp.score ?? 0;
+      const oppStanding = gameState.standings?.find((s) => s.playerId === opp.playerId);
+      const oppChips = opp.chipBalance ?? oppStanding?.chipBalance ?? 0;
       const oppElim = Boolean(
         opp.isEliminated ||
         opp.status === 'ELIMINATED' ||
         (isPool && oppCum >= threshold)
       );
+      const av = getAvatarForPlayer(opp.displayName || opp.playerId);
       return {
         playerId: opp.playerId,
         name: opp.displayName,
@@ -256,17 +268,25 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
         status: isThisOpponentWinner ? 'WON' : opp.status,
         score: opp.score,
         cumulativeScore: oppCum,
+        chipBalance: oppChips,
         isEliminated: oppElim,
         hand: oppHand,
         isBot: opp.isBot,
+        avatarPhoto: av.photo,
       };
     }),
   ];
 
-  // Winner always first, in pool active lowest cumulative score first
+  // Winner always first, in Deals highest chip balance first, in pool active lowest cumulative score first
+  const matchWinnerId = isTournamentWinner ? (gameState.tournamentWinnerId || winnerId) : winnerId;
   const allPlayers = [...unrankedPlayers].sort((a, b) => {
-    if (a.isWinner) return -1;
-    if (b.isWinner) return 1;
+    if (matchWinnerId) {
+      if (a.playerId === matchWinnerId) return -1;
+      if (b.playerId === matchWinnerId) return 1;
+    }
+    if (isDeals) {
+      return (b.chipBalance ?? 0) - (a.chipBalance ?? 0);
+    }
     if (isPool) {
       if (a.isEliminated && !b.isEliminated) return 1;
       if (!a.isEliminated && b.isEliminated) return -1;
@@ -274,6 +294,25 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
     }
     return a.score - b.score;
   });
+
+  const history = gameState.dealHistory ?? [];
+  const maxRecordedDeals = Math.max(
+    history.length,
+    isDeals ? totalDeals : 1,
+    gameState.dealNumber ?? 1
+  );
+
+  const getPlayerDealScore = (pId: string, dNum: number, pScore: number, pIsWinner: boolean): number | null => {
+    const rec = history.find((h) => h.dealNumber === dNum);
+    if (rec && rec.roundScores && rec.roundScores[pId] !== undefined) {
+      return rec.roundScores[pId];
+    }
+    // If this deal is the current deal and record isn't in history yet
+    if (dNum === (gameState.dealNumber ?? 1)) {
+      return pIsWinner ? 0 : pScore;
+    }
+    return null;
+  };
 
   const isRummy21 = activeRulesetId.includes('21') || activeRulesetId === 'RUMMY_21';
   const isPoints13 = activeRulesetId.includes('POINT') || activeRulesetId === 'POINTS_13';
@@ -286,7 +325,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
       ? 'Points Rummy (13-Card)'
       : activeRulesetId.includes('POOL')
         ? (activeRulesetId.includes('201') ? 'Pool 201 Rummy' : 'Pool 101 Rummy')
-        : 'Deals Rummy';
+        : `${totalDeals} Deals Rummy`;
 
   const stakeTier = gameSettlement?.stakeTier ?? lastGameConfig?.entryFee ?? 100;
   let displayGrossPot = gameSettlement?.totalGrossPot ?? 0;
@@ -369,10 +408,10 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
 
         <div className="result-top-center">
           <span className="result-top-title">
-            {isPoolIntermediateDeal
+            {isIntermediateDeal
               ? `♠ DEAL ${gameState.dealNumber ?? 1} SHOWDOWN ♠`
               : isTournamentWinner
-              ? '🏆 POOL TOURNAMENT CHAMPION 🏆'
+              ? (isDeals ? '🏆 DEALS CHAMPION 🏆' : '🏆 POOL TOURNAMENT CHAMPION 🏆')
               : '♠ GAME SHOWDOWN ♠'}
           </span>
           <span className="result-top-pill">
@@ -402,9 +441,9 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                     Tournament Champion!
                   </>
                 ) : (
-                  `🏆 ${winnerName} Won the Pool Tournament!`
+                  `🏆 ${winnerName} Won the ${isDeals ? 'Deals Match' : 'Pool Tournament'}!`
                 )
-              ) : isPoolIntermediateDeal ? (
+              ) : isIntermediateDeal ? (
                 isWinner ? (
                   <>
                     <Sparkles size={22} color="#fbbf24" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
@@ -425,16 +464,20 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
             <p className="result-hero-subtitle">
               {isTournamentWinner
                 ? (gameState.tournamentWinnerId === playerId
-                    ? 'Congratulations! You are the last surviving player standing and won the pool pot!'
+                    ? (isDeals
+                        ? `Congratulations! You had the most chips after ${totalDeals} deals and won the match!`
+                        : 'Congratulations! You are the last surviving player standing and won the pool pot!')
                     : `Final standings after ${gameState.dealNumber ?? 1} deals. Review scores below.`)
-                : isPoolIntermediateDeal
-                ? `Deal completed. Penalties added to cumulative scores. Reach ${threshold} to get eliminated.`
+                : isIntermediateDeal
+                ? (isDeals
+                    ? `Deal ${gameState.dealNumber ?? 1} of ${totalDeals} completed. Chips transferred to the deal winner!`
+                    : `Deal completed. Penalties added to cumulative scores. Reach ${threshold} to get eliminated.`)
                 : isWinner
                 ? 'Valid declaration with 0 penalty points. All players’ cards and settlements are shown below.'
                 : 'Hand completed. Review all players’ showdown cards and final settlement below.'}
             </p>
 
-            {isPoolIntermediateDeal && (
+            {isIntermediateDeal && (
               <div
                 style={{
                   display: 'inline-flex',
@@ -520,31 +563,60 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
 
           {/* Unified Pot Strip */}
           <div className="result-pot-strip">
-            {isPoolIntermediateDeal ? (
-              <>
-                <div className="result-pot-strip-item">
-                  <span className="result-pot-strip-label">Pool Prize Pot</span>
-                  <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>
-                    ₹{Number(displayGrossPot).toFixed(2)}
-                  </span>
-                </div>
+            {isIntermediateDeal ? (
+              isDeals ? (
+                <>
+                  <div className="result-pot-strip-item">
+                    <span className="result-pot-strip-label">Tournament Prize</span>
+                    <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>
+                      ₹{Number(displayPrize).toFixed(2)}
+                    </span>
+                  </div>
 
-                <div className="result-pot-strip-divider" />
+                  <div className="result-pot-strip-divider" />
 
-                <div className="result-pot-strip-item">
-                  <span className="result-pot-strip-label">Elimination Limit</span>
-                  <span className="result-pot-strip-val val-red">{threshold} pts</span>
-                </div>
+                  <div className="result-pot-strip-item">
+                    <span className="result-pot-strip-label">Current Deal</span>
+                    <span className="result-pot-strip-val" style={{ color: '#60a5fa' }}>
+                      Deal {gameState.dealNumber ?? 1} of {totalDeals}
+                    </span>
+                  </div>
 
-                <div className="result-pot-strip-divider" />
+                  <div className="result-pot-strip-divider" />
 
-                <div className="result-pot-strip-item val-winner">
-                  <span className="result-pot-strip-label" style={{ color: '#86efac' }}>Survivors Remaining</span>
-                  <span className="result-pot-strip-val val-green">
-                    {allPlayers.filter((p) => !p.isEliminated).length} / {allPlayers.length}
-                  </span>
-                </div>
-              </>
+                  <div className="result-pot-strip-item val-winner">
+                    <span className="result-pot-strip-label" style={{ color: '#86efac' }}>Chip Leader</span>
+                    <span className="result-pot-strip-val val-green">
+                      {allPlayers[0]?.name ?? 'Leader'} ({allPlayers[0]?.chipBalance ?? 0} 🪙)
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="result-pot-strip-item">
+                    <span className="result-pot-strip-label">Pool Prize Pot</span>
+                    <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>
+                      ₹{Number(displayGrossPot).toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="result-pot-strip-divider" />
+
+                  <div className="result-pot-strip-item">
+                    <span className="result-pot-strip-label">Elimination Limit</span>
+                    <span className="result-pot-strip-val val-red">{threshold} pts</span>
+                  </div>
+
+                  <div className="result-pot-strip-divider" />
+
+                  <div className="result-pot-strip-item val-winner">
+                    <span className="result-pot-strip-label" style={{ color: '#86efac' }}>Survivors Remaining</span>
+                    <span className="result-pot-strip-val val-green">
+                      {allPlayers.filter((p) => !p.isEliminated).length} / {allPlayers.length}
+                    </span>
+                  </div>
+                </>
+              )
             ) : (
               <>
                 <div className="result-pot-strip-item">
@@ -563,7 +635,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
 
                 <div className="result-pot-strip-item val-winner">
                   <span className="result-pot-strip-label" style={{ color: '#86efac' }}>
-                    {isPool ? 'Pool Champion Prize' : 'Winner Payout'}
+                    {isPool ? 'Pool Champion Prize' : isDeals ? 'Deals Champion Prize' : 'Winner Payout'}
                   </span>
                   <span className="result-pot-strip-val val-green">+₹{Number(displayPrize).toFixed(2)}</span>
                 </div>
@@ -572,12 +644,184 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
           </div>
         </section>
 
+        {/* Multi-Deal Scoreboard Breakdown Table */}
+        {isMultiDealGame && (
+          <section className="result-multi-deal-card" aria-label="Tournament All Deals Scoreboard">
+            <div className="result-multi-deal-header">
+              <div className="result-multi-deal-title">
+                <Trophy size={16} color="#fbbf24" />
+                <span>
+                  {isDeals
+                    ? `${totalDeals} DEALS TOURNAMENT SCORECARD`
+                    : `POOL ${threshold} ROUNDS BREAKDOWN`}
+                </span>
+              </div>
+              <span className="result-multi-deal-badge">
+                {isDeals
+                  ? `🪙 Starting Chips: ${totalDeals * 80}`
+                  : `Elimination Limit: ${threshold} pts`}
+              </span>
+            </div>
+
+            <div className="result-multi-deal-table-wrap">
+              <table className="royal-scoreboard-table">
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', minWidth: '150px' }}>Player</th>
+                    {Array.from({ length: maxRecordedDeals }).map((_, idx) => (
+                      <th key={idx} style={{ textAlign: 'center', minWidth: '70px' }}>
+                        Deal {idx + 1}
+                      </th>
+                    ))}
+                    <th style={{ textAlign: 'center', minWidth: '110px' }}>
+                      {isDeals ? 'Chips Balance' : 'Total Points'}
+                    </th>
+                    {!isIntermediateDeal && (
+                      <th style={{ textAlign: 'center', minWidth: '100px' }}>Net Payout</th>
+                    )}
+                    <th style={{ textAlign: 'right', minWidth: '95px' }}>Rank & Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allPlayers.map((p, rankIdx) => {
+                    const isTournamentChamp =
+                      Boolean(gameState.tournamentWinnerId && gameState.tournamentWinnerId === p.playerId) ||
+                      (!gameState.tournamentWinnerId && p.isWinner);
+                    const isDanger = isPool && !p.isEliminated && (p.cumulativeScore ?? 0) >= threshold * 0.75;
+                    const percent = isPool ? Math.min(100, Math.round(((p.cumulativeScore ?? 0) / threshold) * 100)) : 0;
+
+                    let scoreColor = '#34d399';
+                    if (p.isEliminated) scoreColor = '#ef4444';
+                    else if (isDanger) scoreColor = '#f87171';
+                    else if ((p.cumulativeScore ?? 0) >= threshold * 0.5) scoreColor = '#fbbf24';
+
+                    const rowClass = `${p.isMe ? 'royal-scoreboard-row--viewer' : ''} ${p.isEliminated ? 'royal-scoreboard-row--eliminated' : ''}`;
+
+                    return (
+                      <tr key={p.playerId} className={rowClass}>
+                        {/* Player Info */}
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '50%',
+                                overflow: 'hidden',
+                                border: `1.5px solid ${isTournamentChamp ? '#fbbf24' : 'rgba(255,255,255,0.2)'}`,
+                                background: '#1e293b',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {p.avatarPhoto ? (
+                                <img src={p.avatarPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : (
+                                <span style={{ fontSize: '11px', color: '#94a3b8' }}>#</span>
+                              )}
+                            </div>
+
+                            <div style={{ textAlign: 'left' }}>
+                              <div style={{ fontWeight: 800, color: p.isMe ? '#fde047' : '#f8fafc', fontSize: '12.5px' }}>
+                                {p.name}
+                                {p.isMe && <span style={{ color: '#fbbf24', marginLeft: '4px', fontSize: '10.5px' }}>(You)</span>}
+                              </div>
+                              <div style={{ fontSize: '10.5px', color: '#94a3b8', marginTop: '1px' }}>
+                                {isTournamentChamp && <span style={{ color: '#fbbf24', marginRight: '6px' }}>👑 Champion</span>}
+                                {!isDeals && isDanger && <span style={{ color: '#f87171', marginRight: '6px' }}>Danger</span>}
+                                {p.isBot && <span style={{ color: '#64748b' }}>AI</span>}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Deal Columns */}
+                        {Array.from({ length: maxRecordedDeals }).map((_, dIdx) => {
+                          const dNum = dIdx + 1;
+                          const pts = getPlayerDealScore(p.playerId, dNum, p.score, p.isWinner);
+                          return (
+                            <td key={dIdx} style={{ textAlign: 'center' }}>
+                              {pts === 0 ? (
+                                <span className="royal-score-pill royal-score-pill--win">0 pts</span>
+                              ) : pts !== null ? (
+                                <span className="royal-score-pill royal-score-pill--penalty">+{pts} pts</span>
+                              ) : (
+                                <span style={{ color: '#64748b' }}>—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+
+                        {/* Chips / Total Points */}
+                        <td style={{ textAlign: 'center' }}>
+                          {isDeals ? (
+                            <div style={{ fontWeight: 900, fontSize: '13.5px', color: '#fbbf24', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <span>🪙</span>
+                              <span>{p.chipBalance ?? 0}</span>
+                            </div>
+                          ) : (
+                            <>
+                              <div style={{ fontWeight: 800, fontSize: '13px', color: scoreColor }}>
+                                {p.cumulativeScore ?? 0} <span style={{ fontSize: '10.5px', color: '#64748b' }}>/ {threshold}</span>
+                              </div>
+                              <div className="royal-score-bar-bg">
+                                <div
+                                  className={`royal-score-bar-fill ${isDanger || p.isEliminated ? 'royal-score-bar-fill--danger' : ''}`}
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+                            </>
+                          )}
+                        </td>
+
+                        {/* Net Payout */}
+                        {!isIntermediateDeal && (
+                          <td style={{ textAlign: 'center' }}>
+                            {isTournamentChamp ? (
+                              <span style={{ color: '#34d399', fontWeight: 900, fontSize: '13px' }}>
+                                +₹{Number(displayPrize).toFixed(2)}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#f87171', fontWeight: 800, fontSize: '12.5px' }}>
+                                -₹{Number(stakeTier).toFixed(2)}
+                              </span>
+                            )}
+                          </td>
+                        )}
+
+                        {/* Rank & Status */}
+                        <td style={{ textAlign: 'right' }}>
+                          {isTournamentChamp ? (
+                            <span style={{ color: '#fbbf24', fontWeight: 900, fontSize: '11px', background: 'rgba(251, 191, 36, 0.15)', border: '1px solid rgba(251, 191, 36, 0.4)', borderRadius: '6px', padding: '2px 7px' }}>
+                              👑 {isDeals ? 'CHAMPION' : 'WINNER'}
+                            </span>
+                          ) : p.isEliminated ? (
+                            <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '11px' }}>
+                              ELIMINATED
+                            </span>
+                          ) : (
+                            <span style={{ color: '#94a3b8', fontWeight: 800, fontSize: '11.5px' }}>
+                              Rank #{rankIdx + 1}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
         {/* Scoreboard Sheet - Single Unified Sheet (No individual cards per player) */}
         <section className="result-scoreboard-sheet">
           <div className="result-sheet-header">
             <div className="result-sheet-title">
               <Layers size={15} />
-              <span>SHOWDOWN SCOREBOARD</span>
+              <span>{isMultiDealGame ? `DEAL ${gameState.dealNumber ?? 1} SHOWDOWN CARDS` : 'SHOWDOWN SCOREBOARD'}</span>
             </div>
 
             <button
@@ -689,7 +933,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                           {won ? (
                             <span className="result-row-status--winner">
                               <CheckCircle2 size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                              {isPool ? 'Deal Winner (0 pts)' : 'Winner (0 pts)'}
+                              {isPool || isDeals ? 'Deal Winner (0 pts)' : 'Winner (0 pts)'}
                             </span>
                           ) : p.isEliminated ? (
                             <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '11px' }}>
@@ -712,7 +956,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                     </div>
 
                     <div className="result-row-finances">
-                      {isPoolIntermediateDeal ? (
+                      {isIntermediateDeal ? (
                         <>
                           <div
                             className={`result-row-delta ${
@@ -720,13 +964,21 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                             }`}
                             style={p.isEliminated ? { color: '#ef4444' } : undefined}
                           >
-                            {p.isEliminated ? 'OUT' : won ? '0 pts' : `+${p.score} pts`}
+                            {isDeals
+                              ? (won ? 'Won Deal' : `-${p.score} chips`)
+                              : (p.isEliminated ? 'OUT' : won ? '0 pts' : `+${p.score} pts`)}
                           </div>
 
                           <div className="result-row-score-sub">
-                            <span style={{ fontWeight: 800, color: p.isEliminated ? '#ef4444' : '#fbbf24' }}>
-                              {p.cumulativeScore}/{threshold}
-                            </span>
+                            {isDeals ? (
+                              <span style={{ fontWeight: 800, color: '#fbbf24' }}>
+                                🪙 {p.chipBalance ?? 0} chips
+                              </span>
+                            ) : (
+                              <span style={{ fontWeight: 800, color: p.isEliminated ? '#ef4444' : '#fbbf24' }}>
+                                {p.cumulativeScore}/{threshold}
+                              </span>
+                            )}
                           </div>
                         </>
                       ) : (
@@ -740,13 +992,21 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                           </div>
 
                           <div className="result-row-score-sub">
-                            <span>{p.score} pts</span>
-                            {isPool && (
-                              <span style={{ color: '#fbbf24', marginLeft: '6px' }}>
-                                (Total: {p.cumulativeScore})
+                            {isDeals ? (
+                              <span style={{ color: '#fbbf24', fontWeight: 800 }}>
+                                🪙 {p.chipBalance ?? 0} chips ({p.score} pts)
                               </span>
+                            ) : (
+                              <>
+                                <span>{p.score} pts</span>
+                                {isPool && (
+                                  <span style={{ color: '#fbbf24', marginLeft: '6px' }}>
+                                    (Total: {p.cumulativeScore})
+                                  </span>
+                                )}
+                              </>
                             )}
-                            {pRefund !== undefined && pRefund > 0 && !isPool && (
+                            {pRefund !== undefined && pRefund > 0 && !isPool && !isDeals && (
                               <span style={{ color: '#34d399', marginLeft: '6px' }}>
                                 (+₹{Number(pRefund).toFixed(2)} refund)
                               </span>
@@ -843,7 +1103,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
             </button>
           )}
 
-          {isPool && onOpenScoreboard && (
+          {(isPool || isDeals) && onOpenScoreboard && (
             <button
               type="button"
               onClick={() => {
@@ -869,7 +1129,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
             </button>
           )}
 
-          {isPoolIntermediateDeal ? (
+          {isIntermediateDeal ? (
             <div
               style={{
                 display: 'flex',

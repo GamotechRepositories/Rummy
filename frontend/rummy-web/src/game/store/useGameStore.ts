@@ -287,8 +287,18 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       cards: normalizeHand(wg.cards || []),
     }));
 
+    // If deal changed or new game started, clear previous deal's groups and state
+    const isNewDealOrGame = Boolean(
+      (prevGameState?.gameId && view.gameId && prevGameState.gameId !== view.gameId) ||
+      (prevGameState?.dealNumber && view.dealNumber && prevGameState.dealNumber !== view.dealNumber) ||
+      (prevGameState?.gameStatus === 'COMPLETED' && (view.gameStatus === 'IN_PROGRESS' || view.gameStatus === 'DEALING'))
+    );
+    if (isNewDealOrGame) {
+      clearPersistedCardGroups();
+    }
+
     // Cache the most recent valid hand (>= 10 cards) so drops/showdown never lose cards
-    const currentLastKnown = lastKnownHand || [];
+    const currentLastKnown = isNewDealOrGame ? [] : (lastKnownHand || []);
     const nextLastKnown = hand.length >= 10 ? hand : currentLastKnown;
 
     // If viewer hand is cleared (e.g. dropped), recover cards at showdown
@@ -308,20 +318,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       turnPhase: view.turnPhase,
     };
 
-    // If deal changed, clear previous deal's groups
-    const isNewGame = Boolean(
-      prevGameState?.gameId && view.gameId && prevGameState.gameId !== view.gameId
-    );
-    if (isNewGame) {
-      clearPersistedCardGroups();
-    }
-
-    // If in-memory groups is empty or came from previous game, try restoring from storage
-    const restoredGroups = !isNewGame && groups.length === 0
-      ? (readPersistedCardGroups(view.tableId, view.gameId) || [])
+    // If in-memory groups is empty or came from previous game/deal, try restoring from storage
+    const restoredGroups = !isNewDealOrGame && groups.length === 0
+      ? (readPersistedCardGroups(view.tableId, view.gameId, view.dealNumber) || [])
       : [];
 
-    const effectiveExistingGroups = isNewGame
+    const effectiveExistingGroups = isNewDealOrGame
       ? []
       : groups.length > 0
         ? groups
@@ -336,7 +338,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     const handIds = new Set(effectiveHand.map((c) => c.instanceId));
     const viewerDropped = view.viewerStatus === 'DROPPED' && view.gameStatus === 'IN_PROGRESS';
-    const nextSelected = viewerDropped ? [] : selectedCardIds.filter((id) => handIds.has(id));
+    const nextSelected = isNewDealOrGame || viewerDropped ? [] : selectedCardIds.filter((id) => handIds.has(id));
 
     const isTournamentOver =
       view.gameStatus === 'ABORTED' ||
@@ -350,14 +352,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       updatedGroups.length > 0 &&
       !viewerDropped
     ) {
-      persistCardGroups(view.tableId, view.gameId, updatedGroups);
+      persistCardGroups(view.tableId, view.gameId, updatedGroups, undefined, view.dealNumber);
     }
 
     set({
       gameState: normalizedView,
       groups: updatedGroups,
       selectedCardIds: nextSelected,
-      isDeclareModalOpen: viewerDropped ? false : get().isDeclareModalOpen,
+      isDeclareModalOpen: isNewDealOrGame || viewerDropped ? false : get().isDeclareModalOpen,
       lastKnownHand: nextLastKnown,
       resumePending: false,
     });
@@ -422,7 +424,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const activeTable = gameState?.tableId || tableId;
     const activeGame = gameState?.gameId;
     if (activeTable && remainingGroups.length > 0) {
-      persistCardGroups(activeTable, activeGame, remainingGroups);
+      persistCardGroups(activeTable, activeGame, remainingGroups, undefined, gameState?.dealNumber);
     }
 
     set({ groups: remainingGroups, selectedCardIds: [] });
@@ -495,7 +497,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const activeTable = gameState?.tableId || tableId;
     const activeGame = gameState?.gameId;
     if (activeTable && remainingGroups.length > 0) {
-      persistCardGroups(activeTable, activeGame, remainingGroups);
+      persistCardGroups(activeTable, activeGame, remainingGroups, undefined, gameState?.dealNumber);
     }
 
     set({ groups: remainingGroups, selectedCardIds: [] });
@@ -539,7 +541,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const activeTable = gameState?.tableId || tableId;
     const activeGame = gameState?.gameId;
     if (activeTable && nextGroups.length > 0) {
-      persistCardGroups(activeTable, activeGame, nextGroups);
+      persistCardGroups(activeTable, activeGame, nextGroups, undefined, gameState?.dealNumber);
     }
 
     set({ groups: nextGroups });
@@ -581,7 +583,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const activeTable = gameState?.tableId || tableId;
     const activeGame = gameState?.gameId;
     if (activeTable) {
-      persistCardGroups(activeTable, activeGame, newGroups, true);
+      persistCardGroups(activeTable, activeGame, newGroups, true, gameState?.dealNumber);
     }
 
     set({ groups: newGroups, selectedCardIds: [] });

@@ -137,6 +137,7 @@ export const LobbyScreen: React.FC = () => {
   const [poolEntry, setPoolEntry] = useState<number>(25);
 
   // Deals Rummy Config
+  const [dealsSubVariant, setDealsSubVariant] = useState<'DEALS_2' | 'DEALS_3'>('DEALS_2');
   const [dealsEntry, setDealsEntry] = useState<number>(25);
 
   // 21-Card Rummy Config
@@ -167,10 +168,10 @@ export const LobbyScreen: React.FC = () => {
     activeEntryFee = poolEntry;
     activeVariantTitle = poolSubVariant === 'POOL_101' ? 'Pool 101' : 'Pool 201';
   } else if (selectedVariant === 'DEALS') {
-    activeRulesetId = 'DEALS_RUMMY';
+    activeRulesetId = dealsSubVariant;
     activePointValue = null;
     activeEntryFee = dealsEntry;
-    activeVariantTitle = 'Deal Rummy';
+    activeVariantTitle = dealsSubVariant === 'DEALS_2' ? '2 Deals Rummy' : '3 Deals Rummy';
   } else {
     activeRulesetId = 'RUMMY_21';
     activePointValue = null;
@@ -801,8 +802,52 @@ export const LobbyScreen: React.FC = () => {
                     gap: 14,
                   }}
                 >
+                  {/* Deals Count Switcher (2 Deals vs 3 Deals) */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      background: 'rgba(0, 0, 0, 0.45)',
+                      padding: 4,
+                      borderRadius: 12,
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      gap: 4,
+                    }}
+                  >
+                    {[
+                      { id: 'DEALS_2' as const, label: '2 Deals (160 Chips)' },
+                      { id: 'DEALS_3' as const, label: '3 Deals (240 Chips)' },
+                    ].map((opt) => {
+                      const active = dealsSubVariant === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => {
+                            soundEngine.play('click');
+                            setDealsSubVariant(opt.id);
+                          }}
+                          style={{
+                            padding: '8px 20px',
+                            border: 'none',
+                            background: active
+                              ? 'linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%)'
+                              : 'transparent',
+                            color: active ? '#0f172a' : '#f87171',
+                            fontSize: 14,
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            transition: 'all 0.18s ease',
+                            borderRadius: 8,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#fecaca' }}>
-                    Fixed 2 Deals · Select Entry Fee:
+                    Select Entry Fee:
                   </div>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
                     {DEALS_ENTRY_OPTIONS.map((fee) => {

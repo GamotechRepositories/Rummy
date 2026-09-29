@@ -131,6 +131,8 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   const gameState = useGameStore((s) => s.gameState);
   const threshold = gameState?.eliminationThreshold ?? 0;
   const isPool = threshold > 0;
+  const isDeals = (gameState?.totalDeals ?? 0) > 1 || (gameState?.rulesetId ?? '').toUpperCase().includes('DEAL');
+  const chipBalance = player.chipBalance ?? 0;
   const isEliminated = player.status === 'ELIMINATED' || !!player.isEliminated;
   const isCurrentTurn = activePlayerId === player.playerId && !dealInProgress && !isEliminated;
   const isDropped = player.status === 'DROPPED';
@@ -426,6 +428,26 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
               {isEliminated ? 'OUT' : `${player.cumulativeScore ?? player.score ?? 0}/${threshold}`}
             </div>
           )
+        ) : isDeals ? (
+          <div
+            style={{
+              fontSize: '10.5px',
+              fontWeight: 800,
+              marginTop: '1px',
+              color: '#fbbf24',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '2px',
+            }}
+          >
+            <span>🪙</span>
+            <span>{chipBalance}</span>
+            {gameStatus === 'COMPLETED' && player.score !== undefined && (
+              <span style={{ color: '#94a3b8', fontSize: '9.5px', marginLeft: '2px' }}>
+                ({player.score}p)
+              </span>
+            )}
+          </div>
         ) : (
           gameStatus === 'COMPLETED' && (
             <div style={{ fontSize: '10px', color: 'var(--gold-light)', fontWeight: 800 }}>
