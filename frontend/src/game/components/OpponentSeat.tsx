@@ -1,7 +1,7 @@
 import React from 'react';
 import type { OpponentView } from '../types/game';
 import { TurnTimerRing } from './TurnTimerRing';
-import { getAvatarForPlayer } from '../utils/avatarUtils';
+import { getAvatarForPlayer, photoForCharacter } from '../utils/avatarUtils';
 import { UserPlus } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
 
@@ -140,6 +140,7 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   const isDealer = seatNumber === gameState?.dealerSeatIndex;
   const isDangerZone = isPool && !isEliminated && (player.cumulativeScore ?? 0) >= threshold * 0.75;
   const avatar = getAvatarForPlayer(player.displayName || player.playerId);
+  const resolvedPhoto = player.avatarId ? photoForCharacter(player.avatarId) : avatar.photo;
 
   // Inward card fan orientation
   const isRightSide =
@@ -197,10 +198,10 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
             justifyContent: 'center',
           }}
         >
-          {avatar.photo ? (
+          {resolvedPhoto ? (
             <img
               className="opponent-avatar-photo"
-              src={avatar.photo}
+              src={resolvedPhoto}
               alt=""
               draggable={false}
             />

@@ -68,8 +68,25 @@ public record PlayerGameView(
             boolean isEliminated,
             boolean isBot,
             List<CardInstance> hand,
-            long chipBalance
+            long chipBalance,
+            String avatarId
     ) implements Serializable {
+        public OpponentView(
+                String playerId,
+                String displayName,
+                int seatIndex,
+                PlayerStatus status,
+                int cardCount,
+                int score,
+                int cumulativeScore,
+                boolean isEliminated,
+                boolean isBot,
+                List<CardInstance> hand,
+                long chipBalance
+        ) {
+            this(playerId, displayName, seatIndex, status, cardCount, score, cumulativeScore, isEliminated, isBot, hand, chipBalance, null);
+        }
+
         public OpponentView(
                 String playerId,
                 String displayName,
@@ -82,7 +99,7 @@ public record PlayerGameView(
                 boolean isBot,
                 List<CardInstance> hand
         ) {
-            this(playerId, displayName, seatIndex, status, cardCount, score, cumulativeScore, isEliminated, isBot, hand, 0L);
+            this(playerId, displayName, seatIndex, status, cardCount, score, cumulativeScore, isEliminated, isBot, hand, 0L, null);
         }
 
         public OpponentView(
@@ -94,7 +111,7 @@ public record PlayerGameView(
                 int score,
                 boolean isBot
         ) {
-            this(playerId, displayName, seatIndex, status, cardCount, score, score, status == PlayerStatus.ELIMINATED, isBot, List.of(), 0L);
+            this(playerId, displayName, seatIndex, status, cardCount, score, score, status == PlayerStatus.ELIMINATED, isBot, List.of(), 0L, null);
         }
 
         public OpponentView(
@@ -107,7 +124,7 @@ public record PlayerGameView(
                 boolean isBot,
                 List<CardInstance> hand
         ) {
-            this(playerId, displayName, seatIndex, status, cardCount, score, score, status == PlayerStatus.ELIMINATED, isBot, hand, 0L);
+            this(playerId, displayName, seatIndex, status, cardCount, score, score, status == PlayerStatus.ELIMINATED, isBot, hand, 0L, null);
         }
     }
 
@@ -355,7 +372,8 @@ public record PlayerGameView(
                         player.getStatus() == PlayerStatus.ELIMINATED,
                         player.isBot(),
                         opponentHand,
-                        player.getChipBalance()
+                        player.getChipBalance(),
+                        player.getAvatarId()
                 ));
             }
         }

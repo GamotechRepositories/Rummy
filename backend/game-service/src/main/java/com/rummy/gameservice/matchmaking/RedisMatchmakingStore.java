@@ -173,6 +173,7 @@ public class RedisMatchmakingStore implements MatchmakingStore {
         public String ticketId;
         public String playerId;
         public String playerName;
+        public String avatarId;
         public String rulesetId;
         public int stakeTier;
         public int maxPlayers;
@@ -187,6 +188,7 @@ public class RedisMatchmakingStore implements MatchmakingStore {
             d.ticketId = t.getTicketId();
             d.playerId = t.getPlayerId();
             d.playerName = t.getPlayerName();
+            d.avatarId = t.getAvatarId();
             d.rulesetId = t.getRulesetId();
             d.stakeTier = t.getStakeTier();
             d.maxPlayers = t.getMaxPlayers();
@@ -200,7 +202,7 @@ public class RedisMatchmakingStore implements MatchmakingStore {
 
         MatchmakingTicket toTicket() {
             MatchmakingTicket t = MatchmakingTicket.rehydrate(
-                    ticketId, playerId, playerName, rulesetId, stakeTier, maxPlayers,
+                    ticketId, playerId, playerName, avatarId, rulesetId, stakeTier, maxPlayers,
                     allowAiFallback, Instant.parse(createdAt));
             if (status != null) {
                 t.setStatus(MatchmakingTicket.Status.valueOf(status));

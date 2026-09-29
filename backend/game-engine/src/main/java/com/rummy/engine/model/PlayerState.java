@@ -13,6 +13,7 @@ public final class PlayerState implements Serializable {
     private final String displayName;
     private final int seatIndex;
     private final boolean isBot;
+    private String avatarId;
     private final List<CardInstance> hand;
     private List<CardInstance> lastHand;
 
@@ -26,11 +27,12 @@ public final class PlayerState implements Serializable {
     private int turnsCompleted;
     private Instant lastActionAt;
 
-    public PlayerState(String playerId, String displayName, int seatIndex, boolean isBot) {
+    public PlayerState(String playerId, String displayName, int seatIndex, boolean isBot, String avatarId) {
         this.playerId = Objects.requireNonNull(playerId, "playerId must not be null");
         this.displayName = displayName != null ? displayName : playerId;
         this.seatIndex = seatIndex;
         this.isBot = isBot;
+        this.avatarId = avatarId;
         this.hand = new ArrayList<>();
         this.lastHand = new ArrayList<>();
         this.status = PlayerStatus.WAITING;
@@ -42,6 +44,10 @@ public final class PlayerState implements Serializable {
         this.consecutiveMissedTurns = 0;
         this.turnsCompleted = 0;
         this.lastActionAt = Instant.now();
+    }
+
+    public PlayerState(String playerId, String displayName, int seatIndex, boolean isBot) {
+        this(playerId, displayName, seatIndex, isBot, null);
     }
 
     /**
@@ -241,6 +247,14 @@ public final class PlayerState implements Serializable {
 
     public Instant getLastActionAt() {
         return lastActionAt;
+    }
+
+    public String getAvatarId() {
+        return avatarId;
+    }
+
+    public void setAvatarId(String avatarId) {
+        this.avatarId = avatarId;
     }
 
     @Override

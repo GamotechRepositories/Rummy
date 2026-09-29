@@ -306,6 +306,7 @@ export const LobbyScreen: React.FC = () => {
         body: JSON.stringify({
           playerId,
           playerName: name,
+          avatarId,
           rulesetId: rId,
           stakeTier: eFee,
           maxPlayers: mPlayers,

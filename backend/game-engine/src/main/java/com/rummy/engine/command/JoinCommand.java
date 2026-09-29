@@ -12,5 +12,18 @@ public record JoinCommand(
         String displayName,
         int seatIndex,
         boolean isBot,
-        Instant timestamp
-) implements GameCommand {}
+        Instant timestamp,
+        String avatarId
+) implements GameCommand {
+    public JoinCommand(
+            String commandId,
+            String gameId,
+            String playerId,
+            String displayName,
+            int seatIndex,
+            boolean isBot,
+            Instant timestamp
+    ) {
+        this(commandId, gameId, playerId, displayName, seatIndex, isBot, timestamp, null);
+    }
+}

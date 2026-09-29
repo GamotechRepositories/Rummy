@@ -282,13 +282,14 @@ class GameSocketClient {
   // --- High-level game commands ---
 
   public joinTable(seatIndex = 0, isBot = false): void {
-    const { tableId, playerId, displayName } = useGameStore.getState();
+    const { tableId, playerId, displayName, avatarId } = useGameStore.getState();
     this.sendMessage({
       type: 'JOIN_TABLE',
       tableId,
       payload: {
         playerId,
         displayName,
+        avatarId,
         seatIndex,
         isBot,
       },

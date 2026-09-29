@@ -14,6 +14,7 @@ public class MatchmakingTicket {
     private final String ticketId;
     private final String playerId;
     private final String playerName;
+    private final String avatarId;
     private final String rulesetId;
     private final int stakeTier;
     private final int maxPlayers;
@@ -26,23 +27,35 @@ public class MatchmakingTicket {
 
     public MatchmakingTicket(String ticketId, String playerId, String playerName,
                              String rulesetId, int stakeTier, int maxPlayers, boolean allowAiFallback) {
-        this(ticketId, playerId, playerName, rulesetId, stakeTier, maxPlayers, allowAiFallback, Instant.now());
+        this(ticketId, playerId, playerName, null, rulesetId, stakeTier, maxPlayers, allowAiFallback, Instant.now());
+    }
+
+    public MatchmakingTicket(String ticketId, String playerId, String playerName, String avatarId,
+                             String rulesetId, int stakeTier, int maxPlayers, boolean allowAiFallback) {
+        this(ticketId, playerId, playerName, avatarId, rulesetId, stakeTier, maxPlayers, allowAiFallback, Instant.now());
     }
 
     /** Restore a ticket from durable store (Redis) without resetting createdAt. */
     public static MatchmakingTicket rehydrate(String ticketId, String playerId, String playerName,
                                               String rulesetId, int stakeTier, int maxPlayers,
                                               boolean allowAiFallback, Instant createdAt) {
-        return new MatchmakingTicket(ticketId, playerId, playerName, rulesetId, stakeTier, maxPlayers,
+        return rehydrate(ticketId, playerId, playerName, null, rulesetId, stakeTier, maxPlayers, allowAiFallback, createdAt);
+    }
+
+    public static MatchmakingTicket rehydrate(String ticketId, String playerId, String playerName, String avatarId,
+                                              String rulesetId, int stakeTier, int maxPlayers,
+                                              boolean allowAiFallback, Instant createdAt) {
+        return new MatchmakingTicket(ticketId, playerId, playerName, avatarId, rulesetId, stakeTier, maxPlayers,
                 allowAiFallback, createdAt != null ? createdAt : Instant.now());
     }
 
-    private MatchmakingTicket(String ticketId, String playerId, String playerName,
+    private MatchmakingTicket(String ticketId, String playerId, String playerName, String avatarId,
                               String rulesetId, int stakeTier, int maxPlayers, boolean allowAiFallback,
                               Instant createdAt) {
         this.ticketId = ticketId;
         this.playerId = playerId;
         this.playerName = playerName;
+        this.avatarId = avatarId;
         this.rulesetId = rulesetId;
         this.stakeTier = stakeTier;
         this.maxPlayers = maxPlayers;
@@ -61,6 +74,10 @@ public class MatchmakingTicket {
 
     public String getPlayerName() {
         return playerName;
+    }
+
+    public String getAvatarId() {
+        return avatarId;
     }
 
     public String getRulesetId() {

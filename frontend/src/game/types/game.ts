@@ -95,6 +95,7 @@ export interface OpponentView {
   isBot: boolean;
   hand?: CardInstance[];
   chipBalance?: number;
+  avatarId?: string;
 }
 
 export interface PlayerGameView {

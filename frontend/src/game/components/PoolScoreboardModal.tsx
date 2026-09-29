@@ -82,6 +82,7 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
     }
 
     const av = getAvatarForPlayer(opp.displayName || opp.playerId);
+    const avPhoto = opp.avatarId ? photoForCharacter(opp.avatarId) : av.photo;
     allPlayers.push({
       id: opp.playerId,
       name: opp.displayName,
@@ -92,7 +93,7 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
       chipBalance: oppChips,
       isEliminated: oppElim,
       roundScores: oppRounds,
-      avatarPhoto: av.photo,
+      avatarPhoto: avPhoto,
     });
   }
 

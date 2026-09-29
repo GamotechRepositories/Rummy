@@ -260,6 +260,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
         (isPool && oppCum >= threshold)
       );
       const av = getAvatarForPlayer(opp.displayName || opp.playerId);
+      const avPhoto = opp.avatarId ? photoForCharacter(opp.avatarId) : av.photo;
       return {
         playerId: opp.playerId,
         name: opp.displayName,
@@ -272,7 +273,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
         isEliminated: oppElim,
         hand: oppHand,
         isBot: opp.isBot,
-        avatarPhoto: av.photo,
+        avatarPhoto: avPhoto,
       };
     }),
   ];

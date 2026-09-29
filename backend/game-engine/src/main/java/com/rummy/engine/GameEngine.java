@@ -56,7 +56,7 @@ public final class GameEngine {
             return EngineResult.failure(state, "Seat " + cmd.seatIndex() + " is already occupied");
         }
 
-        PlayerState newPlayer = new PlayerState(cmd.playerId(), cmd.displayName(), cmd.seatIndex(), cmd.isBot());
+        PlayerState newPlayer = new PlayerState(cmd.playerId(), cmd.displayName(), cmd.seatIndex(), cmd.isBot(), cmd.avatarId());
         state.addPlayer(newPlayer);
 
         long seq = state.nextSequence();

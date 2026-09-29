@@ -3,6 +3,7 @@ package com.rummy.gameservice.matchmaking;
 public class MatchmakingRequest {
     private String playerId;
     private String playerName;
+    private String avatarId;
     private String rulesetId = "INDIAN_POINTS";
     private int stakeTier = 100;
     private int maxPlayers = 2;
@@ -11,8 +12,13 @@ public class MatchmakingRequest {
     public MatchmakingRequest() {}
 
     public MatchmakingRequest(String playerId, String playerName, String rulesetId, int stakeTier, int maxPlayers, boolean allowAiFallback) {
+        this(playerId, playerName, null, rulesetId, stakeTier, maxPlayers, allowAiFallback);
+    }
+
+    public MatchmakingRequest(String playerId, String playerName, String avatarId, String rulesetId, int stakeTier, int maxPlayers, boolean allowAiFallback) {
         this.playerId = playerId;
         this.playerName = playerName;
+        this.avatarId = avatarId;
         this.rulesetId = rulesetId;
         this.stakeTier = stakeTier;
         this.maxPlayers = maxPlayers;
@@ -33,6 +39,14 @@ public class MatchmakingRequest {
 
     public void setPlayerName(String playerName) {
         this.playerName = playerName;
+    }
+
+    public String getAvatarId() {
+        return avatarId;
+    }
+
+    public void setAvatarId(String avatarId) {
+        this.avatarId = avatarId;
     }
 
     public String getRulesetId() {

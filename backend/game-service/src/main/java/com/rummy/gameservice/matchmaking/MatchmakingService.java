@@ -119,6 +119,7 @@ public class MatchmakingService {
                 ticketId,
                 request.getPlayerId(),
                 request.getPlayerName(),
+                request.getAvatarId(),
                 request.getRulesetId(),
                 request.getStakeTier(),
                 request.getMaxPlayers(),

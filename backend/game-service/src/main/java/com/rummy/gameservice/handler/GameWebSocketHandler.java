@@ -164,11 +164,16 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     return;
                 }
                 String name = data != null && data.has("displayName") ? data.get("displayName").asText() : playerId;
+                String avatarId = data != null && data.has("avatarId") && !data.get("avatarId").isNull() ? data.get("avatarId").asText() : null;
                 int seat = data != null && data.has("seatIndex") ? data.get("seatIndex").asInt() : 0;
                 boolean isBot = false;
                 String targetPlayerId = playerId;
                 // Reconnection: If player already seated, re-register session and view
-                if (tableActor.getState().getPlayer(targetPlayerId).isPresent()) {
+                var existingPlayerOpt = tableActor.getState().getPlayer(targetPlayerId);
+                if (existingPlayerOpt.isPresent()) {
+                    if (avatarId != null && !avatarId.isBlank()) {
+                        existingPlayerOpt.get().setAvatarId(avatarId);
+                    }
                     tableActor.registerSession(targetPlayerId, session);
                     if (!isBot) {
                         sessionService.bindPlayerToTable(targetPlayerId, tableId);
@@ -195,7 +200,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     tableActor.registerBot(targetPlayerId, name, com.rummy.engine.bot.BotDifficulty.MEDIUM);
                 }
 
-                JoinCommand cmd = new JoinCommand(reqId, gameId, targetPlayerId, name, finalSeat, isBot, now);
+                JoinCommand cmd = new JoinCommand(reqId, gameId, targetPlayerId, name, finalSeat, isBot, now, avatarId);
                 tableActor.processCommand(cmd, reqId);
 
                 if (!isBot) {
