@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { isDiscardPhase, isDrawPhase } from '../utils/turnPhase';
-import { calculateHandPenalty } from '../rules/clientValidator';
+import { calculateHandPenalty, isJoker } from '../rules/clientValidator';
 import { TurnTimerRing } from './TurnTimerRing';
 import { photoForCharacter } from '../utils/avatarUtils';
 
@@ -61,9 +61,19 @@ export const ActionControls: React.FC = () => {
   const hasPure = pureCount >= neededPure;
   const liveScore = calculateHandPenalty(groups, wildJoker, isRummy21 ? 120 : 80, gameState.rulesetId);
 
+  const [justDrawnFromDiscardId, setJustDrawnFromDiscardId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isMyTurn || turnPhase !== 'AWAITING_DISCARD') {
+      setJustDrawnFromDiscardId(null);
+    }
+  }, [isMyTurn, turnPhase]);
+
+  const isSelectedSameAsDrawnDiscard = selectedCardIds.length === 1 && selectedCardIds[0] === justDrawnFromDiscardId;
+
   const handleDiscard = () => {
     if (selectedCardIds.length !== 1) return;
-    if (!discardPhase) {
+    if (!discardPhase || isSelectedSameAsDrawnDiscard) {
       soundEngine.play('error');
       return;
     }
@@ -73,7 +83,7 @@ export const ActionControls: React.FC = () => {
     socketClient.discard(cardId);
   };
 
-  const isFirstTurn = (gameState.discardHistory?.length ?? 0) <= 1;
+  const isFirstTurn = !(gameState.hasTakenFirstTurn ?? ((gameState.discardHistory?.length ?? 0) > 1));
   const dropPenaltyPoints = isRummy21
     ? (isFirstTurn ? 30 : 60)
     : isPool201
@@ -96,10 +106,21 @@ export const ActionControls: React.FC = () => {
     socketClient.drop();
   };
 
+  const isTopDiscardJoker = !!(gameState.topDiscard && isJoker(gameState.topDiscard, wildJoker));
+
   const handleDraw = (source: 'CLOSED_DECK' | 'DISCARD_PILE') => {
     if (!drawPhase) {
       soundEngine.play('error');
       return;
+    }
+    if (source === 'DISCARD_PILE') {
+      if (isTopDiscardJoker) {
+        soundEngine.play('error');
+        return;
+      }
+      setJustDrawnFromDiscardId(gameState.topDiscard?.instanceId ?? null);
+    } else {
+      setJustDrawnFromDiscardId(null);
     }
     soundEngine.play('draw');
     clearSelection();
@@ -115,8 +136,12 @@ export const ActionControls: React.FC = () => {
   const isDeals = (gameState.totalDeals ?? 0) > 1 || (gameState.rulesetId ?? '').toUpperCase().includes('DEAL');
   const viewerChips = gameState.viewerChipBalance;
 
+  const isWaitingForNextDeal =
+    gameStatus === 'IN_PROGRESS' &&
+    (gameState?.viewerStatus === 'READY' || (gameState?.viewerStatus !== 'ACTIVE' && (gameState?.hand?.length ?? 0) === 0));
+
   const droppedOut =
-    (gameState?.viewerStatus === 'DROPPED' && gameStatus === 'IN_PROGRESS') || viewerIsEliminated;
+    (gameState?.viewerStatus === 'DROPPED' && gameStatus === 'IN_PROGRESS') || viewerIsEliminated || isWaitingForNextDeal;
 
   return (
     <div className="table-action-controls">
@@ -319,6 +344,26 @@ export const ActionControls: React.FC = () => {
             </div>
           )}
 
+          {isWaitingForNextDeal && !viewerIsEliminated && (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                background: 'rgba(16, 185, 129, 0.15)',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                color: '#6ee7b7',
+                fontSize: '12px',
+                fontWeight: 700,
+              }}
+            >
+              <Sparkles size={14} />
+              Rejoined table · Waiting for Deal {(gameState.dealNumber ?? 1) + 1}
+            </div>
+          )}
+
           {viewerIsEliminated && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {gameState.canRejoin && (
@@ -372,7 +417,8 @@ export const ActionControls: React.FC = () => {
                 type="button"
                 className="bcb-action"
                 onClick={() => handleDraw('DISCARD_PILE')}
-                disabled={!drawPhase || !gameState.topDiscard}
+                disabled={!drawPhase || !gameState.topDiscard || isTopDiscardJoker}
+                title={isTopDiscardJoker ? 'Cannot pick a joker from the open discard pile' : undefined}
               >
                 <ArrowDownToLine size={18} />
                 Open
@@ -387,10 +433,11 @@ export const ActionControls: React.FC = () => {
                 type="button"
                 className="bcb-action bcb-action--danger"
                 onClick={handleDiscard}
-                disabled={selectedCardIds.length !== 1}
+                disabled={selectedCardIds.length !== 1 || isSelectedSameAsDrawnDiscard}
+                title={isSelectedSameAsDrawnDiscard ? 'Cannot discard the card you just picked from discard pile' : undefined}
               >
                 <Trash2 size={18} />
-                {selectedCardIds.length === 1 ? 'Discard' : 'Select 1'}
+                {isSelectedSameAsDrawnDiscard ? 'Cannot Discard' : selectedCardIds.length === 1 ? 'Discard' : 'Select 1'}
               </button>
               <button
                 id="btn-action-declare"

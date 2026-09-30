@@ -19,7 +19,7 @@ import { SoundToggle } from './SoundToggle';
 import { FullscreenToggle } from './FullscreenToggle';
 import { CardView } from './CardView';
 import type { CardInstance, GroupValidationType } from '../types/game';
-import { evaluateCardGroup, getCardScore } from '../rules/clientValidator';
+import { evaluateCardGroup, getCardScore, isJoker } from '../rules/clientValidator';
 import { photoForCharacter, getAvatarForPlayer } from '../utils/avatarUtils';
 
 interface GameResultModalProps {
@@ -59,13 +59,103 @@ interface ShowdownGroup {
 }
 
 /**
+ * Orders cards inside a showdown group sequentially for clear, professional visual display.
+ */
+function sortGroupCardsForDisplay(
+  cards: CardInstance[],
+  type: GroupValidationType,
+  wildJoker: CardInstance | null
+): CardInstance[] {
+  if (!cards || cards.length <= 1) return cards;
+
+  if (type === 'PURE_SEQUENCE') {
+    // Pure sequence: all cards share the same suit. Determine if Ace is low (A-2-3) or high (Q-K-A).
+    const hasAce = cards.some((c) => c.rank === 'ACE');
+    const hasLow = cards.some((c) => c.rank === 'TWO' || c.rank === 'THREE');
+    return [...cards].sort((a, b) => {
+      const rankA = hasAce && hasLow && a.rank === 'ACE' ? 1 : (RANK_ORDER[a.rank] ?? 99);
+      const rankB = hasAce && hasLow && b.rank === 'ACE' ? 1 : (RANK_ORDER[b.rank] ?? 99);
+      return rankA - rankB;
+    });
+  }
+
+  if (type === 'IMPURE_SEQUENCE') {
+    const naturals: CardInstance[] = [];
+    const jokers: CardInstance[] = [];
+    for (const c of cards) {
+      if (isJoker(c, wildJoker)) {
+        jokers.push(c);
+      } else {
+        naturals.push(c);
+      }
+    }
+
+    if (naturals.length === 0) return cards;
+
+    const hasAce = naturals.some((c) => c.rank === 'ACE');
+    const hasLow = naturals.some((c) => c.rank === 'TWO' || c.rank === 'THREE');
+    const getVal = (c: CardInstance) => (hasAce && hasLow && c.rank === 'ACE' ? 1 : (RANK_ORDER[c.rank] ?? 99));
+
+    naturals.sort((a, b) => getVal(a) - getVal(b));
+
+    const minVal = getVal(naturals[0]);
+    const maxVal = getVal(naturals[naturals.length - 1]);
+
+    const result: CardInstance[] = [];
+    const naturalMap = new Map<number, CardInstance>();
+    for (const n of naturals) {
+      naturalMap.set(getVal(n), n);
+    }
+
+    const jokerQueue = [...jokers];
+    for (let r = minVal; r <= maxVal; r++) {
+      if (naturalMap.has(r)) {
+        result.push(naturalMap.get(r)!);
+      } else if (jokerQueue.length > 0) {
+        result.push(jokerQueue.shift()!);
+      }
+    }
+
+    // Place remaining jokers at end
+    while (jokerQueue.length > 0) {
+      result.push(jokerQueue.shift()!);
+    }
+
+    return result;
+  }
+
+  if (type === 'SET') {
+    // Set: Natural cards grouped together by suit, jokers at the end
+    const naturals: CardInstance[] = [];
+    const jokers: CardInstance[] = [];
+    for (const c of cards) {
+      if (isJoker(c, wildJoker)) {
+        jokers.push(c);
+      } else {
+        naturals.push(c);
+      }
+    }
+    naturals.sort((a, b) => (SUIT_ORDER[a.suit] ?? 99) - (SUIT_ORDER[b.suit] ?? 99));
+    return [...naturals, ...jokers];
+  }
+
+  // INVALID: Sort by suit and rank for clean display
+  return [...cards].sort((a, b) => {
+    const s = (SUIT_ORDER[a.suit] ?? 99) - (SUIT_ORDER[b.suit] ?? 99);
+    if (s !== 0) return s;
+    return (RANK_ORDER[a.rank] ?? 99) - (RANK_ORDER[b.rank] ?? 99);
+  });
+}
+
+/**
  * Organizes revealed player cards into simple Rummy groups matching the game table style.
  */
 function autoGroupShowdownCards(
   cards: CardInstance[],
   wildJoker: CardInstance | null,
   isWinner: boolean,
-  declaredGroups?: { cards: CardInstance[] }[]
+  declaredGroups?: { cards: CardInstance[] }[],
+  isRummy21 = false
 ): ShowdownGroup[] {
   // 1. If winner declared groups, use their exact declaration
   if (
@@ -74,11 +164,14 @@ function autoGroupShowdownCards(
     declaredGroups.length >= 2 &&
     declaredGroups.every((g) => g.cards && g.cards.length >= 2)
   ) {
-    return declaredGroups.map((g) => ({
-      type: evaluateCardGroup(g.cards, wildJoker),
-      cards: g.cards,
-      pts: 0,
-    }));
+    return declaredGroups.map((g) => {
+      const type = evaluateCardGroup(g.cards, wildJoker);
+      return {
+        type,
+        cards: sortGroupCardsForDisplay(g.cards, type, wildJoker),
+        pts: 0,
+      };
+    });
   }
 
   if (!cards || cards.length === 0) return [];
@@ -108,16 +201,73 @@ function autoGroupShowdownCards(
       [c1, c2].forEach((chunk) => {
         const type = evaluateCardGroup(chunk, wildJoker);
         const pts = isWinner ? 0 : chunk.reduce((sum, c) => sum + getCardScore(c, wildJoker), 0);
-        result.push({ type, cards: chunk, pts });
+        result.push({ type, cards: sortGroupCardsForDisplay(chunk, type, wildJoker), pts });
       });
     } else {
       const type = evaluateCardGroup(groupCards, wildJoker);
       const pts = isWinner ? 0 : groupCards.reduce((sum, c) => sum + getCardScore(c, wildJoker), 0);
-      result.push({ type, cards: groupCards, pts });
+      result.push({ type, cards: sortGroupCardsForDisplay(groupCards, type, wildJoker), pts });
     }
   }
 
-  return result;
+  return applyRummyGroupPenalties(result, wildJoker, isWinner, isRummy21);
+}
+
+/**
+ * Ensures valid sequences and sets are exempt (0 pts) according to official Indian Rummy rules.
+ * Only unmelded/invalid cards show penalty points when sufficient sequences exist.
+ */
+function applyRummyGroupPenalties(
+  groups: ShowdownGroup[],
+  wildJoker: CardInstance | null,
+  isWinner: boolean,
+  isRummy21 = false
+): ShowdownGroup[] {
+  if (isWinner || !groups || groups.length === 0) {
+    return groups.map((g) => ({ ...g, pts: 0 }));
+  }
+
+  let pureCount = 0;
+  let totalSeqCount = 0;
+  for (const g of groups) {
+    if (g.type === 'PURE_SEQUENCE') {
+      pureCount++;
+      totalSeqCount++;
+    } else if (g.type === 'IMPURE_SEQUENCE') {
+      totalSeqCount++;
+    }
+  }
+
+  // In 21-Card Rummy, at least 3 pure sequences or tunnelas are required before other valid melds become exempt.
+  // In 13-Card Rummy, at least 1 pure sequence + at least 2 total sequences are required.
+  const hasMeldExemption = isRummy21 ? pureCount >= 3 : (pureCount >= 1 && totalSeqCount >= 2);
+
+  return groups.map((g) => {
+    // 1. If player has met the required pure sequence requirement:
+    // All valid sequences and sets are EXEMPT (0 pts); only INVALID groups count!
+    if (hasMeldExemption) {
+      if (g.type === 'PURE_SEQUENCE' || g.type === 'IMPURE_SEQUENCE' || g.type === 'SET') {
+        return { ...g, pts: 0 };
+      }
+      const rawPts = g.cards.reduce((sum, c) => sum + getCardScore(c, wildJoker), 0);
+      return { ...g, pts: rawPts };
+    }
+
+    // 2. If player has at least 1 pure sequence:
+    // Pure sequences are EXEMPT (0 pts); all other groups (impure, sets, invalid) count!
+    if (pureCount >= 1) {
+      if (g.type === 'PURE_SEQUENCE') {
+        return { ...g, pts: 0 };
+      }
+      const rawPts = g.cards.reduce((sum, c) => sum + getCardScore(c, wildJoker), 0);
+      return { ...g, pts: rawPts };
+    }
+
+    // 3. If player has NO pure sequence:
+    // ALL groups count their card points (excluding jokers = 0 pts)
+    const rawPts = g.cards.reduce((sum, c) => sum + getCardScore(c, wildJoker), 0);
+    return { ...g, pts: rawPts };
+  });
 }
 
 export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboard }) => {
@@ -146,7 +296,9 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
   const activeRulesetId = (gameSettlement?.rulesetId ?? gameState?.rulesetId ?? lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
   const isPool = Boolean(gameState?.eliminationThreshold || activeRulesetId.includes('POOL'));
   const isDeals = Boolean((gameState?.totalDeals ?? 0) > 1 || activeRulesetId.includes('DEAL'));
-  const totalDeals = gameState?.totalDeals ?? (activeRulesetId.includes('3') ? 3 : 2);
+  const scheduledDeals = activeRulesetId.includes('3') ? 3 : 2;
+  const totalDeals = gameState?.totalDeals ?? scheduledDeals;
+  const isTieBreaker = isDeals && (totalDeals > scheduledDeals || (gameState?.dealNumber ?? 1) > scheduledDeals);
   const threshold = gameState?.eliminationThreshold || (activeRulesetId.includes('201') ? 201 : 101);
   const isMultiDealGame = isPool || isDeals;
   const isIntermediateDeal = isMultiDealGame && !gameState?.tournamentWinnerId;
@@ -286,7 +438,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
       if (b.playerId === matchWinnerId) return 1;
     }
     if (isDeals) {
-      return (b.chipBalance ?? 0) - (a.chipBalance ?? 0);
+      return (b.chipBalance ?? 0) - (a.chipBalance ?? 0) || (a.cumulativeScore ?? 0) - (b.cumulativeScore ?? 0);
     }
     if (isPool) {
       if (a.isEliminated && !b.isEliminated) return 1;
@@ -372,8 +524,8 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
     const seated = (gameState?.opponents?.length ?? 0) + 1;
     const maxPlayers = Math.max(2, lastGameConfig?.maxPlayers ?? 0, seated);
     setLastGameConfig({
-      rulesetId: lastGameConfig?.rulesetId ?? 'POINTS_13',
-      entryFee: lastGameConfig?.entryFee ?? 8,
+      rulesetId: gameState?.rulesetId ?? lastGameConfig?.rulesetId ?? 'POINTS_13',
+      entryFee: stakeTier,
       maxPlayers,
     });
 
@@ -410,9 +562,11 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
         <div className="result-top-center">
           <span className="result-top-title">
             {isIntermediateDeal
-              ? `♠ DEAL ${gameState.dealNumber ?? 1} SHOWDOWN ♠`
+              ? (isTieBreaker
+                  ? `⚡ TIE-BREAKER DEAL ${gameState.dealNumber ?? 1} SHOWDOWN ⚡`
+                  : `♠ DEAL ${gameState.dealNumber ?? 1} SHOWDOWN ♠`)
               : isTournamentWinner
-              ? (isDeals ? '🏆 DEALS CHAMPION 🏆' : '🏆 POOL TOURNAMENT CHAMPION 🏆')
+              ? (isDeals ? (isTieBreaker ? '🏆 PLAYOFF CHAMPION 🏆' : '🏆 DEALS CHAMPION 🏆') : '🏆 POOL TOURNAMENT CHAMPION 🏆')
               : '♠ GAME SHOWDOWN ♠'}
           </span>
           <span className="result-top-pill">
@@ -439,10 +593,10 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                 gameState.tournamentWinnerId === playerId ? (
                   <>
                     <Sparkles size={22} color="#fbbf24" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
-                    Tournament Champion!
+                    {isTieBreaker ? 'Playoff Champion!' : 'Tournament Champion!'}
                   </>
                 ) : (
-                  `🏆 ${winnerName} Won the ${isDeals ? 'Deals Match' : 'Pool Tournament'}!`
+                  `🏆 ${winnerName} Won the ${isDeals ? (isTieBreaker ? 'Playoff' : 'Deals Match') : 'Pool Tournament'}!`
                 )
               ) : isIntermediateDeal ? (
                 isWinner ? (
@@ -466,12 +620,18 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
               {isTournamentWinner
                 ? (gameState.tournamentWinnerId === playerId
                     ? (isDeals
-                        ? `Congratulations! You had the most chips after ${totalDeals} deals and won the match!`
+                        ? (isTieBreaker
+                            ? `Outstanding victory! You won the sudden-death tie-breaker playoff after ${totalDeals} deals!`
+                            : `Congratulations! You had the most chips after ${totalDeals} deals and won the match!`)
                         : 'Congratulations! You are the last surviving player standing and won the pool pot!')
-                    : `Final standings after ${gameState.dealNumber ?? 1} deals. Review scores below.`)
+                    : (isTieBreaker
+                        ? `Playoff finished after ${gameState.dealNumber ?? 1} deals. Review scores below.`
+                        : `Final standings after ${gameState.dealNumber ?? 1} deals. Review scores below.`))
                 : isIntermediateDeal
                 ? (isDeals
-                    ? `Deal ${gameState.dealNumber ?? 1} of ${totalDeals} completed. Chips transferred to the deal winner!`
+                    ? (isTieBreaker
+                        ? `⚡ Sudden-death playoff deal ${gameState.dealNumber ?? 1} completed! Playoff chips transferred.`
+                        : `Deal ${gameState.dealNumber ?? 1} of ${totalDeals} completed. Chips transferred to the deal winner!`)
                     : `Deal completed. Penalties added to cumulative scores. Reach ${threshold} to get eliminated.`)
                 : isWinner
                 ? 'Valid declaration with 0 penalty points. All players’ cards and settlements are shown below.'
@@ -578,8 +738,10 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
 
                   <div className="result-pot-strip-item">
                     <span className="result-pot-strip-label">Current Deal</span>
-                    <span className="result-pot-strip-val" style={{ color: '#60a5fa' }}>
-                      Deal {gameState.dealNumber ?? 1} of {totalDeals}
+                    <span className="result-pot-strip-val" style={{ color: isTieBreaker ? '#fbbf24' : '#60a5fa' }}>
+                      {isTieBreaker
+                        ? `Deal ${gameState.dealNumber ?? 1} (⚡ Sudden-Death)`
+                        : `Deal ${gameState.dealNumber ?? 1} of ${totalDeals}`}
                     </span>
                   </div>
 
@@ -597,7 +759,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                   <div className="result-pot-strip-item">
                     <span className="result-pot-strip-label">Pool Prize Pot</span>
                     <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>
-                      ₹{Number(displayGrossPot).toFixed(2)}
+                      ₹{Number(displayPrize).toFixed(2)}
                     </span>
                   </div>
 
@@ -653,13 +815,17 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                 <Trophy size={16} color="#fbbf24" />
                 <span>
                   {isDeals
-                    ? `${totalDeals} DEALS TOURNAMENT SCORECARD`
+                    ? (isTieBreaker
+                        ? 'DEALS SUDDEN-DEATH PLAYOFF SCORECARD'
+                        : `${totalDeals} DEALS TOURNAMENT SCORECARD`)
                     : `POOL ${threshold} ROUNDS BREAKDOWN`}
                 </span>
               </div>
               <span className="result-multi-deal-badge">
                 {isDeals
-                  ? `🪙 Starting Chips: ${totalDeals * 80}`
+                  ? (isTieBreaker
+                      ? '⚡ Sudden-Death Tie-Breaker Active'
+                      : `🪙 Starting Chips: ${totalDeals * 80}`)
                   : `Elimination Limit: ${threshold} pts`}
               </span>
             </div>
@@ -671,7 +837,11 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                     <th style={{ textAlign: 'left', minWidth: '150px' }}>Player</th>
                     {Array.from({ length: maxRecordedDeals }).map((_, idx) => (
                       <th key={idx} style={{ textAlign: 'center', minWidth: '70px' }}>
-                        Deal {idx + 1}
+                        {isDeals && idx + 1 > scheduledDeals ? (
+                          <span style={{ color: '#fbbf24' }}>Playoff {idx + 1}</span>
+                        ) : (
+                          `Deal ${idx + 1}`
+                        )}
                       </th>
                     ))}
                     <th style={{ textAlign: 'center', minWidth: '110px' }}>
@@ -865,7 +1035,8 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                   p.hand,
                   gameState.cutJoker,
                   true,
-                  gameState.winningGroups
+                  gameState.winningGroups,
+                  isRummy21
                 );
               } else if (
                 p.isMe &&
@@ -873,16 +1044,19 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                 myVisualGroups.length > 0 &&
                 myVisualGroups.some((g) => g.cards.length > 0)
               ) {
-                playerGroups = myVisualGroups.map((g) => ({
+                const mapped = myVisualGroups.map((g) => ({
                   type: g.groupType,
-                  cards: g.cards,
-                  pts: g.deadwoodPoints,
+                  cards: sortGroupCardsForDisplay(g.cards, g.groupType, gameState.cutJoker),
+                  pts: 0,
                 }));
+                playerGroups = applyRummyGroupPenalties(mapped, gameState.cutJoker, false, isRummy21);
               } else {
                 playerGroups = autoGroupShowdownCards(
                   p.hand,
                   gameState.cutJoker,
-                  false
+                  false,
+                  undefined,
+                  isRummy21
                 );
               }
 

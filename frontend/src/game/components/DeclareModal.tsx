@@ -21,6 +21,10 @@ export const DeclareModal: React.FC = () => {
   const finishCardId = selectedCardIds[0];
   const finishCard = gameState.hand.find((c) => c.instanceId === finishCardId);
 
+  const isRummy21 = gameState.rulesetId?.includes('21') || gameState.rulesetId === 'RUMMY_21';
+  const remainingHandTarget = isRummy21 ? 21 : 13;
+  const wrongDeclarationPenalty = isRummy21 ? 120 : 80;
+
   const remainingGroups = groups
     .map((g) => ({
       ...g,
@@ -107,7 +111,7 @@ export const DeclareModal: React.FC = () => {
                 {finishCard.rank} of {finishCard.suit}
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                Your other 13 cards must all be in valid groups.
+                Your other {remainingHandTarget} cards must all be in valid groups.
               </div>
             </div>
           </div>
@@ -150,7 +154,7 @@ export const DeclareModal: React.FC = () => {
             <div>
               <div>Not a valid win yet — {evaluation.reason}</div>
               <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
-                If you declare anyway and it is wrong, you get 80 penalty points.
+                If you declare anyway and it is wrong, you get {wrongDeclarationPenalty} penalty points.
               </div>
             </div>
           </div>

@@ -53,10 +53,14 @@ export function isJoker(card: CardInstance, wildJoker: CardInstance | null): boo
   if (card.printedJoker || card.rank === 'JOKER') {
     return true;
   }
-  if (wildJoker && card.rank === wildJoker.rank) {
-    return true;
+  if (!wildJoker) {
+    return false;
   }
-  return false;
+  // When the cut card is a printed joker, all Aces act as wild jokers (matches backend Card.isWildJoker)
+  if (wildJoker.printedJoker || wildJoker.rank === 'JOKER') {
+    return card.rank === 'ACE';
+  }
+  return card.rank === wildJoker.rank;
 }
 
 export function isTunnela(cards: CardInstance[]): boolean {
@@ -68,7 +72,7 @@ export function isTunnela(cards: CardInstance[]): boolean {
   return cards.every(c => c.suit === first.suit && c.rank === first.rank);
 }
 
-export function validatePureSequence(cards: CardInstance[], wildJoker: CardInstance | null): boolean {
+export function validatePureSequence(cards: CardInstance[], _wildJoker?: CardInstance | null): boolean {
   if (cards.length < 3) return false;
 
   // In 21-Card Rummy, a Tunnela (3 identical cards of same suit and rank, or 3 printed jokers) is a Pure Sequence
@@ -76,9 +80,9 @@ export function validatePureSequence(cards: CardInstance[], wildJoker: CardInsta
     return true;
   }
 
-  // Pure sequences cannot use wild jokers or printed jokers as substitutes
+  // Pure sequences cannot contain printed jokers
   for (const c of cards) {
-    if (isJoker(c, wildJoker)) return false;
+    if (c.printedJoker || c.rank === 'JOKER') return false;
   }
 
   const suit = cards[0].suit;
@@ -133,8 +137,11 @@ export function validateImpureSequence(cards: CardInstance[], wildJoker: CardIns
     }
   }
 
-  // Must have at least 1 natural card and at least 1 joker to be an impure sequence
-  if (naturals.length === 0 || jokerCount === 0) return false;
+  // If all cards are jokers, 3+ jokers can represent an impure sequence in Indian Rummy (matches backend)
+  if (naturals.length === 0) return cards.length >= 3;
+
+  // Must have at least 1 joker to be an impure sequence
+  if (jokerCount === 0) return false;
 
   const suit = naturals[0].suit;
   if (naturals.some(c => c.suit !== suit)) return false;
@@ -184,7 +191,11 @@ export function validateSet(cards: CardInstance[], wildJoker: CardInstance | nul
     }
   }
 
-  if (naturals.length < 2) return false;
+  // All jokers (3 or 4 jokers) is a valid set in Indian Rummy (matches backend SetValidator)
+  if (naturals.length === 0) return true;
+
+  // Single natural card + 2 or 3 jokers is also a valid set in Indian Rummy (matches backend SetValidator)
+  if (naturals.length === 1) return true;
 
   const targetRank = naturals[0].rank;
   if (naturals.some(c => c.rank !== targetRank)) return false;

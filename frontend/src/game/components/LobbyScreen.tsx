@@ -694,9 +694,12 @@ export const LobbyScreen: React.FC = () => {
                       }
                     />
                     <div className="stake-range">
-                      <span>₹0.05 (₹4 Fee)</span>
+                      <span>₹0.10 (₹8 Fee)</span>
                       <span>₹5.0 (₹400 Fee)</span>
                     </div>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#fef08a', fontWeight: 700, marginTop: 10, textAlign: 'center' }}>
+                    🏆 Max Winnings: up to ₹ {Math.round((selectedPlayers - 1) * POINT_VALUE_TIERS[ptIndex].entry * 0.85)} (80 pts cap)
                   </div>
                 </>
               )}
@@ -787,7 +790,7 @@ export const LobbyScreen: React.FC = () => {
                   </div>
 
                   <div style={{ fontSize: 13, color: '#fef08a', fontWeight: 700 }}>
-                    🏆 Estimated Winner Pool: ₹ {Math.round(poolEntry * selectedPlayers * 0.9)}
+                    🏆 Estimated Winner Pool: ₹ {Math.round(poolEntry * selectedPlayers * 0.85)}
                   </div>
                 </div>
               )}
@@ -882,7 +885,7 @@ export const LobbyScreen: React.FC = () => {
                     })}
                   </div>
                   <div style={{ fontSize: 13, color: '#fef08a', fontWeight: 700 }}>
-                    🏆 Winner Takes All: ₹ {Math.round(dealsEntry * selectedPlayers * 0.9)}
+                    🏆 Winner Takes All: ₹ {Math.round(dealsEntry * selectedPlayers * 0.85)}
                   </div>
                 </div>
               )}

@@ -236,32 +236,42 @@ export const GameBoard: React.FC = () => {
   const [dealNotice, setDealNotice] = useState<string | null>(null);
   const prevDealRef = useRef<number | null>(null);
 
+  const rawRulesetId = (gameState?.rulesetId ?? lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
+  const entryFee = lastGameConfig?.entryFee ?? 8;
+  const maxSeats = lastGameConfig?.maxPlayers ?? Math.max(2, opponents.length + 1);
+  const isPointsRummy = rawRulesetId.includes('POINT');
+
   useEffect(() => {
     const curDeal = gameState?.dealNumber;
     if (!curDeal) return;
     if (prevDealRef.current !== null && curDeal > prevDealRef.current) {
       soundEngine.play('deal');
-      setDealNotice(`Deal ${curDeal} Starting`);
-      const timer = window.setTimeout(() => setDealNotice(null), 3000);
+      const scheduled = rawRulesetId.includes('3') ? 3 : 2;
+      const isPlayoff = rawRulesetId.includes('DEAL') && curDeal > scheduled;
+      setDealNotice(
+        isPlayoff
+          ? `⚡ Sudden-Death Tie-Breaker Deal ${curDeal} Starting! ⚡`
+          : `Deal ${curDeal} Starting`
+      );
+      const timer = window.setTimeout(() => setDealNotice(null), 3500);
       prevDealRef.current = curDeal;
       return () => window.clearTimeout(timer);
     }
     prevDealRef.current = curDeal;
-  }, [gameState?.dealNumber]);
+  }, [gameState?.dealNumber, rawRulesetId]);
 
-  // Derived labels — plain consts (not hooks) so early return below is safe
-  const rawRulesetId = (lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
-  const entryFee = lastGameConfig?.entryFee ?? 8;
-  const maxSeats = lastGameConfig?.maxPlayers ?? Math.max(2, opponents.length + 1);
-  const isPointsRummy = rawRulesetId.includes('POINT');
+  const isRummy21 = rawRulesetId.includes('21');
+  const cardsPerPlayer = isRummy21 ? 21 : 13;
 
   let variantName = 'Point Rummy';
   if (rawRulesetId.includes('POOL')) {
     variantName = rawRulesetId.includes('201') ? 'Pool 201' : 'Pool 101';
   } else if (rawRulesetId.includes('DEAL')) {
-    const dealsCount = gameState?.totalDeals ?? (rawRulesetId.includes('3') ? 3 : 2);
-    variantName = `${dealsCount} Deals`;
-  } else if (rawRulesetId.includes('21')) {
+    const scheduled = rawRulesetId.includes('3') ? 3 : 2;
+    const dealsCount = gameState?.totalDeals ?? scheduled;
+    const isTieBreaker = (gameState?.dealNumber ?? 1) > scheduled;
+    variantName = isTieBreaker ? '⚡ Deals Playoff' : `${dealsCount} Deals`;
+  } else if (isRummy21) {
     variantName = '21-Card Rummy';
   }
 
@@ -361,10 +371,18 @@ export const GameBoard: React.FC = () => {
                     <span className="board-info-sep" aria-hidden />
                     <span className="board-info-deal">
                       <span className="board-info-deal-full">
-                        DEAL {gameState?.dealNumber ?? 1}{gameState?.totalDeals ? ` OF ${gameState.totalDeals}` : ''}
+                        {rawRulesetId.includes('DEAL') && (gameState?.dealNumber ?? 1) > (gameState?.totalDeals ?? 2) ? (
+                          <span style={{ color: '#fbbf24', fontWeight: 900 }}>⚡ TIE-BREAKER DEAL ⚡</span>
+                        ) : (
+                          `DEAL ${gameState?.dealNumber ?? 1}${gameState?.totalDeals ? ` OF ${gameState.totalDeals}` : ''}`
+                        )}
                       </span>
                       <span className="board-info-deal-short">
-                        D{gameState?.dealNumber ?? 1}{gameState?.totalDeals ? `/${gameState.totalDeals}` : ''}
+                        {rawRulesetId.includes('DEAL') && (gameState?.dealNumber ?? 1) > (gameState?.totalDeals ?? 2) ? (
+                          <span style={{ color: '#fbbf24', fontWeight: 900 }}>⚡ PLAYOFF</span>
+                        ) : (
+                          `D${gameState?.dealNumber ?? 1}${gameState?.totalDeals ? `/${gameState.totalDeals}` : ''}`
+                        )}
                       </span>
                     </span>
                   </>
@@ -492,7 +510,7 @@ export const GameBoard: React.FC = () => {
           <DealAnimation
             active={dealPlaying}
             targets={dealTargets}
-            cardsPerPlayer={13}
+            cardsPerPlayer={cardsPerPlayer}
             onCardLanded={(targetId) => {
               setDealtCounts((prev) => {
                 if (prev == null) return prev;

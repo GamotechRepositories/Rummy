@@ -16,11 +16,13 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
   if (!isOpen || !gameState) return null;
 
   const isDeals = (gameState.totalDeals ?? 0) > 1 || (gameState.rulesetId ?? '').toUpperCase().includes('DEAL');
-  const totalDeals = gameState.totalDeals ?? (gameState.rulesetId?.includes('3') ? 3 : 2);
+  const scheduledDeals = gameState.rulesetId?.includes('3') ? 3 : 2;
+  const totalDeals = gameState.totalDeals ?? scheduledDeals;
+  const isTieBreaker = isDeals && (totalDeals > scheduledDeals || (gameState.dealNumber ?? 1) > scheduledDeals);
   const threshold = gameState.eliminationThreshold || (gameState.rulesetId?.includes('201') ? 201 : 101);
   const currentDeal = gameState.dealNumber ?? 1;
   const history = gameState.dealHistory ?? [];
-  const maxRecordedDeals = Math.max(history.length, isDeals ? totalDeals : 1);
+  const maxRecordedDeals = Math.max(history.length, isDeals ? totalDeals : 1, currentDeal);
 
   // Collate all seated players (viewer + opponents)
   interface RowPlayer {
@@ -99,7 +101,7 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
 
   // Sort: For Deals Rummy, highest chip balance first. For Pool, lowest cumulative score first
   if (isDeals) {
-    allPlayers.sort((a, b) => b.chipBalance - a.chipBalance);
+    allPlayers.sort((a, b) => b.chipBalance - a.chipBalance || a.cumulativeScore - b.cumulativeScore);
   } else {
     allPlayers.sort((a, b) => {
       if (a.isEliminated && !b.isEliminated) return 1;
@@ -146,11 +148,15 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
 
         {/* Title & Subtitle */}
         <h3 className="royal-dialog-title">
-          {isDeals ? `${totalDeals} Deals Scoreboard` : `Pool ${threshold} Scoreboard`}
+          {isDeals
+            ? (isTieBreaker ? '⚡ Deals Sudden-Death Playoff ⚡' : `${totalDeals} Deals Scoreboard`)
+            : `Pool ${threshold} Scoreboard`}
         </h3>
         <p className="royal-dialog-subtitle">
           {isDeals
-            ? `Deal ${currentDeal} of ${totalDeals} · Player with most chips after ${totalDeals} deals wins!`
+            ? (isTieBreaker
+                ? `Playoff Deal ${currentDeal} in progress · Tied leaders playing sudden-death deal to decide the champion!`
+                : `Deal ${currentDeal} of ${totalDeals} · Player with most chips after ${totalDeals} deals wins!`)
             : `Deal ${currentDeal} in progress · ${activeSurvivors} of ${allPlayers.length} players active`}
         </p>
 
@@ -158,7 +164,9 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
         <div className="table-menu-badge-wrap" style={{ padding: '0 0 14px', display: 'flex', justifyContent: 'center' }}>
           <span className="table-menu-name">
             {isDeals
-              ? `🪙 Deals Rummy · ${totalDeals} Deals · Starting Chips: ${totalDeals * 80}`
+              ? (isTieBreaker
+                  ? `⚡ Playoff Active · Starting Chips: ${totalDeals * 80}`
+                  : `🪙 Deals Rummy · ${totalDeals} Deals · Starting Chips: ${totalDeals * 80}`)
               : `♠ Pool ${threshold} · Elimination at ${threshold} pts`}
           </span>
         </div>
@@ -171,7 +179,11 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
                 <th style={{ textAlign: 'left', minWidth: '150px' }}>Player</th>
                 {Array.from({ length: maxRecordedDeals }).map((_, idx) => (
                   <th key={idx} style={{ textAlign: 'center', minWidth: '60px' }}>
-                    Deal {idx + 1}
+                    {isDeals && idx + 1 > scheduledDeals ? (
+                      <span style={{ color: '#fbbf24' }}>Playoff {idx + 1}</span>
+                    ) : (
+                      `Deal ${idx + 1}`
+                    )}
                   </th>
                 ))}
                 <th style={{ textAlign: 'center', minWidth: '110px' }}>

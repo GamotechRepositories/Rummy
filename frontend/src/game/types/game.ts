@@ -136,6 +136,7 @@ export interface PlayerGameView {
   freshlyEliminatedNames?: string[];
   totalDeals?: number;
   viewerChipBalance?: number;
+  hasTakenFirstTurn?: boolean;
 }
 
 export type GroupValidationType = 'PURE_SEQUENCE' | 'IMPURE_SEQUENCE' | 'SET' | 'INVALID';
