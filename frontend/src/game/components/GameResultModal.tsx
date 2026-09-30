@@ -1202,9 +1202,11 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                                 (+₹{Number(pRefund).toFixed(2)} refund)
                               </span>
                             )}
-                            {won && isPointsBased && (
+                            {won && (
                               <span style={{ color: '#34d399', marginLeft: '6px' }}>
-                                (+₹{Number(playerDetail?.initialStake ?? stakeTier).toFixed(2)} stake returned)
+                                (Total Credit: ₹{isPointsBased
+                                  ? (Number(playerDetail?.initialStake ?? stakeTier) + Number(displayPrize)).toFixed(2)
+                                  : Number(displayPrize).toFixed(2)})
                               </span>
                             )}
                           </div>
