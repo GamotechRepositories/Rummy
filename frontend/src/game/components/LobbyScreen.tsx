@@ -935,6 +935,9 @@ export const LobbyScreen: React.FC = () => {
                       );
                     })}
                   </div>
+                  <span style={{ fontSize: 11, color: '#86efac', fontWeight: 700 }}>
+                    Max Win: ~₹{(rummy21Entry * 0.85).toFixed(2)} (after 15% platform fee) • 120 Pts Cap
+                  </span>
                 </div>
               )}
 
