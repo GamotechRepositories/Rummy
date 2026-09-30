@@ -6,6 +6,27 @@ import { Eye, X, History } from 'lucide-react';
 import { isDiscardPhase, isDrawPhase } from '../utils/turnPhase';
 import { soundEngine } from '../audio/soundEngine';
 
+const DeckSlotText: React.FC<{ text: string }> = ({ text }) => {
+  const vbWidth = Math.max(46, text.length * 8.5);
+  return (
+    <svg
+      className="deck-slot-svg"
+      viewBox={`0 0 ${vbWidth} 18`}
+      preserveAspectRatio="xMidYMid meet"
+      aria-label={text}
+    >
+      <text
+        x={vbWidth / 2}
+        y="12.5"
+        textAnchor="middle"
+        className="deck-slot-svg-text"
+      >
+        {text}
+      </text>
+    </svg>
+  );
+};
+
 export const TableCenter: React.FC = () => {
   const { gameState, selectedCardIds, setDeclareModalOpen, clearSelection, dealInProgress } = useGameStore();
   const [showDiscardHistory, setShowDiscardHistory] = useState(false);
@@ -110,7 +131,7 @@ export const TableCenter: React.FC = () => {
               {topDiscard ? (
                 <CardView card={topDiscard} wildJoker={cutJoker} size="normal" />
               ) : (
-                <span className="deck-slot-word">Empty</span>
+                <DeckSlotText text="Empty" />
               )}
             </button>
             {discardHistory.length > 0 && (
@@ -142,7 +163,7 @@ export const TableCenter: React.FC = () => {
             onClick={handleFinishSlotClick}
             aria-label="Finish slot"
           >
-            <span className="deck-slot-word">{canDeclare ? 'Declare' : 'Finish'}</span>
+            <DeckSlotText text={canDeclare ? 'Declare' : 'Finish'} />
           </button>
           <span className={`deck-pod-label${canDeclare ? ' on ok' : waiting ? ' on' : ''}`}>Finish slot</span>
         </div>
