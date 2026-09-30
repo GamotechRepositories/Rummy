@@ -77,6 +77,15 @@ export const TableCenter: React.FC = () => {
   const handleDiscardPileDrop = () => {
     if (!canDiscardHere) return;
     const cardId = selectedCardIds[0];
+    const forbiddenId =
+      (gameState.isDrawnFromDiscard && gameState.drawnCardInstanceId)
+        ? gameState.drawnCardInstanceId
+        : null;
+    if (forbiddenId && cardId === forbiddenId) {
+      soundEngine.play('error');
+      useGameStore.getState().setErrorMessage('Cannot discard the card you just picked from the open discard pile');
+      return;
+    }
     soundEngine.play('discard');
     clearSelection();
     socketClient.discard(cardId);

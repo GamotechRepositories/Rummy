@@ -316,6 +316,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       topDiscard,
       discardHistory,
       turnPhase: view.turnPhase,
+      drawnCardInstanceId: view.drawnCardInstanceId ?? null,
+      isDrawnFromDiscard: Boolean(view.isDrawnFromDiscard),
     };
 
     // If in-memory groups is empty or came from previous game/deal, try restoring from storage

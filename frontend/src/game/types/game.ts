@@ -137,6 +137,8 @@ export interface PlayerGameView {
   totalDeals?: number;
   viewerChipBalance?: number;
   hasTakenFirstTurn?: boolean;
+  drawnCardInstanceId?: string | null;
+  isDrawnFromDiscard?: boolean;
 }
 
 export type GroupValidationType = 'PURE_SEQUENCE' | 'IMPURE_SEQUENCE' | 'SET' | 'INVALID';

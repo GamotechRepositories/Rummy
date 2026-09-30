@@ -445,6 +445,15 @@ export const PlayerHand: React.FC<{ arrivingCount?: number }> = ({ arrivingCount
                         if (!gs?.isMyTurn) return;
                         const phase = String(gs.turnPhase || '');
                         if (phase !== 'DISCARD' && phase !== 'AWAITING_DISCARD') return;
+                        const forbiddenId =
+                          (gs.isDrawnFromDiscard && gs.drawnCardInstanceId)
+                            ? gs.drawnCardInstanceId
+                            : null;
+                        if (forbiddenId && card.instanceId === forbiddenId) {
+                          soundEngine.play('error');
+                          useGameStore.getState().setErrorMessage('Cannot discard the card you just picked from the open discard pile');
+                          return;
+                        }
                         soundEngine.play('discard');
                         useGameStore.getState().clearSelection();
                         socketClient.discard(card.instanceId);

@@ -398,4 +398,78 @@ class GameEngineTest {
         assertThat(dropResult.isSuccess()).isTrue();
         assertThat(state.requirePlayer(activePlayerId).getScore()).isEqualTo(40); // 40 points middle drop!
     }
+
+    @Test
+    @DisplayName("Verify Open vs Closed card discard rules across ALL 4 Variants (Points, Pool, Deals, 21-Card)")
+    void testOpenVsClosedDiscardRulesAcrossAllFourVariants() {
+        List<String> variants = List.of("POINTS_13", "POOL_101", "DEALS_RUMMY", "RUMMY_21");
+
+        for (String variantId : variants) {
+            RummyRules r = RulesetRegistry.requireRuleset(variantId);
+            Deck deck = Deck.createMultiPackDeck(r.getDeckCount(), r.getPrintedJokersPerDeck(), new java.security.SecureRandom());
+            GameState state = new GameState("G_" + variantId, "T_" + variantId, variantId, "1.0.0", List.of(), deck);
+            Instant now = Instant.now();
+
+            engine.process(state, new JoinCommand("c1", state.getGameId(), "P1", "Alice", 0, false, now), r);
+            engine.process(state, new JoinCommand("c2", state.getGameId(), "P2", "Bob", 1, false, now), r);
+            engine.process(state, new ReadyCommand("c3", state.getGameId(), "P1", now), r);
+            engine.process(state, new ReadyCommand("c4", state.getGameId(), "P2", now), r);
+
+            EngineResult start = engine.process(state, new StartGameCommand("c5", state.getGameId(), "P1", now), r);
+            assertThat(start.isSuccess()).withFailMessage("Failed to start " + variantId).isTrue();
+
+            String p1Id = state.getTurnState().getCurrentPlayerId();
+            PlayerState p1 = state.requirePlayer(p1Id);
+
+            // 1. P1 draws from CLOSED_DECK
+            EngineResult drawClosed = engine.process(state, new DrawCommand("c6", state.getGameId(), p1Id, DrawSource.CLOSED_DECK, now), r);
+            assertThat(drawClosed.isSuccess()).withFailMessage("Failed draw from closed in " + variantId).isTrue();
+
+            String drawnClosedCardId = state.getTurnState().getDrawnCardInstanceId();
+            assertThat(drawnClosedCardId).isNotNull();
+
+            // P1 discards the EXACT SAME card drawn from CLOSED_DECK -> MUST SUCCEED
+            EngineResult discardDrawnClosed = engine.process(state, new DiscardCommand("c7", state.getGameId(), p1Id, drawnClosedCardId, now), r);
+            assertThat(discardDrawnClosed.isSuccess())
+                    .withFailMessage("Closed deck card discard should be ALLOWED in " + variantId)
+                    .isTrue();
+
+            // Turn advances to P2
+            String p2Id = state.getTurnState().getCurrentPlayerId();
+            PlayerState p2 = state.requirePlayer(p2Id);
+            CardInstance topOpen = state.topDiscard();
+            assertThat(topOpen).isNotNull();
+
+            // If top card happens to be a joker, replace it with a non-joker for testing open draw
+            Card cutCard = state.getCutJoker() != null ? state.getCutJoker().getCard() : null;
+            if (topOpen.isPrintedJoker() || (cutCard != null && topOpen.getCard().isWildJoker(cutCard))) {
+                state.takeTopDiscard();
+                CardInstance safeCard = new CardInstance("SAFE_OPEN", Card.of(Suit.SPADES, Rank.SEVEN), 1);
+                state.addToDiscardPile(safeCard);
+                topOpen = safeCard;
+            }
+
+            // 2. P2 draws from OPEN discard pile
+            EngineResult drawOpen = engine.process(state, new DrawCommand("c8", state.getGameId(), p2Id, DrawSource.DISCARD_PILE, now), r);
+            assertThat(drawOpen.isSuccess()).withFailMessage("Failed draw open in " + variantId).isTrue();
+
+            // P2 attempts to discard the EXACT SAME card drawn from OPEN discard pile -> MUST FAIL
+            EngineResult discardSameOpen = engine.process(state, new DiscardCommand("c9", state.getGameId(), p2Id, topOpen.getInstanceId(), now), r);
+            assertThat(discardSameOpen.isSuccess())
+                    .withFailMessage("Open deck same-card discard MUST BE FORBIDDEN in " + variantId)
+                    .isFalse();
+            assertThat(discardSameOpen.errorMessage()).contains("Cannot discard the card you just picked from the open discard pile");
+
+            // 3. P2 discards a DIFFERENT card from hand -> MUST SUCCEED
+            final String topOpenCardId = topOpen.getInstanceId();
+            CardInstance diffCard = p2.getHandSnapshot().stream()
+                    .filter(c -> !c.getInstanceId().equals(topOpenCardId))
+                    .findFirst().orElseThrow();
+
+            EngineResult discardDiff = engine.process(state, new DiscardCommand("c10", state.getGameId(), p2Id, diffCard.getInstanceId(), now), r);
+            assertThat(discardDiff.isSuccess())
+                    .withFailMessage("Different card discard should be ALLOWED in " + variantId)
+                    .isTrue();
+        }
+    }
 }

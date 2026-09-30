@@ -68,12 +68,23 @@ export const ActionControls: React.FC = () => {
   const hasPure = pureCount >= neededPure;
   const liveScore = calculateHandPenalty(groups, wildJoker, isRummy21 ? 120 : 80, gameState.rulesetId);
 
-  const isSelectedSameAsDrawnDiscard = selectedCardIds.length === 1 && selectedCardIds[0] === justDrawnFromDiscardId;
+  const forbiddenDiscardId =
+    (gameState.isDrawnFromDiscard && gameState.drawnCardInstanceId)
+      ? gameState.drawnCardInstanceId
+      : justDrawnFromDiscardId;
+
+  const isSelectedSameAsDrawnDiscard =
+    selectedCardIds.length === 1 && selectedCardIds[0] === forbiddenDiscardId;
 
   const handleDiscard = () => {
     if (selectedCardIds.length !== 1) return;
-    if (!discardPhase || isSelectedSameAsDrawnDiscard) {
+    if (!discardPhase) {
       soundEngine.play('error');
+      return;
+    }
+    if (isSelectedSameAsDrawnDiscard) {
+      soundEngine.play('error');
+      useGameStore.getState().setErrorMessage('Cannot discard the card you just picked from the open discard pile');
       return;
     }
     const cardId = selectedCardIds[0];
