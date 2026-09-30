@@ -13,6 +13,7 @@ import {
   Users,
   UsersRound,
   Target,
+  Sparkles,
 } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { FullscreenToggle } from './FullscreenToggle';
@@ -433,18 +434,6 @@ export const LobbyScreen: React.FC = () => {
               <Pencil size={12} strokeWidth={2} />
             </button>
           )}
-
-          <button
-            type="button"
-            className="lobby-character-btn"
-            onClick={() => {
-              soundEngine.play('click');
-              setCharacterOpen(true);
-            }}
-          >
-            <img src={photoForCharacter(avatarId)} alt="" draggable={false} />
-            Choose character
-          </button>
 
           <div className="lobby-balance">
             <Coins size={14} />
@@ -1065,6 +1054,34 @@ export const LobbyScreen: React.FC = () => {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Floating Character Selection Button (Chatbot Widget Style) */}
+      {currentPage === 'SELECT_VARIANT' && !isMatchmaking && (
+        <button
+          type="button"
+          id="btn-floating-character"
+          className="lobby-character-fab"
+          onClick={() => {
+            soundEngine.play('click');
+            setCharacterOpen(true);
+          }}
+          title="Choose character"
+          aria-label="Choose character"
+        >
+          <div className="character-fab-avatar-wrap">
+            <img
+              src={photoForCharacter(avatarId)}
+              alt="Character"
+              className="character-fab-avatar"
+              draggable={false}
+            />
+            <div className="character-fab-badge" aria-hidden="true">
+              <Sparkles size={10} strokeWidth={2.5} />
+            </div>
+          </div>
+          <span className="character-fab-label">Choose character</span>
+        </button>
       )}
 
       {characterOpen && (
