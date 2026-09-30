@@ -7,7 +7,7 @@ import { isDiscardPhase, isDrawPhase } from '../utils/turnPhase';
 import { soundEngine } from '../audio/soundEngine';
 
 export const TableCenter: React.FC = () => {
-  const { gameState, selectedCardIds, setDeclareModalOpen, clearSelection } = useGameStore();
+  const { gameState, selectedCardIds, setDeclareModalOpen, clearSelection, dealInProgress } = useGameStore();
   const [showDiscardHistory, setShowDiscardHistory] = useState(false);
 
   if (!gameState) return null;
@@ -21,7 +21,6 @@ export const TableCenter: React.FC = () => {
     discardHistory = [],
   } = gameState;
 
-  const dealInProgress = useGameStore((s) => s.dealInProgress);
   const waiting = gameState.gameStatus === 'WAITING_FOR_PLAYERS';
   const canDraw = !dealInProgress && isDrawPhase(isMyTurn, turnPhase);
   const canDiscardOrFinish = !dealInProgress && isDiscardPhase(isMyTurn, turnPhase);

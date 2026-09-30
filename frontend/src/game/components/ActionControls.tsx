@@ -36,6 +36,7 @@ export const ActionControls: React.FC = () => {
   } = useGameStore();
   const [confirmDropOpen, setConfirmDropOpen] = React.useState(false);
   const [confirmRejoinOpen, setConfirmRejoinOpen] = React.useState(false);
+  const [justDrawnFromDiscardId, setJustDrawnFromDiscardId] = React.useState<string | null>(null);
 
   const gameStatus = gameState?.gameStatus;
   const isMyTurn = gameState?.isMyTurn ?? false;
@@ -49,6 +50,12 @@ export const ActionControls: React.FC = () => {
     }
   }, [gameStatus]);
 
+  React.useEffect(() => {
+    if (!isMyTurn || turnPhase !== 'AWAITING_DISCARD') {
+      setJustDrawnFromDiscardId(null);
+    }
+  }, [isMyTurn, turnPhase]);
+
   if (!gameState) return null;
 
   const drawPhase = isDrawPhase(isMyTurn, turnPhase);
@@ -60,14 +67,6 @@ export const ActionControls: React.FC = () => {
   const neededPure = isRummy21 ? 3 : 1;
   const hasPure = pureCount >= neededPure;
   const liveScore = calculateHandPenalty(groups, wildJoker, isRummy21 ? 120 : 80, gameState.rulesetId);
-
-  const [justDrawnFromDiscardId, setJustDrawnFromDiscardId] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (!isMyTurn || turnPhase !== 'AWAITING_DISCARD') {
-      setJustDrawnFromDiscardId(null);
-    }
-  }, [isMyTurn, turnPhase]);
 
   const isSelectedSameAsDrawnDiscard = selectedCardIds.length === 1 && selectedCardIds[0] === justDrawnFromDiscardId;
 

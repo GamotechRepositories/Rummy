@@ -35,6 +35,9 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   position = 'top',
   displayCount,
 }) => {
+  const dealInProgress = useGameStore((s) => s.dealInProgress);
+  const gameState = useGameStore((s) => s.gameState);
+
   if (!player) {
     return (
       <div
@@ -127,8 +130,6 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
     );
   }
 
-  const dealInProgress = useGameStore((s) => s.dealInProgress);
-  const gameState = useGameStore((s) => s.gameState);
   const threshold = gameState?.eliminationThreshold ?? 0;
   const isPool = threshold > 0;
   const isDeals = (gameState?.totalDeals ?? 0) > 1 || (gameState?.rulesetId ?? '').toUpperCase().includes('DEAL');

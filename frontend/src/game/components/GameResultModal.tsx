@@ -791,16 +791,26 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
 
                 <div className="result-pot-strip-item">
                   <span className="result-pot-strip-label">Platform Fee (15%)</span>
-                  <span className="result-pot-strip-val val-red">-₹{Number(displayRake).toFixed(2)}</span>
+                  <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>₹{Number(displayRake).toFixed(2)}</span>
                 </div>
 
                 <div className="result-pot-strip-divider" />
 
                 <div className="result-pot-strip-item val-winner">
                   <span className="result-pot-strip-label" style={{ color: '#86efac' }}>
-                    {isPool ? 'Pool Champion Prize' : isDeals ? 'Deals Champion Prize' : 'Winner Payout'}
+                    {isPool ? 'Pool Champion Prize' : isDeals ? 'Deals Champion Prize' : 'Net Winnings'}
                   </span>
                   <span className="result-pot-strip-val val-green">+₹{Number(displayPrize).toFixed(2)}</span>
+                  {isPointsBased && (
+                    <span style={{ fontSize: '10.5px', color: '#86efac', fontWeight: 700, marginTop: '1px' }}>
+                      (Total Credit: ₹{(Number(stakeTier) + Number(displayPrize)).toFixed(2)})
+                    </span>
+                  )}
+                  {(isPool || isDeals) && (
+                    <span style={{ fontSize: '10.5px', color: '#86efac', fontWeight: 700, marginTop: '1px' }}>
+                      (Total Credit: ₹{Number(displayPrize).toFixed(2)})
+                    </span>
+                  )}
                 </div>
               </>
             )}
@@ -1108,7 +1118,13 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                           {won ? (
                             <span className="result-row-status--winner">
                               <CheckCircle2 size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                              {isPool || isDeals ? 'Deal Winner (0 pts)' : 'Winner (0 pts)'}
+                              {isIntermediateDeal
+                                ? 'Deal Winner (0 pts)'
+                                : isPool
+                                ? 'Pool Champion (0 pts)'
+                                : isDeals
+                                ? 'Deals Champion (0 pts)'
+                                : 'Winner (0 pts)'}
                             </span>
                           ) : p.isEliminated ? (
                             <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '11px' }}>
@@ -1184,6 +1200,11 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                             {pRefund !== undefined && pRefund > 0 && !isPool && !isDeals && (
                               <span style={{ color: '#34d399', marginLeft: '6px' }}>
                                 (+₹{Number(pRefund).toFixed(2)} refund)
+                              </span>
+                            )}
+                            {won && isPointsBased && (
+                              <span style={{ color: '#34d399', marginLeft: '6px' }}>
+                                (+₹{Number(playerDetail?.initialStake ?? stakeTier).toFixed(2)} stake returned)
                               </span>
                             )}
                           </div>
