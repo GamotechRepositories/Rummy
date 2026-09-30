@@ -2883,12 +2883,10 @@ h1, h2, h3, h4, .font-display {
 
 /* Stock sits ON the painted deck between her hands (felt rim) */
 .deal-hands-stock {
-  --stock-w: 36px;
-  --stock-h: 48px;
   position: absolute;
-  width: var(--stock-w);
-  height: var(--stock-h);
-  margin-left: calc(var(--stock-w) / -2);
+  width: 36px;
+  height: 48px;
+  margin-left: -18px;
   /* Nudge onto the painted red deck, not up the torso */
   margin-top: 4px;
   z-index: 43;
@@ -2899,65 +2897,36 @@ h1, h2, h3, h4, .font-display {
   position: absolute;
   left: 0;
   top: 0;
-  width: calc(var(--stock-w) - 2px) !important;
-  height: calc(var(--stock-h) - 2px) !important;
-  border-radius: clamp(3px, calc(var(--stock-w) * 0.14), 5px) !important;
-  border-width: clamp(1px, calc(var(--stock-w) * 0.04), 1.5px) !important;
+  width: 34px !important;
+  height: 46px !important;
+  border-radius: 5px !important;
+  border-width: 1.5px !important;
 }
 
 .deal-stock-card::after {
-  font-size: clamp(8px, calc(var(--stock-w) * 0.33), 12px) !important;
+  font-size: 12px !important;
 }
 
 .deal-stock-card--a {
-  transform: translate(calc(var(--stock-w) * -0.11), calc(var(--stock-h) * 0.04)) rotate(-10deg);
+  transform: translate(-4px, 2px) rotate(-10deg);
   z-index: 1;
 }
 
 .deal-stock-card--b {
-  transform: translate(calc(var(--stock-w) * 0.03), calc(var(--stock-h) * 0.02)) rotate(2deg);
+  transform: translate(1px, 1px) rotate(2deg);
   z-index: 2;
 }
 
 .deal-stock-card--c {
-  transform: translate(calc(var(--stock-w) * 0.14), 0) rotate(12deg);
+  transform: translate(5px, 0) rotate(12deg);
   z-index: 3;
   animation: dealStockDeal 0.45s ease-in-out infinite;
 }
 
 @keyframes dealStockDeal {
-  0%, 100% {
-    transform: translate(calc(var(--stock-w) * 0.14), 0) rotate(12deg);
-  }
+  0%, 100% { transform: translate(5px, 0) rotate(12deg); }
   /* Peel down onto felt, never up over her body */
-  50% {
-    transform: translate(calc(var(--stock-w) * 0.17), calc(var(--stock-h) * 0.12)) rotate(16deg) scale(1.03);
-  }
-}
-
-/* Responsive dealer deck bundle scaling for mobile & compact views */
-@media (max-width: 900px), (max-height: 560px) {
-  .deal-hands-stock {
-    --stock-w: 26px;
-    --stock-h: 35px;
-    margin-top: 2px;
-  }
-}
-
-@media (max-width: 680px), (max-height: 440px) {
-  .deal-hands-stock {
-    --stock-w: 20px;
-    --stock-h: 27px;
-    margin-top: 1px;
-  }
-}
-
-@media (max-width: 440px), (max-height: 350px) {
-  .deal-hands-stock {
-    --stock-w: 16px;
-    --stock-h: 22px;
-    margin-top: 0px;
-  }
+  50% { transform: translate(6px, 6px) rotate(16deg) scale(1.03); }
 }
 
 /* One card at a time, clockwise, from the dealer's hands to each seat. */
