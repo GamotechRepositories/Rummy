@@ -261,4 +261,137 @@ class GameEngineTest {
         assertThat(state.getCutJoker()).isNotNull();
         assertThat(state.topDiscard()).isNotNull();
     }
+
+    @Test
+    @DisplayName("21-Card Rummy: deals 21 cards, handles 22-card draw, auto-discards on timeout, and applies 30-pt first drop")
+    void testTwentyOneCardRummyGameFlow() {
+        RummyRules r21 = RulesetRegistry.requireRuleset("RUMMY_21");
+        Deck deck = Deck.createMultiPackDeck(r21.getDeckCount(), r21.getPrintedJokersPerDeck(), new java.security.SecureRandom());
+        GameState state = new GameState("G_21", "T_21", "RUMMY_21", "1.0.0", List.of(), deck);
+        Instant now = Instant.now();
+
+        engine.process(state, new JoinCommand("c1", "G_21", "P1", "Player 1", 0, false, now), r21);
+        engine.process(state, new JoinCommand("c2", "G_21", "P2", "Player 2", 1, false, now), r21);
+        engine.process(state, new ReadyCommand("c3", "G_21", "P1", now), r21);
+        engine.process(state, new ReadyCommand("c4", "G_21", "P2", now), r21);
+
+        EngineResult start = engine.process(state, new StartGameCommand("c5", "G_21", "P1", now), r21);
+        assertThat(start.isSuccess()).isTrue();
+        assertThat(state.getStatus()).isEqualTo(GameStatus.IN_PROGRESS);
+
+        PlayerState p1 = state.requirePlayer("P1");
+        PlayerState p2 = state.requirePlayer("P2");
+        assertThat(p1.getHandSize()).isEqualTo(21);
+        assertThat(p2.getHandSize()).isEqualTo(21);
+
+        String activePlayerId = state.getTurnState().getCurrentPlayerId();
+        PlayerState activePlayer = state.requirePlayer(activePlayerId);
+
+        // Active player draws from closed deck -> hand size becomes 22 (21 + 1)
+        EngineResult drawResult = engine.process(state, new DrawCommand("c6", "G_21", activePlayerId, DrawSource.CLOSED_DECK, now), r21);
+        assertThat(drawResult.isSuccess()).isTrue();
+        assertThat(activePlayer.getHandSize()).isEqualTo(22);
+        assertThat(state.getTurnState().getPhase()).isEqualTo(TurnPhase.AWAITING_DISCARD);
+
+        // Timeout during discard phase -> MUST auto-discard drawn card back to 21 cards
+        EngineResult timeoutResult = engine.process(state, new TimeoutCommand("c7", "G_21", activePlayerId, now), r21);
+        assertThat(timeoutResult.isSuccess()).isTrue();
+        assertThat(activePlayer.getHandSize()).isEqualTo(21); // Restored to 21!
+
+        // The other player now drops (first drop = 30 pts)
+        String nextPlayerId = state.getTurnState().getCurrentPlayerId();
+        EngineResult dropResult = engine.process(state, new DropCommand("c8", "G_21", nextPlayerId, now), r21);
+        assertThat(dropResult.isSuccess()).isTrue();
+        assertThat(state.getStatus()).isEqualTo(GameStatus.COMPLETED);
+        assertThat(state.requirePlayer(nextPlayerId).getScore()).isEqualTo(30);
+    }
+
+    private GameState createAndStartStandardGame(String gameId) {
+        Deck deck = Deck.createStandard13CardDeck();
+        GameState state = new GameState(gameId, "T1", "POINTS_13", "1.0.0", List.of(), deck);
+        Instant now = Instant.now();
+        engine.process(state, new JoinCommand("c1", gameId, "P1", "Alice", 0, false, now), rules);
+        engine.process(state, new JoinCommand("c2", gameId, "P2", "Bob", 1, false, now), rules);
+        engine.process(state, new ReadyCommand("c3", gameId, "P1", now), rules);
+        engine.process(state, new ReadyCommand("c4", gameId, "P2", now), rules);
+        engine.process(state, new StartGameCommand("c5", gameId, "P1", now), rules);
+        return state;
+    }
+
+    @Test
+    @DisplayName("Points Rummy: same card discard restriction, joker draw restriction, and drop after draw validation")
+    void testPointsRummyRuleSafeguards() {
+        GameState state = createAndStartStandardGame("G_SAFE");
+        Instant now = Instant.now();
+        String activePlayerId = state.getTurnState().getCurrentPlayerId();
+        PlayerState player = state.requirePlayer(activePlayerId);
+
+        // 1. Drop after draw is strictly disallowed
+        // Player draws from closed deck
+        EngineResult drawClosed = engine.process(state, new DrawCommand("c10", state.getGameId(), activePlayerId, DrawSource.CLOSED_DECK, now), rules);
+        assertThat(drawClosed.isSuccess()).isTrue();
+        assertThat(state.getTurnState().getPhase()).isEqualTo(TurnPhase.AWAITING_DISCARD);
+
+        EngineResult illegalDrop = engine.process(state, new DropCommand("c11", state.getGameId(), activePlayerId, now), rules);
+        assertThat(illegalDrop.isSuccess()).isFalse();
+        assertThat(illegalDrop.errorMessage()).contains("Cannot drop after drawing a card");
+
+        // Player discards a card normally
+        CardInstance cardToDiscard = player.getHandSnapshot().get(0);
+        EngineResult normalDiscard = engine.process(state, new DiscardCommand("c12", state.getGameId(), activePlayerId, cardToDiscard.getInstanceId(), now), rules);
+        assertThat(normalDiscard.isSuccess()).isTrue();
+
+        // 2. Next player draws from open discard pile
+        String nextPlayerId = state.getTurnState().getCurrentPlayerId();
+        PlayerState nextPlayer = state.requirePlayer(nextPlayerId);
+        CardInstance topOpenDiscard = state.topDiscard();
+
+        EngineResult drawOpen = engine.process(state, new DrawCommand("c13", state.getGameId(), nextPlayerId, DrawSource.DISCARD_PILE, now), rules);
+        assertThat(drawOpen.isSuccess()).isTrue();
+
+        // Next player tries to immediately discard the exact same card just drawn
+        EngineResult sameCardDiscard = engine.process(state, new DiscardCommand("c14", state.getGameId(), nextPlayerId, topOpenDiscard.getInstanceId(), now), rules);
+        assertThat(sameCardDiscard.isSuccess()).isFalse();
+        assertThat(sameCardDiscard.errorMessage()).contains("Cannot discard the card you just picked from the open discard pile");
+
+        // Next player discards a different natural card
+        CardInstance diffCard = nextPlayer.getHandSnapshot().stream()
+                .filter(c -> !c.getInstanceId().equals(topOpenDiscard.getInstanceId()))
+                .findFirst().orElseThrow();
+        engine.process(state, new DiscardCommand("c15", state.getGameId(), nextPlayerId, diffCard.getInstanceId(), now), rules);
+
+        // 3. Joker from discard pile is rejected
+        // Put a printed joker on top of discard pile to test draw
+        CardInstance printedJoker = new CardInstance("PJ_TEST", Card.printedJoker(), 1);
+        state.addToDiscardPile(printedJoker);
+
+        // The next active player now tries to draw the joker from discard pile
+        String thirdTurnPlayerId = state.getTurnState().getCurrentPlayerId();
+        EngineResult drawJoker = engine.process(state, new DrawCommand("c16", state.getGameId(), thirdTurnPlayerId, DrawSource.DISCARD_PILE, now), rules);
+        assertThat(drawJoker.isSuccess()).isFalse();
+        assertThat(drawJoker.errorMessage()).contains("Cannot pick a joker from the open discard pile");
+    }
+
+    @Test
+    @DisplayName("Points Rummy: drop after timeout is a middle drop (40 points)")
+    void testDropAfterTimeoutIsMiddleDrop() {
+        GameState state = createAndStartStandardGame("G_TIMEOUT");
+        Instant now = Instant.now();
+        String activePlayerId = state.getTurnState().getCurrentPlayerId();
+
+        // Player times out without drawing
+        engine.process(state, new TimeoutCommand("c20", state.getGameId(), activePlayerId, now), rules);
+        String secondPlayerId = state.getTurnState().getCurrentPlayerId();
+
+        // Second player draws and discards
+        engine.process(state, new DrawCommand("c21", state.getGameId(), secondPlayerId, DrawSource.CLOSED_DECK, now), rules);
+        PlayerState p2 = state.requirePlayer(secondPlayerId);
+        engine.process(state, new DiscardCommand("c22", state.getGameId(), secondPlayerId, p2.getHandSnapshot().get(0).getInstanceId(), now), rules);
+
+        // Turn returns to first player. Since first player missed turn 1, dropping now is a Middle Drop (40 pts)
+        assertThat(state.getTurnState().getCurrentPlayerId()).isEqualTo(activePlayerId);
+        EngineResult dropResult = engine.process(state, new DropCommand("c23", state.getGameId(), activePlayerId, now), rules);
+        assertThat(dropResult.isSuccess()).isTrue();
+        assertThat(state.requirePlayer(activePlayerId).getScore()).isEqualTo(40); // 40 points middle drop!
+    }
 }

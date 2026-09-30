@@ -320,12 +320,15 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         List<CardGroup> result = new ArrayList<>();
         for (JsonNode gNode : groupsNode) {
             List<CardInstance> groupCards = new ArrayList<>();
-            if (gNode.isArray()) {
-                for (JsonNode cNode : gNode) {
-                    String id = cNode.isTextual() ? cNode.asText() : cNode.get("instanceId").asText();
-                    CardInstance ci = handMap.get(id);
-                    if (ci != null) {
-                        groupCards.add(ci);
+            JsonNode cardsArray = gNode.isArray() ? gNode : (gNode.has("cards") ? gNode.get("cards") : null);
+            if (cardsArray != null && cardsArray.isArray()) {
+                for (JsonNode cNode : cardsArray) {
+                    String id = cNode.isTextual() ? cNode.asText() : (cNode.has("instanceId") ? cNode.get("instanceId").asText() : null);
+                    if (id != null) {
+                        CardInstance ci = handMap.get(id);
+                        if (ci != null) {
+                            groupCards.add(ci);
+                        }
                     }
                 }
             }

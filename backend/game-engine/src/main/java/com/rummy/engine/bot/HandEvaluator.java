@@ -23,21 +23,24 @@ public final class HandEvaluator {
     private HandEvaluator() {}
 
     /**
-     * Evaluates a 14-card hand (after draw) to check if a valid declaration can be made.
-     * Searches all candidate finish cards and partitions the remaining 13 cards.
+     * Evaluates a hand (after draw: 14 cards for 13-card rummy, 22 cards for 21-card rummy)
+     * to check if a valid declaration can be made.
+     * Searches all candidate finish cards and partitions the remaining cards.
      */
-    public static Optional<EvaluationResult> findWinningDeclaration(List<CardInstance> hand14, Card cutJoker, RummyRules rules) {
-        if (hand14 == null || hand14.size() != 14) {
+    public static Optional<EvaluationResult> findWinningDeclaration(List<CardInstance> hand, Card cutJoker, RummyRules rules) {
+        int targetCards = rules != null ? rules.getCardsPerPlayer() : 13;
+        int expectedHand = targetCards + 1;
+        if (hand == null || hand.size() != expectedHand) {
             return Optional.empty();
         }
 
         // Try each card as the finish card
-        for (int i = 0; i < hand14.size(); i++) {
-            CardInstance finishCandidate = hand14.get(i);
-            List<CardInstance> remaining13 = new ArrayList<>(hand14);
-            remaining13.remove(i);
+        for (int i = 0; i < hand.size(); i++) {
+            CardInstance finishCandidate = hand.get(i);
+            List<CardInstance> remaining = new ArrayList<>(hand);
+            remaining.remove(i);
 
-            Optional<List<CardGroup>> winningGroups = searchValid13CardPartition(remaining13, cutJoker, rules);
+            Optional<List<CardGroup>> winningGroups = searchValidPartition(remaining, cutJoker, rules);
             if (winningGroups.isPresent()) {
                 return Optional.of(new EvaluationResult(true, finishCandidate, winningGroups.get(), Collections.emptyList(), 0));
             }
@@ -47,16 +50,20 @@ public final class HandEvaluator {
     }
 
     /**
-     * Searches for a valid partition of 13 cards that satisfies the ruleset declaration requirements.
+     * Searches for a valid partition of cards that satisfies the ruleset declaration requirements.
      */
     public static Optional<List<CardGroup>> searchValid13CardPartition(List<CardInstance> cards13, Card cutJoker, RummyRules rules) {
-        List<CardGroup> candidateMelds = findAllCandidateMelds(cards13, cutJoker);
+        return searchValidPartition(cards13, cutJoker, rules);
+    }
 
-        // Recursive backtracking to find a combination of non-overlapping candidate melds that covers all 13 cards
+    public static Optional<List<CardGroup>> searchValidPartition(List<CardInstance> cards, Card cutJoker, RummyRules rules) {
+        List<CardGroup> candidateMelds = findAllCandidateMelds(cards, cutJoker);
+
+        // Recursive backtracking to find a combination of non-overlapping candidate melds that covers all cards
         List<CardGroup> selected = new ArrayList<>();
         Set<String> usedIds = new HashSet<>();
 
-        if (backtrackFindPartition(candidateMelds, 0, cards13.size(), selected, usedIds, cutJoker, rules)) {
+        if (backtrackFindPartition(candidateMelds, 0, cards.size(), selected, usedIds, cutJoker, rules, new int[]{0})) {
             return Optional.of(new ArrayList<>(selected));
         }
 
@@ -69,7 +76,11 @@ public final class HandEvaluator {
                                                   List<CardGroup> selected,
                                                   Set<String> usedIds,
                                                   Card cutJoker,
-                                                  RummyRules rules) {
+                                                  RummyRules rules,
+                                                  int[] steps) {
+        if (steps[0]++ > 3000) {
+            return false;
+        }
         if (usedIds.size() == targetCardCount) {
             DeclarationResult decl = rules.validateDeclaration(selected, cutJoker);
             return decl.isValid();
@@ -94,7 +105,7 @@ public final class HandEvaluator {
                 usedIds.add(c.getInstanceId());
             }
 
-            if (backtrackFindPartition(candidates, i + 1, targetCardCount, selected, usedIds, cutJoker, rules)) {
+            if (backtrackFindPartition(candidates, i + 1, targetCardCount, selected, usedIds, cutJoker, rules, steps)) {
                 return true;
             }
 
@@ -166,7 +177,7 @@ public final class HandEvaluator {
         for (int i = 0; i < hand.size(); i++) {
             for (int j = i + 1; j < hand.size(); j++) {
                 CardGroup trio = CardGroup.of(hand.get(i), hand.get(j), candidate);
-                GroupType type = DeclarationValidator.classifyGroup(trio, cutJoker);
+                GroupType type = classifyCandidateGroup(trio, cutJoker);
                 if (type != GroupType.INVALID) {
                     return true;
                 }
@@ -174,6 +185,16 @@ public final class HandEvaluator {
         }
 
         return false;
+    }
+
+    /**
+     * Classifies a group supporting both 13-Card and 21-Card Rummy (including Tunnelas).
+     */
+    public static GroupType classifyCandidateGroup(CardGroup group, Card cutJoker) {
+        if (TwentyOneCardRummyRules.isTunnela(group)) {
+            return GroupType.PURE_SEQUENCE;
+        }
+        return DeclarationValidator.classifyGroup(group, cutJoker);
     }
 
     /**
@@ -188,7 +209,7 @@ public final class HandEvaluator {
             for (int j = i + 1; j < n; j++) {
                 for (int k = j + 1; k < n; k++) {
                     CardGroup group = CardGroup.of(cards.get(i), cards.get(j), cards.get(k));
-                    GroupType type = DeclarationValidator.classifyGroup(group, cutJoker);
+                    GroupType type = classifyCandidateGroup(group, cutJoker);
                     if (type != GroupType.INVALID) {
                         melds.add(group);
                     }
@@ -202,7 +223,7 @@ public final class HandEvaluator {
                 for (int k = j + 1; k < n; k++) {
                     for (int m = k + 1; m < n; m++) {
                         CardGroup group = CardGroup.of(cards.get(i), cards.get(j), cards.get(k), cards.get(m));
-                        GroupType type = DeclarationValidator.classifyGroup(group, cutJoker);
+                        GroupType type = classifyCandidateGroup(group, cutJoker);
                         if (type != GroupType.INVALID) {
                             melds.add(group);
                         }
@@ -213,8 +234,8 @@ public final class HandEvaluator {
 
         // Prioritize pure sequences first, then impure sequences, then sets
         melds.sort((g1, g2) -> {
-            GroupType t1 = DeclarationValidator.classifyGroup(g1, cutJoker);
-            GroupType t2 = DeclarationValidator.classifyGroup(g2, cutJoker);
+            GroupType t1 = classifyCandidateGroup(g1, cutJoker);
+            GroupType t2 = classifyCandidateGroup(g2, cutJoker);
             int p1 = (t1 == GroupType.PURE_SEQUENCE ? 3 : (t1 == GroupType.IMPURE_SEQUENCE ? 2 : 1));
             int p2 = (t2 == GroupType.PURE_SEQUENCE ? 3 : (t2 == GroupType.IMPURE_SEQUENCE ? 2 : 1));
             return Integer.compare(p2, p1);

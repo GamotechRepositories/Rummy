@@ -169,12 +169,23 @@ public class WalletService {
      *    - Winner receives Net Prize (85% of gross pot) -> GAME_WIN.
      */
     public synchronized GameSettlementResult settleMatch(String gameId,
-                                                        String tableId,
-                                                        String rulesetId,
-                                                        BigDecimal stakeTier,
-                                                        String winnerPlayerId,
-                                                        Map<String, Integer> finalScores,
-                                                        List<String> allPlayerIds) {
+                                                         String tableId,
+                                                         String rulesetId,
+                                                         BigDecimal stakeTier,
+                                                         String winnerPlayerId,
+                                                         Map<String, Integer> finalScores,
+                                                         List<String> allPlayerIds) {
+        return settleMatch(gameId, tableId, rulesetId, stakeTier, winnerPlayerId, finalScores, allPlayerIds, Collections.emptyMap());
+    }
+
+    public synchronized GameSettlementResult settleMatch(String gameId,
+                                                         String tableId,
+                                                         String rulesetId,
+                                                         BigDecimal stakeTier,
+                                                         String winnerPlayerId,
+                                                         Map<String, Integer> finalScores,
+                                                         List<String> allPlayerIds,
+                                                         Map<String, Integer> rejoinCounts) {
         if (stakeTier == null || stakeTier.compareTo(BigDecimal.ZERO) <= 0 || winnerPlayerId == null) {
             log.warn("[Wallet] Skipping settlement: invalid stakeTier ({}) or null winner", stakeTier);
             return null;
@@ -239,16 +250,19 @@ public class WalletService {
                 ));
             }
         } else {
-            // Pool Rummy (POOL_101, POOL_201) / Deals Rummy (DEALS_RUMMY): Fixed entry fee
+            // Pool Rummy (POOL_101, POOL_201) / Deals Rummy (DEALS_RUMMY): Fixed entry fee tournament
+            // All participating players contribute their entry fee + rejoin fees to the total gross prize pot
             for (String pId : players) {
+                int rejoins = (rejoinCounts != null) ? rejoinCounts.getOrDefault(pId, 0) : 0;
+                BigDecimal playerContribution = stakeTier.multiply(BigDecimal.valueOf(1 + rejoins));
+                totalGrossPot = totalGrossPot.add(playerContribution);
                 if (pId.equals(winnerPlayerId)) {
                     continue;
                 }
                 int penalty = scores.getOrDefault(pId, 80);
-                totalGrossPot = totalGrossPot.add(stakeTier);
 
                 details.put(pId, new GameSettlementResult.PlayerSettlementDetail(
-                        pId, false, penalty, stakeTier, stakeTier, BigDecimal.ZERO, BigDecimal.ZERO, stakeTier.negate()
+                        pId, false, penalty, stakeTier, playerContribution, BigDecimal.ZERO, BigDecimal.ZERO, playerContribution.negate()
                 ));
             }
         }
@@ -270,8 +284,10 @@ public class WalletService {
         }
 
         // Credit Winner
+        int winnerRejoins = (rejoinCounts != null) ? rejoinCounts.getOrDefault(winnerPlayerId, 0) : 0;
+        BigDecimal winnerTotalPaid = isPointsBased ? stakeTier : stakeTier.multiply(BigDecimal.valueOf(1 + winnerRejoins));
         BigDecimal winnerCreditAmount = isPointsBased ? stakeTier.add(netWinnerPrize) : netWinnerPrize;
-        BigDecimal winnerNetDelta = isPointsBased ? netWinnerPrize : netWinnerPrize.subtract(stakeTier);
+        BigDecimal winnerNetDelta = isPointsBased ? netWinnerPrize : netWinnerPrize.subtract(winnerTotalPaid);
 
         if (!winnerPlayerId.startsWith("BOT_")) {
             String winKey = "WIN_" + gameId + "_" + winnerPlayerId;

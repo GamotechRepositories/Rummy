@@ -74,9 +74,12 @@ public final class BotPlayerAgent implements PlayerAgent {
         CardInstance topDiscard = view.topDiscard();
 
         if (topDiscard != null) {
-            boolean improves = HandEvaluator.doesCardImproveHand(topDiscard, view.hand(), cutCard);
-            if (improves) {
-                return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.DISCARD_PILE, now);
+            boolean isTopJoker = topDiscard.isPrintedJoker() || (cutCard != null && topDiscard.getCard().isWildJoker(cutCard));
+            if (!isTopJoker) {
+                boolean improves = HandEvaluator.doesCardImproveHand(topDiscard, view.hand(), cutCard);
+                if (improves) {
+                    return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.DISCARD_PILE, now);
+                }
             }
         }
 
@@ -97,10 +100,18 @@ public final class BotPlayerAgent implements PlayerAgent {
         HandEvaluator.EvaluationResult eval = HandEvaluator.evaluateDeadwood(hand, cutCard);
         List<CardInstance> deadwood = eval.deadwoodCards();
 
+        String forbiddenCardId = (view.isDrawnFromDiscard() && view.drawnCardInstanceId() != null)
+                ? view.drawnCardInstanceId()
+                : null;
+
         CardInstance cardToDiscard;
-        if (!deadwood.isEmpty()) {
+        List<CardInstance> eligibleDeadwood = deadwood.stream()
+                .filter(c -> forbiddenCardId == null || !c.getInstanceId().equals(forbiddenCardId))
+                .toList();
+
+        if (!eligibleDeadwood.isEmpty()) {
             // Sort deadwood by penalty points descending (A/K/Q/J/10 first)
-            List<CardInstance> sortedDeadwood = new ArrayList<>(deadwood);
+            List<CardInstance> sortedDeadwood = new ArrayList<>(eligibleDeadwood);
             sortedDeadwood.sort((c1, c2) -> Integer.compare(c2.getCard().points(cutCard), c1.getCard().points(cutCard)));
 
             if (difficulty == BotDifficulty.EASY && sortedDeadwood.size() > 1 && random.nextDouble() < 0.25) {
@@ -110,12 +121,16 @@ public final class BotPlayerAgent implements PlayerAgent {
                 cardToDiscard = sortedDeadwood.get(0);
             }
         } else {
-            // If all cards are somehow in melds but total doesn't form full winning declaration,
-            // pick a card with the highest points that isn't a joker
+            // If all deadwood cards were somehow the forbidden card or cards are in melds,
+            // pick a card with the highest points that isn't a joker and not forbidden
             cardToDiscard = hand.stream()
+                    .filter(c -> forbiddenCardId == null || !c.getInstanceId().equals(forbiddenCardId))
                     .filter(c -> !c.isPrintedJoker() && !c.getCard().isWildJoker(cutCard))
                     .max(Comparator.comparingInt(c -> c.getCard().points(cutCard)))
-                    .orElseGet(() -> hand.get(hand.size() - 1));
+                    .orElseGet(() -> hand.stream()
+                            .filter(c -> forbiddenCardId == null || !c.getInstanceId().equals(forbiddenCardId))
+                            .findFirst()
+                            .orElse(hand.get(hand.size() - 1)));
         }
 
         return new DiscardCommand(cmdId, view.gameId(), playerId, cardToDiscard.getInstanceId(), now);

@@ -50,6 +50,13 @@ class PoolAndDealsRulesTest {
         assertThat(rules.getFirstDropPenalty()).isEqualTo(20);
         assertThat(rules.getMiddleDropPenalty()).isEqualTo(40);
         assertThat(rules.getWrongDeclarationPenalty()).isEqualTo(80);
+        assertThat(rules.getInitialChipsPerPlayer()).isEqualTo(240);
+
+        assertThat(RulesetRegistry.requireRuleset("DEALS_2").getTotalDeals()).isEqualTo(2);
+        assertThat(RulesetRegistry.requireRuleset("DEALS_2").getInitialChipsPerPlayer()).isEqualTo(160);
+        assertThat(RulesetRegistry.requireRuleset("DEALS_2_13").getTotalDeals()).isEqualTo(2);
+        assertThat(RulesetRegistry.requireRuleset("DEALS_3_13").getTotalDeals()).isEqualTo(3);
+        assertThat(RulesetRegistry.requireRuleset("DEALS_13").getTotalDeals()).isEqualTo(2);
     }
 
     @Test

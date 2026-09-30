@@ -44,6 +44,7 @@ public final class TableActor {
     private GameState state;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
     private final Map<String, BotPlayerAgent> botAgents = new ConcurrentHashMap<>();
+    private final Map<String, Integer> rejoinCounts = new ConcurrentHashMap<>();
     private ScheduledFuture<?> turnTimeoutFuture;
     private ScheduledFuture<?> autoStartFallbackFuture;
     private ScheduledFuture<?> botTurnFuture;
@@ -417,9 +418,10 @@ public final class TableActor {
                     for (PlayerState p : state.getPlayers()) {
                         if (!p.getPlayerId().equals(winnerId)) {
                             int penalty = finishedEvent.finalScores().getOrDefault(p.getPlayerId(), rules.getMaximumPenalty());
-                            p.setChipBalance(p.getChipBalance() - penalty);
-                            p.addCumulativeScore(penalty);
-                            totalChipsWon += penalty;
+                            // Penalty has already been added to p.cumulativeScore by GameEngine (markDropped or handleDeclare)
+                            int chipsLost = (int) Math.min(Math.max(0, p.getChipBalance()), penalty);
+                            p.setChipBalance(p.getChipBalance() - chipsLost);
+                            totalChipsWon += chipsLost;
                         }
                     }
 
@@ -473,13 +475,20 @@ public final class TableActor {
                         }, 5, TimeUnit.SECONDS);
 
                     } else {
+                        // Winner has highest chips; tie-breaker is fewest cumulative penalty points
                         PlayerState tournamentWinner = state.getPlayers().stream()
-                                .max(Comparator.comparingLong(PlayerState::getChipBalance))
+                                .max((p1, p2) -> {
+                                    int chipCmp = Long.compare(p1.getChipBalance(), p2.getChipBalance());
+                                    if (chipCmp != 0) {
+                                        return chipCmp;
+                                    }
+                                    return Integer.compare(p2.getCumulativeScore(), p1.getCumulativeScore());
+                                })
                                 .orElse(state.getPlayers().get(0));
 
                         this.tournamentWinnerId = tournamentWinner.getPlayerId();
-                        log.info("[TableActor:{}] DEALS MATCH COMPLETED! Tournament winner is {} ({}) with {} chips",
-                                tableId, tournamentWinner.getPlayerId(), tournamentWinner.getDisplayName(), tournamentWinner.getChipBalance());
+                        log.info("[TableActor:{}] DEALS MATCH COMPLETED! Tournament winner is {} ({}) with {} chips (penalty: {})",
+                                tableId, tournamentWinner.getPlayerId(), tournamentWinner.getDisplayName(), tournamentWinner.getChipBalance(), tournamentWinner.getCumulativeScore());
 
                         if (persistenceService != null) {
                             persistenceService.recordGameFinished(state, tableId);
@@ -518,7 +527,54 @@ public final class TableActor {
                             .toList();
 
                     if (activeSurvivors.size() > 1) {
-                        // Match continues! Next deal countdown in 5 seconds
+                        // Match continues! For any players who rejoined mid-deal and sat out, update their starting score to current leader + 1
+                        int newMaxActive = activeSurvivors.stream()
+                                .filter(p -> p.getStatus() != PlayerStatus.READY)
+                                .mapToInt(PlayerState::getCumulativeScore)
+                                .max()
+                                .orElse(0);
+
+                        int rejoinCutoff = rules.getRejoinMaxActiveThreshold();
+
+                        for (PlayerState p : state.getPlayers()) {
+                            if (p.getStatus() == PlayerStatus.READY) {
+                                if (rejoinCutoff > 0 && newMaxActive > rejoinCutoff) {
+                                    // Leader score exceeded cutoff during missed deal; refund rejoin fee
+                                    log.info("[TableActor:{}] Refunding rejoin fee to {} as leader score {} exceeds cutoff {}",
+                                            tableId, p.getPlayerId(), newMaxActive, rejoinCutoff);
+                                    if (walletService != null && stakeTier > 0) {
+                                        String refundKey = "REJOIN_REFUND_" + state.getGameId() + "_" + p.getPlayerId() + "_" + state.getDealNumber();
+                                        try {
+                                            walletService.credit(
+                                                    p.getPlayerId(),
+                                                    java.math.BigDecimal.valueOf(stakeTier),
+                                                    "REJOIN_REFUND",
+                                                    refundKey,
+                                                    state.getGameId(),
+                                                    "Rejoin fee refund (leader score exceeded cutoff)",
+                                                    Map.of("tableId", tableId, "dealNumber", state.getDealNumber())
+                                            );
+                                            rejoinCounts.computeIfPresent(p.getPlayerId(), (k, v) -> v > 1 ? v - 1 : null);
+                                        } catch (Exception ex) {
+                                            log.warn("[TableActor:{}] Failed to refund rejoin fee: {}", tableId, ex.getMessage());
+                                        }
+                                    }
+                                    p.markEliminated();
+                                    currentCumulatives.put(p.getPlayerId(), p.getCumulativeScore());
+                                } else {
+                                    int adjustedScore = Math.max(p.getCumulativeScore(), newMaxActive + 1);
+                                    p.setCumulativeScore(adjustedScore);
+                                    currentCumulatives.put(p.getPlayerId(), adjustedScore);
+                                }
+                            }
+                        }
+
+                        // Re-evaluate activeSurvivors after any refunds
+                        activeSurvivors = state.getPlayers().stream()
+                                .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
+                                .toList();
+
+                        // Next deal countdown in 5 seconds
                         log.info("[TableActor:{}] Deal {} complete. {} survivors remain. Next deal in 5s...",
                                 tableId, state.getDealNumber(), activeSurvivors.size());
 
@@ -555,6 +611,32 @@ public final class TableActor {
                         this.tournamentWinnerId = tournamentWinner.getPlayerId();
                         log.info("[TableActor:{}] POOL MATCH COMPLETED! Tournament winner is {} ({}) with score {}",
                                 tableId, tournamentWinner.getPlayerId(), tournamentWinner.getDisplayName(), tournamentWinner.getCumulativeScore());
+
+                        // If any player had rejoined mid-deal and sat out, refund their fee as match has ended
+                        for (PlayerState p : state.getPlayers()) {
+                            if (p.getStatus() == PlayerStatus.READY && !p.getPlayerId().equals(tournamentWinner.getPlayerId())) {
+                                int rCount = rejoinCounts.getOrDefault(p.getPlayerId(), 0);
+                                if (rCount > 0 && walletService != null && stakeTier > 0) {
+                                    String refundKey = "REJOIN_REFUND_" + state.getGameId() + "_" + p.getPlayerId() + "_" + state.getDealNumber();
+                                    try {
+                                        walletService.credit(
+                                                p.getPlayerId(),
+                                                java.math.BigDecimal.valueOf(stakeTier),
+                                                "REJOIN_REFUND",
+                                                refundKey,
+                                                state.getGameId(),
+                                                "Rejoin fee refund (match finished before next deal)",
+                                                Map.of("tableId", tableId, "dealNumber", state.getDealNumber())
+                                        );
+                                        rejoinCounts.computeIfPresent(p.getPlayerId(), (k, v) -> v > 1 ? v - 1 : null);
+                                        log.info("[TableActor:{}] Refunded rejoin fee to {} because match completed", tableId, p.getPlayerId());
+                                    } catch (Exception ex) {
+                                        log.warn("[TableActor:{}] Failed to refund rejoin fee: {}", tableId, ex.getMessage());
+                                    }
+                                }
+                                p.markEliminated();
+                            }
+                        }
 
                         if (persistenceService != null) {
                             persistenceService.recordGameFinished(state, tableId);
@@ -1004,7 +1086,8 @@ public final class TableActor {
                         java.math.BigDecimal.valueOf(stakeTier),
                         winnerId,
                         finalScores,
-                        playerIds
+                        playerIds,
+                        rejoinCounts
                 );
                 if (this.lastSettlement != null) {
                     broadcastMessage(WsServerMessage.of("GAME_SETTLEMENT", requestId, tableId, state.getSequence(), this.lastSettlement));
@@ -1081,6 +1164,11 @@ public final class TableActor {
                 .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
                 .toList();
 
+        if (tournamentWinnerId != null || activeSurvivors.isEmpty()) {
+            sendErrorToPlayer(playerId, "GAME_ALREADY_FINISHED", "Match has already concluded", requestId);
+            return false;
+        }
+
         int maxActiveScore = activeSurvivors.stream()
                 .mapToInt(PlayerState::getCumulativeScore)
                 .max()
@@ -1105,8 +1193,12 @@ public final class TableActor {
                 );
             } catch (Exception e) {
                 log.warn("[TableActor:{}] Failed to deduct rejoin fee for {}: {}", tableId, playerId, e.getMessage());
+                sendErrorToPlayer(playerId, "INSUFFICIENT_FUNDS", "Failed to debit rejoin fee: " + e.getMessage(), requestId);
+                return false;
             }
         }
+
+        rejoinCounts.merge(playerId, 1, Integer::sum);
 
         int newScore = maxActiveScore + 1;
         player.setStatus(PlayerStatus.READY);

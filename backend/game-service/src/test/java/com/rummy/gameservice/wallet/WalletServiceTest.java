@@ -154,12 +154,54 @@ class WalletServiceTest {
         );
 
         assertThat(result).isNotNull();
-        assertThat(result.totalGrossPot()).isEqualByComparingTo(BigDecimal.valueOf(100.00));
-        assertThat(result.platformRakeAmount()).isEqualByComparingTo(BigDecimal.valueOf(15.00)); // 15% of 100
-        assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(85.00));
+        assertThat(result.totalGrossPot()).isEqualByComparingTo(BigDecimal.valueOf(200.00));
+        assertThat(result.platformRakeAmount()).isEqualByComparingTo(BigDecimal.valueOf(30.00)); // 15% of 200
+        assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(170.00));
 
-        // Winner had 900 + 85 = 985
-        assertThat(walletService.getOrCreateWallet(winner).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(985.00));
+        // Winner had 900 + 170 = 1070
+        assertThat(walletService.getOrCreateWallet(winner).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1070.00));
+    }
+
+    @Test
+    @DisplayName("Pool Rummy with Rejoin: Rejoin fees are added to gross pot, increasing prize and rake")
+    void testPoolRummySettlementWithRejoinFee() {
+        String winner = "USR_POOL_W2";
+        String loser = "USR_POOL_L2";
+        String rejoiner = "USR_POOL_RJ";
+
+        walletService.getOrCreateWallet(winner);   // 1000
+        walletService.getOrCreateWallet(loser);    // 1000
+        walletService.getOrCreateWallet(rejoiner); // 1000
+
+        BigDecimal stakeTier = BigDecimal.valueOf(100);
+
+        walletService.debit(winner, stakeTier, "GAME_ENTRY_STAKE", "STAKE_MATCH_3_" + winner, "MATCH_3", "Entry", null);
+        walletService.debit(loser, stakeTier, "GAME_ENTRY_STAKE", "STAKE_MATCH_3_" + loser, "MATCH_3", "Entry", null);
+        walletService.debit(rejoiner, stakeTier, "GAME_ENTRY_STAKE", "STAKE_MATCH_3_" + rejoiner, "MATCH_3", "Entry", null);
+        // Rejoiner rejoins once
+        walletService.debit(rejoiner, stakeTier, "REJOIN_FEE", "REJOIN_MATCH_3_" + rejoiner, "MATCH_3", "Rejoin", null);
+
+        // Gross pot = 100 + 100 + (100 + 100) = 400
+        // Rake = 15% of 400 = 60
+        // Net winner prize = 340
+        GameSettlementResult result = walletService.settleMatch(
+                "MATCH_3", "TBL_3", "POOL_101", stakeTier, winner,
+                java.util.Map.of(winner, 0, loser, 80, rejoiner, 60),
+                List.of(winner, loser, rejoiner),
+                java.util.Map.of(rejoiner, 1)
+        );
+
+        assertThat(result).isNotNull();
+        assertThat(result.totalGrossPot()).isEqualByComparingTo(BigDecimal.valueOf(400.00));
+        assertThat(result.platformRakeAmount()).isEqualByComparingTo(BigDecimal.valueOf(60.00));
+        assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(340.00));
+
+        // Rejoiner total loss = 200
+        assertThat(result.playerDetails().get(rejoiner).lossAmount()).isEqualByComparingTo(BigDecimal.valueOf(200.00));
+        assertThat(result.playerDetails().get(rejoiner).netWalletDelta()).isEqualByComparingTo(BigDecimal.valueOf(-200.00));
+
+        // Winner wallet: 1000 - 100 + 340 = 1240
+        assertThat(walletService.getOrCreateWallet(winner).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1240.00));
     }
 
     @Test
@@ -217,8 +259,11 @@ class WalletServiceTest {
         );
 
         assertThat(result).isNotNull();
-        assertThat(result.totalGrossPot()).isEqualByComparingTo(BigDecimal.valueOf(50.00));
-        assertThat(result.platformRakeAmount()).isEqualByComparingTo(BigDecimal.valueOf(7.50)); // 15% of 50
-        assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(42.50));
+        assertThat(result.totalGrossPot()).isEqualByComparingTo(BigDecimal.valueOf(100.00));
+        assertThat(result.platformRakeAmount()).isEqualByComparingTo(BigDecimal.valueOf(15.00)); // 15% of 100
+        assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(85.00));
+
+        // Winner had 950 + 85 = 1035
+        assertThat(walletService.getOrCreateWallet(winner).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1035.00));
     }
 }

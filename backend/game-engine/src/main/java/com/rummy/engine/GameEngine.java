@@ -1,5 +1,6 @@
 package com.rummy.engine;
 
+import com.rummy.engine.bot.HandEvaluator;
 import com.rummy.engine.command.*;
 import com.rummy.engine.event.*;
 import com.rummy.engine.model.*;
@@ -57,6 +58,9 @@ public final class GameEngine {
         }
 
         PlayerState newPlayer = new PlayerState(cmd.playerId(), cmd.displayName(), cmd.seatIndex(), cmd.isBot(), cmd.avatarId());
+        if (rules.isDealsGame()) {
+            newPlayer.setChipBalance(rules.getInitialChipsPerPlayer());
+        }
         state.addPlayer(newPlayer);
 
         long seq = state.nextSequence();
@@ -139,11 +143,17 @@ public final class GameEngine {
         CardInstance initialDiscard = deck.draw();
         state.addToDiscardPile(initialDiscard);
 
-        // First player is lowest seat index active player
-        PlayerState firstPlayer = state.getPlayers().stream()
+        // First player starts from dealer seat index (rotates across deals)
+        List<PlayerState> activePlayers = state.getPlayers().stream()
                 .filter(p -> p.getStatus() == PlayerStatus.ACTIVE)
-                .min(Comparator.comparingInt(PlayerState::getSeatIndex))
-                .orElseThrow();
+                .sorted(Comparator.comparingInt(PlayerState::getSeatIndex))
+                .toList();
+
+        int targetSeat = state.getDealerSeatIndex();
+        PlayerState firstPlayer = activePlayers.stream()
+                .filter(p -> p.getSeatIndex() >= targetSeat)
+                .findFirst()
+                .orElse(activePlayers.get(0));
 
         // Account for dealing animation so the first player's turn timer starts after card distribution
         int totalCardsDealt = (int) (state.getPlayers().stream().filter(p -> p.getStatus() == PlayerStatus.ACTIVE).count() * rules.getCardsPerPlayer());
@@ -197,6 +207,7 @@ public final class GameEngine {
                 }
                 CardInstance topDiscard = state.takeTopDiscard();
                 List<CardInstance> recyclePile = new ArrayList<>(state.getDiscardPile());
+                state.clearDiscardPile();
                 state.getDeck().recycleDiscardPile(recyclePile);
                 state.addToDiscardPile(topDiscard);
             }
@@ -205,6 +216,11 @@ public final class GameEngine {
         } else {
             if (state.getDiscardPile().isEmpty()) {
                 return EngineResult.failure(state, "Discard pile is empty");
+            }
+            CardInstance topCard = state.getDiscardPile().get(state.getDiscardPile().size() - 1);
+            Card cutCard = state.getCutJoker() != null ? state.getCutJoker().getCard() : null;
+            if (topCard.isPrintedJoker() || (cutCard != null && topCard.getCard().isWildJoker(cutCard))) {
+                return EngineResult.failure(state, "Cannot pick a joker from the open discard pile");
             }
             drawnCard = state.takeTopDiscard();
             fromDiscard = true;
@@ -240,6 +256,9 @@ public final class GameEngine {
         }
         if (!player.hasCard(cmd.cardInstanceId())) {
             return EngineResult.failure(state, "Card " + cmd.cardInstanceId() + " is not in player's hand");
+        }
+        if (turn.isDrawnFromDiscard() && cmd.cardInstanceId().equals(turn.getDrawnCardInstanceId())) {
+            return EngineResult.failure(state, "Cannot discard the card you just picked from the open discard pile");
         }
 
         CardInstance discarded = player.removeCard(cmd.cardInstanceId());
@@ -316,14 +335,20 @@ public final class GameEngine {
 
             for (PlayerState opponent : state.getPlayers()) {
                 if (!opponent.getPlayerId().equals(cmd.playerId()) && opponent.getStatus() == PlayerStatus.ACTIVE) {
-                    List<CardGroup> opponentGroups = List.of(CardGroup.of(opponent.getHandSnapshot()));
-                    int penalty = rules.calculateLosingScore(opponentGroups, state.getCutJoker().getCard());
+                    Card cutCard = state.getCutJoker() != null ? state.getCutJoker().getCard() : null;
+                    HandEvaluator.EvaluationResult eval = HandEvaluator.evaluateDeadwood(
+                            opponent.getHandSnapshot(), cutCard);
+                    List<CardGroup> opponentGroups = new ArrayList<>(eval.meldedGroups());
+                    if (!eval.deadwoodCards().isEmpty()) {
+                        opponentGroups.add(CardGroup.of(eval.deadwoodCards()));
+                    }
+                    int penalty = rules.calculateLosingScore(opponentGroups, cutCard);
                     opponent.setScore(penalty);
                     opponent.addCumulativeScore(penalty);
                     scoreMap.put(opponent.getPlayerId(), penalty);
                 } else if (opponent.getStatus() == PlayerStatus.DROPPED) {
                     scoreMap.put(opponent.getPlayerId(), opponent.getScore());
-                } else if (opponent.getStatus() == PlayerStatus.ELIMINATED) {
+                } else if (opponent.getStatus() == PlayerStatus.ELIMINATED || opponent.getStatus() == PlayerStatus.READY) {
                     scoreMap.put(opponent.getPlayerId(), 0);
                 }
             }
@@ -382,7 +407,12 @@ public final class GameEngine {
             return EngineResult.failure(state, "Player is not active");
         }
 
-        boolean isFirstDrop = !player.hasTakenFirstTurn();
+        TurnState turn = state.getTurnState();
+        if (turn != null && turn.getCurrentPlayerId().equals(cmd.playerId()) && turn.getPhase() == TurnPhase.AWAITING_DISCARD) {
+            return EngineResult.failure(state, "Cannot drop after drawing a card. You must discard.");
+        }
+
+        boolean isFirstDrop = !player.hasTakenFirstTurn() && player.getConsecutiveMissedTurns() == 0;
         int penalty = cmd.isForfeit()
                 ? rules.getMaximumPenalty()
                 : (isFirstDrop ? rules.getFirstDropPenalty() : rules.getMiddleDropPenalty());
@@ -405,7 +435,6 @@ public final class GameEngine {
         }
 
         // If it was the dropped player's turn, advance turn
-        TurnState turn = state.getTurnState();
         if (turn != null && turn.getCurrentPlayerId().equals(cmd.playerId())) {
             PlayerState nextPlayer = state.nextActivePlayer(cmd.playerId()).orElseThrow();
             TurnState nextTurn = TurnState.startTurn(turn.getTurnNumber() + 1, nextPlayer.getPlayerId(),
@@ -454,7 +483,8 @@ public final class GameEngine {
             }
         } else {
             // Auto-discard if player drew but timed out on discard
-            if (turn.getPhase() == TurnPhase.AWAITING_DISCARD && player.getHandSize() == 14) {
+            int expectedHandBeforeDiscard = rules.getCardsPerPlayer() + 1;
+            if (turn.getPhase() == TurnPhase.AWAITING_DISCARD && player.getHandSize() == expectedHandBeforeDiscard) {
                 // Discard the card that was drawn
                 String drawnId = turn.getDrawnCardInstanceId();
                 if (drawnId != null && player.hasCard(drawnId)) {
@@ -492,7 +522,7 @@ public final class GameEngine {
 
         Map<String, Integer> scoreMap = new HashMap<>();
         for (PlayerState p : state.getPlayers()) {
-            if (p.getStatus() == PlayerStatus.ELIMINATED) {
+            if (p.getStatus() == PlayerStatus.ELIMINATED || p.getStatus() == PlayerStatus.READY) {
                 scoreMap.put(p.getPlayerId(), 0);
             } else {
                 scoreMap.put(p.getPlayerId(), p.getScore());

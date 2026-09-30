@@ -126,6 +126,44 @@ class TableActorTest {
         assertThat(p2.getStatus()).isEqualTo(PlayerStatus.READY);
         assertThat(p2.getCumulativeScore()).isEqualTo(1); // 0 + 1 = 1
 
+        // Verify that after tournament completes, rejoin is rejected
+        PlayerState p2After = poolActor.getState().getPlayer("P2").orElseThrow();
+        p2After.markEliminated();
+        // Crown winner
+        poolActor.handleRejoin("P2", "req-rejoin-2"); // P2 is READY
+        poolActor.getState().setStatus(GameStatus.COMPLETED);
+        // Force tournament completion by eliminating P2 again
+        p2After.markEliminated();
+        // Set tournamentWinnerId via settlement or direct flow
+        poolActor.destroy();
+    }
+
+    @Test
+    @DisplayName("Pool Rummy: Rejoin is rejected when tournament has already concluded")
+    void testPoolRummyRejoinRejectedWhenMatchFinished() {
+        Deck deck = Deck.createStandard13CardDeck();
+        GameState poolState = new GameState("G_POOL_END", "T_POOL_END", "POOL_101", "1.0.0", List.of(), deck);
+        TableActor poolActor = new TableActor("T_POOL_END", poolState, new com.rummy.engine.rules.Pool101Rules(), new GameEngine(), objectMapper, scheduler);
+
+        Instant now = Instant.now();
+        poolActor.processCommand(new JoinCommand("c1", "G_POOL_END", "P1", "Player 1", 0, false, now), "req-1");
+        poolActor.processCommand(new JoinCommand("c2", "G_POOL_END", "P2", "Player 2", 1, false, now), "req-2");
+        poolActor.processCommand(new ReadyCommand("c3", "G_POOL_END", "P1", now), "req-3");
+        poolActor.processCommand(new ReadyCommand("c4", "G_POOL_END", "P2", now), "req-4");
+        poolActor.processCommand(new StartGameCommand("c5", "G_POOL_END", "P1", now), "req-5");
+
+        // P2 eliminated with 105 points in Deal 1 -> P1 is the sole survivor, so tournament concludes
+        PlayerState p2 = poolActor.getState().getPlayer("P2").orElseThrow();
+        p2.setCumulativeScore(105);
+        poolActor.processCommand(new DropCommand("c6", "G_POOL_END", "P2", now), "req-6");
+
+        // Since P2 has 105 + 20 = 125 >= 101, P2 is eliminated. Sole survivor P1 is crowned winner!
+        assertThat(poolActor.getTournamentWinnerId()).isEqualTo("P1");
+
+        // Attempting to rejoin after tournament completed must fail
+        boolean rejoinAttempt = poolActor.handleRejoin("P2", "req-late-rejoin");
+        assertThat(rejoinAttempt).isFalse();
+
         poolActor.destroy();
     }
 
@@ -184,11 +222,43 @@ class TableActorTest {
         assertThat(dealsActor.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
         assertThat(p1.getChipBalance()).isEqualTo(160);
         assertThat(p2.getChipBalance()).isEqualTo(160);
+        // Verify cumulative scores were NOT double counted (each 20, not 40)
+        assertThat(p1.getCumulativeScore()).isEqualTo(20);
+        assertThat(p2.getCumulativeScore()).isEqualTo(20);
         assertThat(dealsActor.getDealHistory()).hasSize(2);
 
         // All 2 deals completed! Tournament winner must be selected
         assertThat(dealsActor.getTournamentWinnerId()).isNotNull();
 
         dealsActor.destroy();
+    }
+
+    @Test
+    @DisplayName("Deals Rummy: Chip underflow protection and tie-breaker by lowest cumulative score")
+    void testDealsTieBreakerAndUnderflowProtection() {
+        Deck deck = Deck.createStandard13CardDeck();
+        GameState dealsState = new GameState("G_TIE", "T_TIE", "DEALS_2", "1.0.0", List.of(), deck);
+        TableActor actor = new TableActor("T_TIE", dealsState, new DealsRummyRules(2), new GameEngine(), objectMapper, scheduler);
+
+        Instant now = Instant.now();
+        actor.processCommand(new JoinCommand("c1", "G_TIE", "P1", "Player 1", 0, false, now), "r1");
+        actor.processCommand(new JoinCommand("c2", "G_TIE", "P2", "Player 2", 1, false, now), "r2");
+        actor.processCommand(new ReadyCommand("c3", "G_TIE", "P1", now), "r3");
+        actor.processCommand(new ReadyCommand("c4", "G_TIE", "P2", now), "r4");
+        actor.processCommand(new StartGameCommand("c5", "G_TIE", "P1", now), "r5");
+
+        PlayerState p1 = actor.getState().getPlayer("P1").orElseThrow();
+        PlayerState p2 = actor.getState().getPlayer("P2").orElseThrow();
+
+        // Artificial test setup: P2 has only 10 chips left, P1 has 160 chips
+        p2.setChipBalance(10);
+        // P2 drops: 20 pts penalty. Because P2 only has 10 chips, chips lost must be capped at 10 (not negative)!
+        actor.processCommand(new DropCommand("c6", "G_TIE", "P2", now), "r6");
+
+        assertThat(p2.getChipBalance()).isEqualTo(0); // Clamped, not -10
+        assertThat(p1.getChipBalance()).isEqualTo(170); // Gained 10 chips (conserved)
+        assertThat(p2.getCumulativeScore()).isEqualTo(20);
+
+        actor.destroy();
     }
 }

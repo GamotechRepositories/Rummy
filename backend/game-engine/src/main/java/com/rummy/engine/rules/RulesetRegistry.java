@@ -29,6 +29,12 @@ public final class RulesetRegistry {
         registerAlias("DEALS", "DEALS_RUMMY");
         registerAlias("21_CARD", "RUMMY_21");
         registerAlias("TWENTY_ONE", "RUMMY_21");
+        registerAlias("POOL", "POOL_101");
+        registerAlias("POOL_101_13", "POOL_101");
+        registerAlias("POOL_201_13", "POOL_201");
+        registerAlias("DEALS_13", "DEALS_RUMMY");
+        registerAlias("DEALS_2_13", "DEALS_2");
+        registerAlias("DEALS_3_13", "DEALS_3");
     }
 
     private RulesetRegistry() {}
