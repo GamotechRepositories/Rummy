@@ -3560,8 +3560,8 @@ h1, h2, h3, h4, .font-display {
 /* ========== FLOATING CHARACTER BUTTON (CHATBOT STYLE FAB) ========== */
 .lobby-character-fab {
   position: fixed;
-  bottom: clamp(16px, 3vh, 28px);
-  right: clamp(16px, 3vw, 28px);
+  bottom: calc(clamp(32px, 5vh, 52px) + env(safe-area-inset-bottom, 0px));
+  right: calc(clamp(20px, 3.5vw, 36px) + env(safe-area-inset-right, 0px));
   z-index: 55;
   display: inline-flex;
   align-items: center;
@@ -3810,8 +3810,8 @@ h1, h2, h3, h4, .font-display {
   }
 
   .lobby-character-fab {
-    bottom: 14px;
-    right: 14px;
+    bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+    right: calc(16px + env(safe-area-inset-right, 0px));
     padding: 4px 12px 4px 4px;
     gap: 8px;
   }
@@ -3887,8 +3887,8 @@ h1, h2, h3, h4, .font-display {
   }
 
   .lobby-character-fab {
-    bottom: 12px;
-    right: 12px;
+    bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    right: calc(14px + env(safe-area-inset-right, 0px));
     padding: 3px 10px 3px 3px;
     gap: 6px;
   }
@@ -3917,8 +3917,8 @@ h1, h2, h3, h4, .font-display {
 
 @media (max-height: 520px) and (orientation: landscape) {
   .lobby-character-fab {
-    bottom: 8px;
-    right: 10px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    right: calc(14px + env(safe-area-inset-right, 0px));
     padding: 3px 8px 3px 3px;
     gap: 6px;
   }
