@@ -227,8 +227,22 @@ class TableActorTest {
         assertThat(p2.getCumulativeScore()).isEqualTo(20);
         assertThat(dealsActor.getDealHistory()).hasSize(2);
 
-        // All 2 deals completed! Tournament winner must be selected
-        assertThat(dealsActor.getTournamentWinnerId()).isNotNull();
+        // All 2 deals completed! Both players tied at 160 chips and 20 penalty points.
+        // Sudden-Death Tie-Breaker Deal 3 is triggered!
+        assertThat(dealsActor.getEffectiveTotalDeals()).isEqualTo(3);
+        assertThat(dealsActor.getTournamentWinnerId()).isNull();
+
+        // Start Deal 3 (Tie-Breaker Deal)
+        dealsActor.startNextDeal();
+        assertThat(dealsActor.getState().getStatus()).isEqualTo(GameStatus.IN_PROGRESS);
+        assertThat(dealsActor.getState().getDealNumber()).isEqualTo(3);
+
+        // In Deal 3, P2 drops (first drop = 20 pts penalty)
+        dealsActor.processCommand(new DropCommand("c8", "G_DEALS", "P2", now), "req-8");
+        assertThat(dealsActor.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
+        assertThat(p1.getChipBalance()).isEqualTo(180);
+        assertThat(p2.getChipBalance()).isEqualTo(140);
+        assertThat(dealsActor.getTournamentWinnerId()).isEqualTo("P1");
 
         dealsActor.destroy();
     }

@@ -216,11 +216,9 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 }
             }
             case "LEAVE_TABLE" -> {
-                // Voluntary leave — clear resume binding; drop if still active in hand
-                var playerOpt = tableActor.getState().getPlayer(playerId);
-                if (playerOpt.isPresent() && playerOpt.get().getStatus() == PlayerStatus.ACTIVE
-                        && tableActor.getState().getStatus() == GameStatus.IN_PROGRESS) {
-                    tableActor.processCommand(new DropCommand(reqId, gameId, playerId, now, true), "LEAVE_FORFEIT");
+                // Voluntary leave — clear resume binding; drop if active and mark eliminated to prevent ghost deal stalls
+                if (tableActor.getState().getStatus() == GameStatus.IN_PROGRESS || tableActor.getState().getStatus() == GameStatus.COMPLETED) {
+                    tableActor.handleVoluntaryLeave(playerId, reqId);
                 } else if (tableActor.getState().getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
                     tableActor.removeWaitingHuman(playerId);
                     if (matchmakingService != null) {

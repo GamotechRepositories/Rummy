@@ -60,8 +60,12 @@ class GameEngineTest {
         assertThat(state.requirePlayer("P1").getHandSize()).isEqualTo(14);
         assertThat(state.getTurnState().getPhase()).isEqualTo(TurnPhase.AWAITING_DISCARD);
 
-        // 6. P1 Discards one card
-        CardInstance cardToDiscard = state.requirePlayer("P1").getHandSnapshot().get(0);
+        // 6. P1 Discards one non-joker card
+        Card cutCard = state.getCutJoker() != null ? state.getCutJoker().getCard() : null;
+        CardInstance cardToDiscard = state.requirePlayer("P1").getHandSnapshot().stream()
+                .filter(c -> !c.isPrintedJoker() && (cutCard == null || !c.getCard().isWildJoker(cutCard)))
+                .findFirst()
+                .orElse(state.requirePlayer("P1").getHandSnapshot().get(0));
         EngineResult rDiscard = engine.process(state, new DiscardCommand("c7", "G1", "P1", cardToDiscard.getInstanceId(), now), rules);
         assertThat(rDiscard.isSuccess()).isTrue();
         assertThat(state.requirePlayer("P1").getHandSize()).isEqualTo(13);

@@ -77,6 +77,8 @@ public final class TableActor {
     private Integer nextDealCountdown = null;
     private Instant nextDealScheduledAt = null;
     private String tournamentWinnerId = null;
+    private int effectiveTotalDeals;
+    private final Set<String> voluntaryAbandoners = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public TableActor(String tableId,
                       GameState initialState,
@@ -91,6 +93,7 @@ public final class TableActor {
         this.tableId = Objects.requireNonNull(tableId);
         this.state = Objects.requireNonNull(initialState);
         this.rules = Objects.requireNonNull(rules);
+        this.effectiveTotalDeals = rules.getTotalDeals();
         this.engine = Objects.requireNonNull(engine);
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.objectMapper.findAndRegisterModules();
@@ -446,9 +449,30 @@ public final class TableActor {
                     dealHistory.add(dealRecord);
 
                     log.info("[TableActor:{}] DEALS Deal {}/{} complete. Winner {} gained {} chips. Current chips: {}",
-                            tableId, state.getDealNumber(), totalDeals, winnerId, totalChipsWon, currentChips);
+                            tableId, state.getDealNumber(), effectiveTotalDeals, winnerId, totalChipsWon, currentChips);
 
-                    if (state.getDealNumber() < totalDeals) {
+                    List<PlayerState> activeSurvivors = state.getPlayers().stream()
+                            .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
+                            .toList();
+
+                    if (activeSurvivors.size() <= 1) {
+                        // All opponents forfeited/abandoned table; surviving player is immediate champion!
+                        PlayerState tournamentWinner = activeSurvivors.isEmpty()
+                                ? state.getPlayers().get(0)
+                                : activeSurvivors.get(0);
+                        this.tournamentWinnerId = tournamentWinner.getPlayerId();
+                        log.info("[TableActor:{}] DEALS MATCH COMPLETED (by forfeit)! Tournament winner is {} ({})",
+                                tableId, tournamentWinner.getPlayerId(), tournamentWinner.getDisplayName());
+
+                        if (persistenceService != null) {
+                            persistenceService.recordGameFinished(state, tableId);
+                        }
+                        settleMatchWallet(tournamentWinner.getPlayerId(), currentCumulatives, requestId);
+                        if (sessionService != null) {
+                            sessionService.clearAllHumanBindings(tableId);
+                            log.info("[TableActor:{}] Cleared player session bindings after deals match finish", tableId);
+                        }
+                    } else if (state.getDealNumber() < effectiveTotalDeals) {
                         log.info("[TableActor:{}] Deal {} complete. Next deal (Deal {}) in 5s...",
                                 tableId, state.getDealNumber(), state.getDealNumber() + 1);
 
@@ -457,7 +481,7 @@ public final class TableActor {
 
                         Map<String, Object> dealsEventPayload = new HashMap<>();
                         dealsEventPayload.put("dealNumber", state.getDealNumber());
-                        dealsEventPayload.put("totalDeals", totalDeals);
+                        dealsEventPayload.put("totalDeals", effectiveTotalDeals);
                         dealsEventPayload.put("winnerPlayerId", finishedEvent.winnerPlayerId());
                         dealsEventPayload.put("dealScores", finishedEvent.finalScores());
                         dealsEventPayload.put("chipBalances", currentChips);
@@ -475,28 +499,63 @@ public final class TableActor {
                         }, 5, TimeUnit.SECONDS);
 
                     } else {
-                        // Winner has highest chips; tie-breaker is fewest cumulative penalty points
-                        PlayerState tournamentWinner = state.getPlayers().stream()
-                                .max((p1, p2) -> {
-                                    int chipCmp = Long.compare(p1.getChipBalance(), p2.getChipBalance());
-                                    if (chipCmp != 0) {
-                                        return chipCmp;
-                                    }
-                                    return Integer.compare(p2.getCumulativeScore(), p1.getCumulativeScore());
-                                })
-                                .orElse(state.getPlayers().get(0));
+                        // All scheduled deals completed! Check if top players are tied in chips AND cumulative penalty
+                        List<PlayerState> ranked = new ArrayList<>(activeSurvivors);
+                        ranked.sort((p1, p2) -> {
+                            int chipCmp = Long.compare(p2.getChipBalance(), p1.getChipBalance()); // highest chips first
+                            if (chipCmp != 0) return chipCmp;
+                            return Integer.compare(p1.getCumulativeScore(), p2.getCumulativeScore()); // lowest penalty first
+                        });
 
-                        this.tournamentWinnerId = tournamentWinner.getPlayerId();
-                        log.info("[TableActor:{}] DEALS MATCH COMPLETED! Tournament winner is {} ({}) with {} chips (penalty: {})",
-                                tableId, tournamentWinner.getPlayerId(), tournamentWinner.getDisplayName(), tournamentWinner.getChipBalance(), tournamentWinner.getCumulativeScore());
+                        PlayerState p1 = ranked.get(0);
+                        PlayerState p2 = ranked.size() > 1 ? ranked.get(1) : null;
+                        boolean isTie = p2 != null
+                                && p1.getChipBalance() == p2.getChipBalance()
+                                && p1.getCumulativeScore() == p2.getCumulativeScore();
 
-                        if (persistenceService != null) {
-                            persistenceService.recordGameFinished(state, tableId);
-                        }
-                        settleMatchWallet(tournamentWinner.getPlayerId(), currentCumulatives, requestId);
-                        if (sessionService != null) {
-                            sessionService.clearAllHumanBindings(tableId);
-                            log.info("[TableActor:{}] Cleared player session bindings after deals match finish", tableId);
+                        // Maximum 2 tie-breaker sudden-death deals to guarantee fair tournament resolution
+                        if (isTie && effectiveTotalDeals < rules.getTotalDeals() + 2) {
+                            effectiveTotalDeals++;
+                            log.info("[TableActor:{}] DEALS MATCH TIE DETECTED between {} and {} ({} chips, {} penalty)! Triggering sudden-death tie-breaker deal {}/{}",
+                                    tableId, p1.getPlayerId(), p2.getPlayerId(), p1.getChipBalance(), p1.getCumulativeScore(), state.getDealNumber() + 1, effectiveTotalDeals);
+
+                            this.nextDealCountdown = 5;
+                            this.nextDealScheduledAt = Instant.now().plusSeconds(5);
+
+                            Map<String, Object> dealsEventPayload = new HashMap<>();
+                            dealsEventPayload.put("dealNumber", state.getDealNumber());
+                            dealsEventPayload.put("totalDeals", effectiveTotalDeals);
+                            dealsEventPayload.put("winnerPlayerId", finishedEvent.winnerPlayerId());
+                            dealsEventPayload.put("dealScores", finishedEvent.finalScores());
+                            dealsEventPayload.put("chipBalances", currentChips);
+                            dealsEventPayload.put("nextDealCountdownSeconds", 5);
+                            dealsEventPayload.put("isTieBreaker", true);
+
+                            broadcastMessage(WsServerMessage.of("DEALS_DEAL_COMPLETED", requestId, tableId, state.getSequence(), dealsEventPayload));
+
+                            if (nextDealFuture != null && !nextDealFuture.isDone()) {
+                                nextDealFuture.cancel(false);
+                            }
+                            nextDealFuture = scheduler.schedule(() -> {
+                                synchronized (TableActor.this) {
+                                    startNextDeal();
+                                }
+                            }, 5, TimeUnit.SECONDS);
+
+                        } else {
+                            PlayerState tournamentWinner = p1;
+                            this.tournamentWinnerId = tournamentWinner.getPlayerId();
+                            log.info("[TableActor:{}] DEALS MATCH COMPLETED! Tournament winner is {} ({}) with {} chips (penalty: {})",
+                                    tableId, tournamentWinner.getPlayerId(), tournamentWinner.getDisplayName(), tournamentWinner.getChipBalance(), tournamentWinner.getCumulativeScore());
+
+                            if (persistenceService != null) {
+                                persistenceService.recordGameFinished(state, tableId);
+                            }
+                            settleMatchWallet(tournamentWinner.getPlayerId(), currentCumulatives, requestId);
+                            if (sessionService != null) {
+                                sessionService.clearAllHumanBindings(tableId);
+                                log.info("[TableActor:{}] Cleared player session bindings after deals match finish", tableId);
+                            }
                         }
                     }
                 } else if (isPool) {
@@ -702,7 +761,7 @@ public final class TableActor {
                         tournamentWinnerId,
                         stakeTier,
                         new ArrayList<>(lastEliminatedNames),
-                        rules.getTotalDeals()
+                        effectiveTotalDeals
                 );
                 WsServerMessage msg = WsServerMessage.of("GAME_VIEW", requestId, tableId, state.getSequence(), view);
                 String json = objectMapper.writeValueAsString(msg);
@@ -1113,7 +1172,27 @@ public final class TableActor {
                 .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
                 .count();
         if (activeSurvivors < 2) {
-            log.warn("[TableActor:{}] Cannot start next deal with fewer than 2 active players", tableId);
+            log.info("[TableActor:{}] Fewer than 2 survivors remain ({}). Concluding tournament.", tableId, activeSurvivors);
+            PlayerState tournamentWinner = state.getPlayers().stream()
+                    .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
+                    .findFirst()
+                    .orElse(state.getPlayers().get(0));
+            this.tournamentWinnerId = tournamentWinner.getPlayerId();
+
+            Map<String, Integer> currentCumulatives = new HashMap<>();
+            for (PlayerState p : state.getPlayers()) {
+                currentCumulatives.put(p.getPlayerId(), p.getCumulativeScore());
+            }
+
+            if (persistenceService != null) {
+                persistenceService.recordGameFinished(state, tableId);
+            }
+            settleMatchWallet(tournamentWinner.getPlayerId(), currentCumulatives, "TOURNAMENT_WINNER_SURVIVOR");
+            if (sessionService != null) {
+                sessionService.clearAllHumanBindings(tableId);
+                log.info("[TableActor:{}] Cleared player session bindings after tournament finish", tableId);
+            }
+            refreshHumanViews();
             return;
         }
 
@@ -1157,6 +1236,11 @@ public final class TableActor {
         PlayerState player = state.getPlayer(playerId).orElse(null);
         if (player == null || player.getStatus() != PlayerStatus.ELIMINATED) {
             sendErrorToPlayer(playerId, "NOT_ELIMINATED", "Player is not eliminated", requestId);
+            return false;
+        }
+
+        if (voluntaryAbandoners.contains(playerId)) {
+            sendErrorToPlayer(playerId, "VOLUNTARY_LEAVE_NO_REJOIN", "Players who voluntarily forfeited the table cannot rejoin", requestId);
             return false;
         }
 
@@ -1220,6 +1304,23 @@ public final class TableActor {
             }
         }
         return true;
+    }
+
+    public synchronized void handleVoluntaryLeave(String playerId, String reqId) {
+        voluntaryAbandoners.add(playerId);
+        var playerOpt = state.getPlayer(playerId);
+        if (playerOpt.isPresent()) {
+            PlayerState p = playerOpt.get();
+            if (p.getStatus() == PlayerStatus.ACTIVE && state.getStatus() == GameStatus.IN_PROGRESS) {
+                processCommand(new DropCommand(reqId, state.getGameId(), playerId, Instant.now(), true), "LEAVE_FORFEIT");
+            }
+            p.markEliminated();
+            log.info("[TableActor:{}] Player {} marked eliminated upon voluntary leave", tableId, playerId);
+        }
+    }
+
+    public int getEffectiveTotalDeals() {
+        return effectiveTotalDeals;
     }
 
     public synchronized void destroy() {
