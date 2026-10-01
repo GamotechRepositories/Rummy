@@ -20,6 +20,7 @@ import { FullscreenToggle } from './FullscreenToggle';
 import { LandscapeGate } from './LandscapeGate';
 import { soundEngine } from '../audio/soundEngine';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { tryLockLandscape } from '../hooks/useRequiresLandscape';
 import { preloadTableShell } from '../utils/preloadTableShell';
 import { PLAYER_CHARACTERS, photoForCharacter } from '../utils/avatarUtils';
 
@@ -240,6 +241,7 @@ export const LobbyScreen: React.FC = () => {
 
   const handlePlay = async (customConfig?: { rulesetId: string; entryFee: number; maxPlayers: number }) => {
     if (isEnqueuingRef.current || isMatchmaking) return;
+    void tryLockLandscape();
     isEnqueuingRef.current = true;
 
     const name = localName.trim() || 'Player';

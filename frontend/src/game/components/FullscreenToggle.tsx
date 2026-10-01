@@ -70,15 +70,6 @@ export async function toggleFullscreen(): Promise<boolean> {
   }
 }
 
-function isTouchOrMobileDevice(): boolean {
-  if (typeof window === 'undefined') return false;
-  return (
-    'ontouchstart' in window ||
-    (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) ||
-    (typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent))
-  );
-}
-
 export const FullscreenToggle: React.FC<FullscreenToggleProps> = ({
   compact = true,
   className,
@@ -86,24 +77,8 @@ export const FullscreenToggle: React.FC<FullscreenToggleProps> = ({
   showLabel = false,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(isFullscreenActive);
-  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    const mobile = isTouchOrMobileDevice();
-    setIsMobile(mobile);
-
-    // If mobile is already in fullscreen mode from a previous session, gracefully exit
-    // so the annoying Android OS "drag from the top and touch the back button" toast is dismissed
-    if (mobile && isFullscreenActive()) {
-      try {
-        if (document.exitFullscreen) {
-          document.exitFullscreen().catch(() => {});
-        }
-      } catch {
-        // ignore
-      }
-    }
-
     const handleFullscreenChange = () => {
       setIsFullscreen(isFullscreenActive());
     };
@@ -120,13 +95,6 @@ export const FullscreenToggle: React.FC<FullscreenToggleProps> = ({
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
     };
   }, []);
-
-  // Do not render fullscreen toggle button on mobile devices.
-  // On Android/iOS, programmatic fullscreen triggers the intrusive OS prompt:
-  // "to exit full screen, drag from the top and touch the back button".
-  if (isMobile) {
-    return null;
-  }
 
   const handleClick = async () => {
     try {
