@@ -39,42 +39,9 @@ export async function tryLockLandscape(): Promise<boolean> {
 
   let locked = false;
 
-  // 1. Enter fullscreen if supported (required for screen.orientation.lock on Android)
-  try {
-    const doc = document as Document & {
-      webkitFullscreenElement?: Element;
-      mozFullScreenElement?: Element;
-      msFullscreenElement?: Element;
-    };
-    const docEl = document.documentElement as HTMLElement & {
-      webkitRequestFullscreen?: () => Promise<void>;
-      mozRequestFullScreen?: () => Promise<void>;
-      msRequestFullscreen?: () => Promise<void>;
-    };
-
-    const isFs = Boolean(
-      doc.fullscreenElement ||
-      doc.webkitFullscreenElement ||
-      doc.mozFullScreenElement ||
-      doc.msFullscreenElement
-    );
-
-    if (!isFs) {
-      const reqFs =
-        docEl.requestFullscreen ||
-        docEl.webkitRequestFullscreen ||
-        docEl.mozRequestFullScreen ||
-        docEl.msRequestFullscreen;
-
-      if (reqFs) {
-        await reqFs.call(docEl);
-      }
-    }
-  } catch (err) {
-    console.warn('requestFullscreen warning:', err);
-  }
-
-  // 2. Lock screen orientation to landscape
+  // Attempt screen orientation lock to landscape without requesting HTML5 fullscreen.
+  // Note: Requesting HTML5 fullscreen triggers the intrusive Android OS prompt:
+  // "to exit full screen, drag from the top and touch the back button".
   try {
     const orientation = screen.orientation as ScreenOrientation & {
       lock?: (orientation: string) => Promise<void>;
@@ -90,7 +57,8 @@ export async function tryLockLandscape(): Promise<boolean> {
       locked = Boolean((screen as any).mozLockOrientation('landscape'));
     }
   } catch (err) {
-    console.warn('orientation.lock warning:', err);
+    // If native lock is rejected without fullscreen, orientation lock simply won't run,
+    // and our seamless CSS simulated-landscape handles the layout without any intrusive OS toast.
   }
 
   return locked;

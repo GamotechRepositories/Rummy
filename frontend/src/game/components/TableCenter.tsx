@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { CardView } from './CardView';
-import { Eye, X, History } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { isDiscardPhase, isDrawPhase } from '../utils/turnPhase';
 import { soundEngine } from '../audio/soundEngine';
+import { DiscardHistoryModal } from './DiscardHistoryModal';
 
 const DeckSlotText: React.FC<{ text: string }> = ({ text }) => {
   const vbWidth = Math.max(46, text.length * 8.5);
@@ -178,43 +179,12 @@ export const TableCenter: React.FC = () => {
         </div>
       </div>
 
-      {showDiscardHistory && (
-        <div
-          className="discard-history-overlay"
-          onClick={() => setShowDiscardHistory(false)}
-          role="presentation"
-        >
-          <div
-            className="discard-history-card"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-label="Discard history"
-          >
-            <div className="discard-history-head">
-              <div className="discard-history-title">
-                <History size={18} color="var(--gold-accent)" />
-                <h3>Discard history ({discardHistory.length})</h3>
-              </div>
-              <button type="button" className="discard-history-close" onClick={() => setShowDiscardHistory(false)}>
-                <X size={18} />
-              </button>
-            </div>
-            <p className="discard-history-hint">Latest card is on the right.</p>
-            <div className="discard-history-row">
-              {discardHistory.map((card, idx) => (
-                <div key={card.instanceId || idx} className="discard-history-item">
-                  <CardView card={card} wildJoker={cutJoker} size="small" />
-                </div>
-              ))}
-            </div>
-            <div className="discard-history-actions">
-              <button type="button" className="btn-primary" onClick={() => setShowDiscardHistory(false)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DiscardHistoryModal
+        isOpen={showDiscardHistory}
+        onClose={() => setShowDiscardHistory(false)}
+        discardHistory={discardHistory}
+        cutJoker={cutJoker}
+      />
     </>
   );
 };
