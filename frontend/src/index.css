@@ -376,26 +376,37 @@ h1, h2, h3, h4, .font-display {
   transform: translateY(1px);
 }
 
-/* ========== POOL RUMMY SPECIALIZED UI ========== */
+/* ========== DEALER BUTTON / PUCK (RESPONSIVE CASINO TAG) ========== */
 .dealer-puck {
+  --dealer-puck-size: clamp(12px, min(1.8cqw, 2.2cqh), 16px);
   position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 20px;
-  height: 20px;
+  top: -2px;
+  right: -2px;
+  width: var(--dealer-puck-size);
+  height: var(--dealer-puck-size);
   border-radius: 50%;
-  background: linear-gradient(135deg, #fbbf24 0%, #b45309 100%);
-  border: 1.5px solid #ffffff;
+  background: linear-gradient(135deg, #fef08a 0%, #f59e0b 55%, #b45309 100%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
   color: #1a0a00;
   font-weight: 900;
-  font-size: 10.5px;
+  font-size: calc(var(--dealer-puck-size) * 0.6);
+  line-height: 1;
+  text-align: center;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.85), 0 0 10px rgba(251, 191, 36, 0.75);
+  box-shadow: 0 1.5px 5px rgba(0, 0, 0, 0.85), 0 0 6px rgba(251, 191, 36, 0.55);
   z-index: 40 !important;
   user-select: none;
   pointer-events: none;
+}
+
+.bcb-avatar-wrap .dealer-puck {
+  --dealer-puck-size: clamp(11px, calc(var(--bcb-avatar, 44px) * 0.28), 15px);
+}
+
+.opponent-avatar-wrap .dealer-puck {
+  --dealer-puck-size: clamp(10px, calc(var(--seat-avatar, 44px) * 0.26), 14px);
 }
 
 .danger-zone-pill {
@@ -7772,6 +7783,14 @@ body.mobile-landscape-play .result-bottom-bar button {
   border-radius: 8px !important;
 }
 
+body.simulated-landscape .dealer-puck,
+body.mobile-landscape-play .dealer-puck {
+  --dealer-puck-size: clamp(10px, 2.2vw, 13px) !important;
+  top: -1.5px !important;
+  right: -1.5px !important;
+  border-width: 0.8px !important;
+}
+
 /* ========== SHORT SCREEN LANDSCAPE (MOBILE / BROWSER HEIGHT <= 520px) ========== */
 @media (orientation: landscape) and (max-height: 520px) {
   .royal-dialog-backdrop {
@@ -8223,6 +8242,22 @@ body.mobile-landscape-play .result-bottom-bar button {
     font-size: 11px !important;
     min-width: 90px !important;
     border-radius: 8px !important;
+  }
+
+  .dealer-puck {
+    --dealer-puck-size: clamp(10px, 2.2vw, 13px) !important;
+    top: -1.5px !important;
+    right: -1.5px !important;
+    border-width: 0.8px !important;
+  }
+}
+
+@media (max-height: 540px) {
+  .dealer-puck {
+    --dealer-puck-size: clamp(10px, 2.2vw, 13px) !important;
+    top: -1.5px !important;
+    right: -1.5px !important;
+    border-width: 0.8px !important;
   }
 }
 
