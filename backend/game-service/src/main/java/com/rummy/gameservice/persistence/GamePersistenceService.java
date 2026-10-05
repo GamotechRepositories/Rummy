@@ -23,8 +23,11 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Service orchestrating asynchronous MongoDB persistence for Rummy matches,
@@ -43,7 +46,9 @@ public class GamePersistenceService {
     private final GameEventRepository gameEventRepository;
     private final UserProfileRepository userProfileRepository;
     private final ObjectMapper objectMapper;
-    private final ExecutorService asyncWriter = Executors.newFixedThreadPool(4);
+    private final ExecutorService asyncWriter = Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors()));
+    private final ScheduledExecutorService flusher = Executors.newSingleThreadScheduledExecutor();
+    private final ConcurrentLinkedQueue<GameEventDocument> eventQueue = new ConcurrentLinkedQueue<>();
 
     public GamePersistenceService(GameRepository gameRepository,
                                   GameResultRepository gameResultRepository,
@@ -55,6 +60,26 @@ public class GamePersistenceService {
         this.gameEventRepository = Objects.requireNonNull(gameEventRepository);
         this.userProfileRepository = Objects.requireNonNull(userProfileRepository);
         this.objectMapper = Objects.requireNonNull(objectMapper);
+        
+        // Start background flusher for batch DB inserts
+        this.flusher.scheduleAtFixedRate(this::flushEvents, 2, 2, TimeUnit.SECONDS);
+    }
+    
+    private void flushEvents() {
+        if (eventQueue.isEmpty()) return;
+        List<GameEventDocument> batch = new ArrayList<>();
+        GameEventDocument doc;
+        while ((doc = eventQueue.poll()) != null && batch.size() < 2000) {
+            batch.add(doc);
+        }
+        if (!batch.isEmpty()) {
+            try {
+                gameEventRepository.saveAll(batch);
+                log.debug("[Persistence] Flushed batch of {} events to DB", batch.size());
+            } catch (Exception e) {
+                log.error("[Persistence] Error batch saving game events: {}", e.getMessage(), e);
+            }
+        }
     }
 
     /**
@@ -205,11 +230,16 @@ public class GamePersistenceService {
                         payloadJson,
                         event.timestamp()
                 );
-                gameEventRepository.save(doc);
+                eventQueue.offer(doc);
+                
+                // Flush immediately if the queue grows too fast under heavy load
+                if (eventQueue.size() >= 2000) {
+                    flusher.execute(this::flushEvents);
+                }
             } catch (JsonProcessingException e) {
                 log.error("[Persistence] Error serializing game event: {}", e.getMessage());
             } catch (Exception e) {
-                log.error("[Persistence] Error saving game event doc: {}", e.getMessage());
+                log.error("[Persistence] Error queuing game event doc: {}", e.getMessage());
             }
         });
     }
@@ -243,6 +273,8 @@ public class GamePersistenceService {
 
     @PreDestroy
     public void shutdown() {
+        flushEvents(); // Final flush before shutdown
+        flusher.shutdown();
         asyncWriter.shutdown();
     }
 }

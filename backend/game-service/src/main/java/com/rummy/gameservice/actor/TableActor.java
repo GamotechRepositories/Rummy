@@ -41,6 +41,8 @@ public final class TableActor {
     private final com.rummy.gameservice.kafka.GameEventProducer eventProducer;
     private final com.rummy.gameservice.session.PlayerSessionService sessionService;
 
+    private static final ExecutorService vThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
     private GameState state;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
     private final Map<String, BotPlayerAgent> botAgents = new ConcurrentHashMap<>();
@@ -394,7 +396,20 @@ public final class TableActor {
             if (persistenceService != null) {
                 persistenceService.recordGameEventAsync(state.getGameId(), event);
             }
+            if (event instanceof com.rummy.engine.event.CardDrawnEvent drawnEvent) {
+                if (drawnEvent.source() == DrawSource.DISCARD_PILE && drawnEvent.drawnCard() != null) {
+                    Card pickedCard = drawnEvent.drawnCard().getCard();
+                    for (Map.Entry<String, BotPlayerAgent> entry : botAgents.entrySet()) {
+                        if (!entry.getKey().equals(drawnEvent.playerId())) {
+                            entry.getValue().recordOpponentPick(drawnEvent.playerId(), pickedCard);
+                        }
+                    }
+                }
+            }
             if (event instanceof com.rummy.engine.event.GameStartedEvent) {
+                for (BotPlayerAgent botAgent : botAgents.values()) {
+                    botAgent.resetDealMemory();
+                }
                 if (rules.isDealsGame() && state.getDealNumber() == 1) {
                     long initialChips = rules.getInitialChipsPerPlayer();
                     for (PlayerState p : state.getPlayers()) {
@@ -746,57 +761,65 @@ public final class TableActor {
     private void sendPlayerView(String playerId, String requestId) {
         WebSocketSession session = sessions.get(playerId);
         if (session != null && session.isOpen()) {
-            try {
-                Integer remainingCountdown = null;
-                if (nextDealScheduledAt != null) {
-                    long secs = java.time.Duration.between(Instant.now(), nextDealScheduledAt).toSeconds();
-                    remainingCountdown = (int) Math.max(0, secs);
-                }
-                PlayerGameView view = PlayerGameView.from(
-                        state,
-                        playerId,
-                        rules.getEliminationThreshold(),
-                        dealHistory,
-                        remainingCountdown,
-                        tournamentWinnerId,
-                        stakeTier,
-                        new ArrayList<>(lastEliminatedNames),
-                        effectiveTotalDeals
-                );
-                WsServerMessage msg = WsServerMessage.of("GAME_VIEW", requestId, tableId, state.getSequence(), view);
-                String json = objectMapper.writeValueAsString(msg);
-                session.sendMessage(new TextMessage(json));
-            } catch (IOException e) {
-                log.error("[TableActor:{}] Failed to send view to player {}: {}", tableId, playerId, e.getMessage());
+            Integer remainingCountdown = null;
+            if (nextDealScheduledAt != null) {
+                long secs = java.time.Duration.between(Instant.now(), nextDealScheduledAt).toSeconds();
+                remainingCountdown = (int) Math.max(0, secs);
             }
+            PlayerGameView view = PlayerGameView.from(
+                    state,
+                    playerId,
+                    rules.getEliminationThreshold(),
+                    dealHistory,
+                    remainingCountdown,
+                    tournamentWinnerId,
+                    stakeTier,
+                    new ArrayList<>(lastEliminatedNames),
+                    effectiveTotalDeals
+            );
+            long seq = state.getSequence();
+            
+            vThreadExecutor.submit(() -> {
+                try {
+                    WsServerMessage msg = WsServerMessage.of("GAME_VIEW", requestId, tableId, seq, view);
+                    String json = objectMapper.writeValueAsString(msg);
+                    session.sendMessage(new TextMessage(json));
+                } catch (IOException e) {
+                    log.error("[TableActor:{}] Failed to send view to player {}: {}", tableId, playerId, e.getMessage());
+                }
+            });
         }
     }
 
     private void broadcastMessage(WsServerMessage message) {
-        try {
-            String json = objectMapper.writeValueAsString(message);
-            TextMessage textMessage = new TextMessage(json);
-            for (Map.Entry<String, WebSocketSession> entry : sessions.entrySet()) {
-                WebSocketSession session = entry.getValue();
-                if (session != null && session.isOpen()) {
-                    session.sendMessage(textMessage);
+        vThreadExecutor.submit(() -> {
+            try {
+                String json = objectMapper.writeValueAsString(message);
+                TextMessage textMessage = new TextMessage(json);
+                for (Map.Entry<String, WebSocketSession> entry : sessions.entrySet()) {
+                    WebSocketSession session = entry.getValue();
+                    if (session != null && session.isOpen()) {
+                        session.sendMessage(textMessage);
+                    }
                 }
+            } catch (IOException e) {
+                log.error("[TableActor:{}] Failed to broadcast message: {}", tableId, e.getMessage());
             }
-        } catch (IOException e) {
-            log.error("[TableActor:{}] Failed to broadcast message: {}", tableId, e.getMessage());
-        }
+        });
     }
 
     private void sendErrorToPlayer(String playerId, String errorCode, String errorMessage, String requestId) {
         WebSocketSession session = sessions.get(playerId);
         if (session != null && session.isOpen()) {
-            try {
-                WsErrorMessage err = new WsErrorMessage(errorCode, errorMessage, requestId);
-                WsServerMessage msg = WsServerMessage.of("ERROR", requestId, tableId, err);
-                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(msg)));
-            } catch (IOException e) {
-                log.error("[TableActor:{}] Failed to send error to player {}: {}", tableId, playerId, e.getMessage());
-            }
+            vThreadExecutor.submit(() -> {
+                try {
+                    WsErrorMessage err = new WsErrorMessage(errorCode, errorMessage, requestId);
+                    WsServerMessage msg = WsServerMessage.of("ERROR", requestId, tableId, err);
+                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(msg)));
+                } catch (IOException e) {
+                    log.error("[TableActor:{}] Failed to send error to player {}: {}", tableId, playerId, e.getMessage());
+                }
+            });
         }
     }
 
@@ -841,15 +864,20 @@ public final class TableActor {
 
         refreshBotsOnlyWindDown();
 
-        // Random 3–6s think time so the seat feels like a human, not an instant AI.
-        long thinkSeconds = ThreadLocalRandom.current().nextInt(3, 7);
+        // Adaptive human-like think time: faster for draw (1.2-2.6s), more thoughtful for discard/declare (2.0-4.2s).
+        long thinkMillis;
+        if (turn.getPhase() == TurnPhase.AWAITING_DRAW) {
+            thinkMillis = ThreadLocalRandom.current().nextLong(1200, 2600);
+        } else {
+            thinkMillis = ThreadLocalRandom.current().nextLong(2000, 4200);
+        }
+
         if (turn.getTurnNumber() == 1) {
             int totalCards = state.getPlayers().size() * rules.getCardsPerPlayer();
             long dealDurationMs = Math.max(0, totalCards - 1) * 120L + 460L + 280L;
-            long dealSeconds = (long) Math.ceil(dealDurationMs / 1000.0);
-            thinkSeconds += dealSeconds;
+            thinkMillis += dealDurationMs;
         }
-        log.info("[TableActor:{}] Bot {} thinking for {}s before acting", tableId, activePlayerId, thinkSeconds);
+        log.info("[TableActor:{}] Bot {} thinking for {}ms before acting ({})", tableId, activePlayerId, thinkMillis, turn.getPhase());
 
         if (botTurnFuture != null && !botTurnFuture.isDone()) {
             botTurnFuture.cancel(false);
@@ -903,10 +931,13 @@ public final class TableActor {
                 }
 
                 PlayerGameView botView = PlayerGameView.from(state, activePlayerId);
-                GameCommand botAction = bot.decideAction(botView, rules);
-                processCommand(botAction, "BOT_ACTION_" + UUID.randomUUID());
+                
+                vThreadExecutor.submit(() -> {
+                    GameCommand botAction = bot.decideAction(botView, rules);
+                    processCommand(botAction, "BOT_ACTION_" + UUID.randomUUID());
+                });
             }
-        }, thinkSeconds, TimeUnit.SECONDS);
+        }, thinkMillis, TimeUnit.MILLISECONDS);
     }
 
     private void refreshBotsOnlyWindDown() {
@@ -1197,6 +1228,9 @@ public final class TableActor {
         }
 
         log.info("[TableActor:{}] Starting next deal (Deal {})...", tableId, state.getDealNumber() + 1);
+        for (BotPlayerAgent botAgent : botAgents.values()) {
+            botAgent.resetDealMemory();
+        }
         state.incrementDealNumber();
 
         Deck freshDeck = Deck.createMultiPackDeck(

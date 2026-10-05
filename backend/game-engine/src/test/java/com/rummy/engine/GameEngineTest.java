@@ -340,8 +340,11 @@ class GameEngineTest {
         assertThat(illegalDrop.isSuccess()).isFalse();
         assertThat(illegalDrop.errorMessage()).contains("Cannot drop after drawing a card");
 
-        // Player discards a card normally
-        CardInstance cardToDiscard = player.getHandSnapshot().get(0);
+        // Player discards a natural card normally
+        Card cutCard = state.getCutJoker() != null ? state.getCutJoker().getCard() : null;
+        CardInstance cardToDiscard = player.getHandSnapshot().stream()
+                .filter(c -> !c.isPrintedJoker() && (cutCard == null || !c.getCard().isWildJoker(cutCard)))
+                .findFirst().orElseThrow();
         EngineResult normalDiscard = engine.process(state, new DiscardCommand("c12", state.getGameId(), activePlayerId, cardToDiscard.getInstanceId(), now), rules);
         assertThat(normalDiscard.isSuccess()).isTrue();
 

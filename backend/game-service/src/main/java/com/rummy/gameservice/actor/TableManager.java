@@ -27,7 +27,7 @@ public class TableManager {
     private final com.rummy.gameservice.kafka.GameEventProducer eventProducer;
     private final com.rummy.gameservice.session.PlayerSessionService sessionService;
     private final com.rummy.gameservice.wallet.WalletService walletService;
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
     private final Map<String, TableActor> tables = new ConcurrentHashMap<>();
 
     @Autowired

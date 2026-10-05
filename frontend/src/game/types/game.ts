@@ -165,6 +165,7 @@ export interface WsServerMessage<T = unknown> {
   payload: T;
 }
 
+
 export interface WsErrorMessage {
   errorCode: string;
   message: string;

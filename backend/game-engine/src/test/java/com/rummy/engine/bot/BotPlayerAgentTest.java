@@ -110,4 +110,110 @@ class BotPlayerAgentTest {
         assertThat(declareCmd.finishCardInstanceId()).isEqualTo("FINISH");
         assertThat(declareCmd.groups()).hasSize(4);
     }
+
+    @Test
+    @DisplayName("Bot should avoid discarding dangerous cards picked by opponents")
+    void testDefensiveDiscardAvoidsFeedingOpponent() {
+        BotPlayerAgent bot = new BotPlayerAgent("BOT_1", "Computer", BotDifficulty.HARD);
+        // Opponent picked 8♠
+        bot.recordOpponentPick(Card.of(Suit.SPADES, Rank.EIGHT));
+
+        // Bot has deadwood cards: 9♠ (10 pts, adjacent to 8♠!), 10♦ (10 pts, safe!)
+        CardInstance nineSpades = card(Suit.SPADES, Rank.NINE, "9S");
+        CardInstance tenDiamonds = card(Suit.DIAMONDS, Rank.TEN, "10D");
+        List<CardInstance> hand = List.of(
+                card(Suit.HEARTS, Rank.FOUR, "1"),
+                card(Suit.HEARTS, Rank.FIVE, "2"),
+                card(Suit.HEARTS, Rank.SIX, "3"),
+                card(Suit.CLUBS, Rank.NINE, "4"),
+                card(Suit.CLUBS, Rank.TEN, "5"),
+                card(Suit.CLUBS, Rank.JACK, "6"),
+                card(Suit.SPADES, Rank.KING, "7"),
+                card(Suit.HEARTS, Rank.KING, "8"),
+                card(Suit.DIAMONDS, Rank.KING, "9"),
+                card(Suit.SPADES, Rank.THREE, "10"),
+                card(Suit.HEARTS, Rank.THREE, "11"),
+                card(Suit.DIAMONDS, Rank.THREE, "12"),
+                nineSpades,
+                tenDiamonds
+        );
+
+        PlayerGameView view = new PlayerGameView(
+                "T1", "G1", "BOT_1", GameStatus.IN_PROGRESS, 5L,
+                hand, List.of(), null, null, 70,
+                "BOT_1", TurnPhase.AWAITING_DISCARD, Instant.now().plusSeconds(30), true
+        );
+
+        GameCommand cmd = bot.decideAction(view, rules);
+        assertThat(cmd).isInstanceOf(DiscardCommand.class);
+        DiscardCommand discardCmd = (DiscardCommand) cmd;
+        // Bot should discard 10♦ instead of feeding 9♠ to the opponent!
+        assertThat(discardCmd.cardInstanceId()).isEqualTo("10D");
+    }
+
+    @Test
+    @DisplayName("Bot should take First Drop on turn 1 if opening hand is hopeless")
+    void testBotTakesFirstDropOnHopelessOpeningHand() {
+        BotPlayerAgent bot = new BotPlayerAgent("BOT_1", "Computer", BotDifficulty.HARD);
+
+        // Dry 13-card hand with 0 jokers, 0 melds, high deadwood points
+        List<CardInstance> dryHand = List.of(
+                card(Suit.SPADES, Rank.KING, "1"),
+                card(Suit.HEARTS, Rank.KING, "2"),
+                card(Suit.DIAMONDS, Rank.QUEEN, "3"),
+                card(Suit.CLUBS, Rank.JACK, "4"),
+                card(Suit.SPADES, Rank.TEN, "5"),
+                card(Suit.HEARTS, Rank.NINE, "6"),
+                card(Suit.DIAMONDS, Rank.EIGHT, "7"),
+                card(Suit.CLUBS, Rank.SEVEN, "8"),
+                card(Suit.SPADES, Rank.FOUR, "9"),
+                card(Suit.HEARTS, Rank.THREE, "10"),
+                card(Suit.DIAMONDS, Rank.TWO, "11"),
+                card(Suit.CLUBS, Rank.FIVE, "12"),
+                card(Suit.SPADES, Rank.ACE, "13")
+        );
+
+        // hasTakenFirstTurn is false (turn 1 before draw)
+        PlayerGameView view = new PlayerGameView(
+                "T1", "G1", "BOT_1", GameStatus.IN_PROGRESS, 1L,
+                dryHand, List.of(), null, null, 80,
+                "BOT_1", TurnPhase.AWAITING_DRAW, Instant.now().plusSeconds(30), true,
+                null, List.of(), 0, PlayerStatus.ACTIVE, List.of(), 0,
+                "POINTS_13", 1, 0, 0, false, List.of(), List.of(), null, null, 0, false, 0, 0, List.of(),
+                1, 0L, false, null, false
+        );
+
+        GameCommand cmd = bot.decideAction(view, rules);
+        assertThat(cmd).isInstanceOf(DropCommand.class);
+        DropCommand dropCmd = (DropCommand) cmd;
+        assertThat(dropCmd.playerId()).isEqualTo("BOT_1");
+    }
+
+    @Test
+    @DisplayName("Bot should prioritize closed deck when lacking pure sequence and discard card only forms a set")
+    void testPureSequenceDrawPriority() {
+        BotPlayerAgent bot = new BotPlayerAgent("BOT_1", "Computer", BotDifficulty.HARD);
+
+        // Hand has pairs (8♠ 8♥) and scattered cards, but NO pure sequence
+        List<CardInstance> hand = List.of(
+                card(Suit.SPADES, Rank.EIGHT, "8S"),
+                card(Suit.HEARTS, Rank.EIGHT, "8H"),
+                card(Suit.CLUBS, Rank.TWO, "2C")
+        );
+
+        // Top discard is 8♦ (forms a set of 8s, but bot has 0 pure sequence)
+        CardInstance topDiscard = card(Suit.DIAMONDS, Rank.EIGHT, "8D");
+
+        PlayerGameView view = new PlayerGameView(
+                "T1", "G1", "BOT_1", GameStatus.IN_PROGRESS, 2L,
+                hand, List.of(), topDiscard, null, 75,
+                "BOT_1", TurnPhase.AWAITING_DRAW, Instant.now().plusSeconds(30), true
+        );
+
+        GameCommand cmd = bot.decideAction(view, rules);
+        assertThat(cmd).isInstanceOf(DrawCommand.class);
+        DrawCommand drawCmd = (DrawCommand) cmd;
+        // Without pure sequence, bot should draw from closed deck rather than picking for a set
+        assertThat(drawCmd.source()).isEqualTo(DrawSource.CLOSED_DECK);
+    }
 }
