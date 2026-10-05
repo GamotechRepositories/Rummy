@@ -29,7 +29,7 @@ const SOUND_FILES = {
     encodeURI('/sounds/u_ss015dykrt-brass-fanfare-with-timpani-and-winchimes-reverberated-146260 (1).mp3'),
     '/sounds/u_ss015dykrt-brass-fanfare-with-timpani-and-winchimes-reverberated-146260 (1).mp3',
   ],
-  'lose': ['/sounds/floraphonic-brass-fail-8-a-207130.mp3'],
+  'lose': ['/sounds/mixkit-player-losing-or-failing-2042.wav'],
   'deal-1': ['/sounds/card-deal.wav', '/sounds/card-deal.mp3'],
   'deal-2': ['/sounds/card-deal-2.wav', '/sounds/card-deal-2.mp3'],
   'slide-1': ['/sounds/card-slide.wav', '/sounds/card-slide.mp3'],
@@ -71,7 +71,7 @@ class SoundEngine {
           encodeURI('/sounds/u_ss015dykrt-brass-fanfare-with-timpani-and-winchimes-reverberated-146260 (1).mp3')
         );
         this.winAudio.volume = 0.8;
-        this.loseAudio = new Audio('/sounds/floraphonic-brass-fail-8-a-207130.mp3');
+        this.loseAudio = new Audio('/sounds/mixkit-player-losing-or-failing-2042.wav');
         this.loseAudio.volume = 0.75;
       } catch {
         // ignore
