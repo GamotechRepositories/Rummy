@@ -156,6 +156,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
 
   return (
     <div
+      className="wallet-modal-backdrop"
       style={{
         position: 'fixed',
         inset: 0,
@@ -169,6 +170,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
       }}
     >
       <div
+        className="wallet-modal-card"
         style={{
           background: 'linear-gradient(170deg, #1e293b 0%, #0f172a 60%, #020617 100%)',
           border: '1.5px solid rgba(212, 175, 55, 0.45)',
@@ -240,7 +242,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
         </div>
 
         {/* Scrollable Body */}
-        <div style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="wallet-modal-body" style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Total Balance Card */}
           <div
             style={{

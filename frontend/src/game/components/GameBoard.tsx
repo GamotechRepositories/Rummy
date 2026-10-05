@@ -603,13 +603,13 @@ export const GameBoard: React.FC = () => {
                 : 'Game has not started yet. You can leave now without any penalty.'}
             </p>
 
-            <div className="table-menu-badge-wrap" style={{ padding: '0 0 12px', display: 'flex', justifyContent: 'center' }}>
+            <div className="table-menu-badge-wrap" style={{ display: 'flex', justifyContent: 'center' }}>
               <span className="table-menu-name">
                 ♠ {variantName} · {maxSeats} Players
               </span>
             </div>
 
-            <div className="table-menu-rows" style={{ margin: '0 0 16px', textAlign: 'left' }}>
+            <div className="table-menu-rows" style={{ textAlign: 'left' }}>
               {isPointsRummy ? (
                 <div className="table-menu-row">
                   <span>Point value</span>
