@@ -21,6 +21,7 @@ import { CardView } from './CardView';
 import type { CardInstance, GroupValidationType } from '../types/game';
 import { evaluateCardGroup, getCardScore, isJoker } from '../rules/clientValidator';
 import { photoForCharacter, getAvatarForPlayer } from '../utils/avatarUtils';
+import { useModalScroll } from '../hooks/useModalScroll';
 
 interface GameResultModalProps {
   isOpen: boolean;
@@ -271,6 +272,7 @@ function applyRummyGroupPenalties(
 }
 
 export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboard }) => {
+  const { containerRef, onWheel, onTouchStart, onTouchMove, onTouchEnd } = useModalScroll();
   const {
     gameState,
     gameSettlement,
@@ -544,7 +546,16 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
   };
 
   return (
-    <div className="result-page-screen" role="region" aria-label="Game Showdown Result Page">
+    <div
+      ref={containerRef}
+      className="result-page-screen"
+      role="region"
+      aria-label="Game Showdown Result Page"
+      onWheel={onWheel}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
       {/* Top Navigation Bar */}
       <header className="result-top-bar">
         <div className="result-top-left">

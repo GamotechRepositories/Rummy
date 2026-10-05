@@ -6061,7 +6061,7 @@ h1, h2, h3, h4, .font-display {
   overflow-y: auto !important;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
+  touch-action: manipulation;
   overscroll-behavior: contain;
   animation: fadeIn 0.25s ease-out;
   scrollbar-width: thin;
@@ -6766,11 +6766,16 @@ h1, h2, h3, h4, .font-display {
     gap: 12px;
   }
   .result-bottom-bar {
-    flex-direction: column;
-    padding: 10px 14px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
   }
-  .result-btn-leave, .result-btn-rematch {
-    width: 100%;
+  .result-btn-leave,
+  .result-btn-rematch {
+    width: auto;
+    flex: 0 1 auto;
   }
 }
 
@@ -7522,6 +7527,7 @@ body.mobile-landscape-play .wallet-modal-body {
 }
 
 /* Showdown result screen in simulated/mobile landscape */
+/* Showdown result screen in simulated/mobile landscape */
 body.simulated-landscape .result-page-screen,
 body.mobile-landscape-play .result-page-screen {
   position: fixed !important;
@@ -7533,7 +7539,7 @@ body.mobile-landscape-play .result-page-screen {
   overflow-y: auto !important;
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch !important;
-  touch-action: pan-y !important;
+  touch-action: manipulation !important;
   overscroll-behavior: contain !important;
   display: flex !important;
   flex-direction: column !important;
@@ -7542,34 +7548,41 @@ body.mobile-landscape-play .result-page-screen {
 
 body.simulated-landscape .result-top-bar,
 body.mobile-landscape-play .result-top-bar {
-  height: 38px !important;
-  min-height: 38px !important;
-  padding: 0 12px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 10px !important;
   width: 100% !important;
 }
 
 body.simulated-landscape .result-back-btn,
 body.mobile-landscape-play .result-back-btn {
   padding: 3px 8px !important;
-  font-size: 11px !important;
+  font-size: 10.5px !important;
   border-radius: 6px !important;
+  gap: 4px !important;
+}
+
+body.simulated-landscape .result-back-btn svg,
+body.mobile-landscape-play .result-back-btn svg {
+  width: 13px !important;
+  height: 13px !important;
 }
 
 body.simulated-landscape .result-top-title,
 body.mobile-landscape-play .result-top-title {
-  font-size: 12.5px !important;
+  font-size: 11.5px !important;
 }
 
 body.simulated-landscape .result-top-pill,
 body.mobile-landscape-play .result-top-pill {
-  font-size: 9.5px !important;
-  padding: 2px 6px !important;
+  font-size: 8.5px !important;
+  padding: 2px 5px !important;
 }
 
 body.simulated-landscape .result-table-id-pill,
 body.mobile-landscape-play .result-table-id-pill {
-  font-size: 9.5px !important;
-  padding: 2px 6px !important;
+  font-size: 8.5px !important;
+  padding: 2px 5px !important;
 }
 
 body.simulated-landscape .result-page-content,
@@ -7577,8 +7590,8 @@ body.mobile-landscape-play .result-page-content {
   width: 100% !important;
   max-width: min(840px, 96%) !important;
   margin: 0 auto !important;
-  padding: 6px 12px 24px !important;
-  gap: 8px !important;
+  padding: 4px 10px 24px !important;
+  gap: 6px !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
@@ -7587,73 +7600,176 @@ body.mobile-landscape-play .result-page-content {
 
 body.simulated-landscape .result-hero-banner,
 body.mobile-landscape-play .result-hero-banner {
-  padding: 2px 0 4px !important;
-  gap: 3px !important;
+  padding: 2px 0 3px !important;
+  gap: 2px !important;
 }
 
 body.simulated-landscape .result-hero-title,
 body.mobile-landscape-play .result-hero-title {
-  font-size: 16px !important;
+  font-size: clamp(14px, 2.5vw, 17px) !important;
+  line-height: 1.2 !important;
 }
 
 body.simulated-landscape .result-hero-subtitle,
 body.mobile-landscape-play .result-hero-subtitle {
-  font-size: 11px !important;
-  line-height: 1.35 !important;
-  max-width: 480px !important;
+  font-size: 10px !important;
+  line-height: 1.3 !important;
+  max-width: 440px !important;
 }
 
 body.simulated-landscape .result-pot-strip,
 body.mobile-landscape-play .result-pot-strip {
-  padding: 4px 12px !important;
-  max-width: 480px !important;
+  padding: 4px 10px !important;
+  max-width: 440px !important;
 }
 
 body.simulated-landscape .result-pot-strip-label,
 body.mobile-landscape-play .result-pot-strip-label {
-  font-size: 8.5px !important;
+  font-size: 8px !important;
 }
 
 body.simulated-landscape .result-pot-strip-val,
 body.mobile-landscape-play .result-pot-strip-val {
-  font-size: 11.5px !important;
+  font-size: 11px !important;
 }
 
 body.simulated-landscape .result-scoreboard-sheet,
 body.mobile-landscape-play .result-scoreboard-sheet {
-  border-radius: 12px !important;
+  border-radius: 10px !important;
 }
 
 body.simulated-landscape .result-sheet-header,
 body.mobile-landscape-play .result-sheet-header {
-  padding: 6px 12px !important;
-  font-size: 11.5px !important;
+  padding: 5px 10px !important;
+  font-size: 11px !important;
+}
+
+body.simulated-landscape .result-sheet-title,
+body.mobile-landscape-play .result-sheet-title {
+  font-size: 11px !important;
+}
+
+body.simulated-landscape .result-toggle-btn,
+body.mobile-landscape-play .result-toggle-btn {
+  padding: 2px 6px !important;
+  font-size: 9.5px !important;
 }
 
 body.simulated-landscape .result-sheet-table-head,
 body.mobile-landscape-play .result-sheet-table-head {
-  padding: 4px 12px !important;
-  font-size: 9px !important;
+  padding: 3px 10px !important;
+  font-size: 8.5px !important;
 }
 
 body.simulated-landscape .result-sheet-row,
 body.mobile-landscape-play .result-sheet-row {
-  padding: 8px 12px !important;
+  padding: 6px 10px !important;
+  gap: 4px !important;
+}
+
+body.simulated-landscape .result-row-player,
+body.mobile-landscape-play .result-row-player {
   gap: 6px !important;
+}
+
+body.simulated-landscape .result-row-rank,
+body.mobile-landscape-play .result-row-rank {
+  width: 20px !important;
+  height: 20px !important;
+  font-size: 9.5px !important;
+}
+
+body.simulated-landscape .result-row-name,
+body.mobile-landscape-play .result-row-name {
+  font-size: 11.5px !important;
+}
+
+body.simulated-landscape .result-you-badge,
+body.mobile-landscape-play .result-you-badge {
+  font-size: 7.5px !important;
+  padding: 0 4px !important;
+}
+
+body.simulated-landscape .result-row-status,
+body.mobile-landscape-play .result-row-status {
+  font-size: 9.5px !important;
+}
+
+body.simulated-landscape .result-row-delta,
+body.mobile-landscape-play .result-row-delta {
+  font-size: 12px !important;
+}
+
+body.simulated-landscape .result-row-score-sub,
+body.mobile-landscape-play .result-row-score-sub {
+  font-size: 8.5px !important;
+}
+
+/* Showdown melded cards tray in simulated landscape */
+body.simulated-landscape .result-row-cards-tray,
+body.mobile-landscape-play .result-row-cards-tray {
+  --result-card-w: clamp(28px, 4vw, 36px) !important;
+  --result-card-h: calc(var(--result-card-w) * 1.4) !important;
+  --result-card-overlap: calc(var(--result-card-w) * -0.48) !important;
+  gap: 6px !important;
+  padding: 3px 0 3px clamp(8px, 1.8vw, 18px) !important;
+}
+
+body.simulated-landscape .result-row-cards-tray .rummy-card,
+body.mobile-landscape-play .result-row-cards-tray .rummy-card {
+  --card-pad: calc(var(--result-card-w) * 0.055) !important;
+  width: var(--result-card-w) !important;
+  height: var(--result-card-h) !important;
+  font-size: calc(var(--result-card-w) * 0.22) !important;
+  border-radius: calc(var(--result-card-w) * 0.12) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+}
+
+body.simulated-landscape .result-card-group,
+body.mobile-landscape-play .result-card-group {
+  gap: 3px !important;
+}
+
+body.simulated-landscape .result-group-header,
+body.mobile-landscape-play .result-group-header {
+  gap: 3px !important;
+}
+
+body.simulated-landscape .result-group-badge,
+body.mobile-landscape-play .result-group-badge {
+  font-size: 8px !important;
+  padding: 1px 4px !important;
+  border-radius: 3px !important;
+}
+
+body.simulated-landscape .result-group-pts,
+body.mobile-landscape-play .result-group-pts {
+  font-size: 7.5px !important;
 }
 
 body.simulated-landscape .result-bottom-bar,
 body.mobile-landscape-play .result-bottom-bar {
-  padding: 8px 14px !important;
-  margin: 8px auto 16px !important;
-  gap: 10px !important;
+  padding: 6px 10px !important;
+  margin: 6px auto 20px !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+  max-width: min(840px, 96%) !important;
+}
+
+body.simulated-landscape .result-btn-rematch,
+body.mobile-landscape-play .result-btn-rematch {
+  min-width: 130px !important;
+  padding: 6px 14px !important;
+  font-size: 11.5px !important;
+  border-radius: 8px !important;
 }
 
 body.simulated-landscape .result-bottom-bar button,
 body.mobile-landscape-play .result-bottom-bar button {
-  padding: 7px 14px !important;
-  font-size: 12px !important;
-  min-width: 120px !important;
+  padding: 6px 10px !important;
+  font-size: 11px !important;
+  min-width: 90px !important;
+  border-radius: 8px !important;
 }
 
 /* ========== SHORT SCREEN LANDSCAPE (MOBILE / BROWSER HEIGHT <= 520px) ========== */
@@ -7888,7 +8004,7 @@ body.mobile-landscape-play .result-bottom-bar button {
     overflow-y: auto !important;
     overflow-x: hidden !important;
     -webkit-overflow-scrolling: touch !important;
-    touch-action: pan-y !important;
+    touch-action: manipulation !important;
     overscroll-behavior: contain !important;
     display: flex !important;
     flex-direction: column !important;
@@ -7896,38 +8012,44 @@ body.mobile-landscape-play .result-bottom-bar button {
   }
 
   .result-top-bar {
-    height: 38px !important;
-    min-height: 38px !important;
-    padding: 0 12px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 10px !important;
     width: 100% !important;
   }
 
   .result-back-btn {
     padding: 3px 8px !important;
-    font-size: 11px !important;
+    font-size: 10.5px !important;
     border-radius: 6px !important;
+    gap: 4px !important;
+  }
+
+  .result-back-btn svg {
+    width: 13px !important;
+    height: 13px !important;
   }
 
   .result-top-title {
-    font-size: 12.5px !important;
+    font-size: 11.5px !important;
   }
 
   .result-top-pill {
-    font-size: 9.5px !important;
-    padding: 2px 6px !important;
+    font-size: 8.5px !important;
+    padding: 2px 5px !important;
   }
 
   .result-table-id-pill {
-    font-size: 9.5px !important;
-    padding: 2px 6px !important;
+    font-size: 8.5px !important;
+    padding: 2px 5px !important;
   }
 
   .result-page-content {
     width: 100% !important;
     max-width: min(840px, 96%) !important;
     margin: 0 auto !important;
-    padding: 6px 12px 24px !important;
-    gap: 8px !important;
+    padding: 4px 10px 24px !important;
+    gap: 6px !important;
     display: flex !important;
     flex-direction: column !important;
     align-items: center !important;
@@ -7935,62 +8057,172 @@ body.mobile-landscape-play .result-bottom-bar button {
   }
 
   .result-hero-banner {
-    padding: 2px 0 4px !important;
-    gap: 3px !important;
+    padding: 2px 0 3px !important;
+    gap: 2px !important;
   }
 
   .result-hero-title {
-    font-size: 16px !important;
+    font-size: clamp(13px, 2.4vw, 16px) !important;
+    line-height: 1.2 !important;
   }
 
   .result-hero-subtitle {
-    font-size: 11px !important;
-    line-height: 1.35 !important;
-    max-width: 480px !important;
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+    max-width: 440px !important;
   }
 
   .result-pot-strip {
-    padding: 4px 12px !important;
-    max-width: 480px !important;
+    padding: 4px 10px !important;
+    max-width: 440px !important;
   }
 
   .result-pot-strip-label {
-    font-size: 8.5px !important;
+    font-size: 8px !important;
   }
 
   .result-pot-strip-val {
-    font-size: 11.5px !important;
+    font-size: 11px !important;
   }
 
   .result-scoreboard-sheet {
-    border-radius: 12px !important;
+    border-radius: 10px !important;
   }
 
   .result-sheet-header {
-    padding: 6px 12px !important;
-    font-size: 11.5px !important;
+    padding: 5px 10px !important;
+    font-size: 11px !important;
+  }
+
+  .result-sheet-title {
+    font-size: 11px !important;
+  }
+
+  .result-toggle-btn {
+    padding: 2px 6px !important;
+    font-size: 9.5px !important;
   }
 
   .result-sheet-table-head {
-    padding: 4px 12px !important;
-    font-size: 9px !important;
+    padding: 3px 10px !important;
+    font-size: 8.5px !important;
   }
 
   .result-sheet-row {
-    padding: 8px 12px !important;
+    padding: 6px 10px !important;
+    gap: 4px !important;
+  }
+
+  .result-row-player {
     gap: 6px !important;
   }
 
+  .result-row-rank {
+    width: 20px !important;
+    height: 20px !important;
+    font-size: 9.5px !important;
+  }
+
+  .result-row-name {
+    font-size: 11.5px !important;
+  }
+
+  .result-you-badge {
+    font-size: 7.5px !important;
+    padding: 0 4px !important;
+  }
+
+  .result-row-status {
+    font-size: 9.5px !important;
+  }
+
+  .result-row-delta {
+    font-size: 12px !important;
+  }
+
+  .result-row-score-sub {
+    font-size: 8.5px !important;
+  }
+
+  /* Showdown melded cards tray in landscape */
+  .result-row-cards-tray {
+    --result-card-w: clamp(28px, 4vw, 36px) !important;
+    --result-card-h: calc(var(--result-card-w) * 1.4) !important;
+    --result-card-overlap: calc(var(--result-card-w) * -0.48) !important;
+    gap: 6px !important;
+    padding: 3px 0 3px clamp(8px, 1.8vw, 18px) !important;
+  }
+
+  .result-row-cards-tray .rummy-card {
+    --card-pad: calc(var(--result-card-w) * 0.055) !important;
+    width: var(--result-card-w) !important;
+    height: var(--result-card-h) !important;
+    font-size: calc(var(--result-card-w) * 0.22) !important;
+    border-radius: calc(var(--result-card-w) * 0.12) !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+  }
+
+  .result-card-group {
+    gap: 3px !important;
+  }
+
+  .result-group-header {
+    gap: 3px !important;
+  }
+
+  .result-group-badge {
+    font-size: 8px !important;
+    padding: 1px 4px !important;
+    border-radius: 3px !important;
+  }
+
+  .result-group-pts {
+    font-size: 7.5px !important;
+  }
+
   .result-bottom-bar {
-    padding: 8px 14px !important;
-    margin: 8px auto 16px !important;
-    gap: 10px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+    padding: 6px 10px !important;
+    margin: 6px auto 20px !important;
+    gap: 8px !important;
+    max-width: min(840px, 96%) !important;
+  }
+
+  .result-btn-leave {
+    width: auto !important;
+    flex: 0 1 auto !important;
+    min-width: 90px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 12px !important;
+    font-size: 11px !important;
+    border-radius: 8px !important;
+  }
+
+  .result-btn-rematch {
+    width: auto !important;
+    flex: 0 1 auto !important;
+    min-width: 130px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 14px !important;
+    font-size: 11.5px !important;
+    border-radius: 8px !important;
   }
 
   .result-bottom-bar button {
-    padding: 7px 14px !important;
-    font-size: 12px !important;
-    min-width: 120px !important;
+    width: auto !important;
+    flex: 0 1 auto !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 10px !important;
+    font-size: 11px !important;
+    min-width: 90px !important;
+    border-radius: 8px !important;
   }
 }
 
