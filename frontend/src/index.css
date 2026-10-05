@@ -306,6 +306,7 @@ h1, h2, h3, h4, .font-display {
 }
 
 .board-hud-menu,
+.board-hud-flip-btn,
 .board-hud-right .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -322,10 +323,22 @@ h1, h2, h3, h4, .font-display {
   box-sizing: border-box;
 }
 
+.board-hud-flip-btn {
+  border-color: rgba(251, 191, 36, 0.45);
+  color: #fbbf24;
+}
+
 .board-hud-menu:hover,
+.board-hud-flip-btn:hover,
 .board-hud-right .btn-secondary:hover {
   border-color: rgba(245, 215, 110, 0.55);
   color: #f5d76e;
+}
+
+.board-hud-flip-btn:hover {
+  border-color: #fbbf24;
+  color: #fef08a;
+  background: rgba(251, 191, 36, 0.15);
 }
 
 .board-hud-scores-btn {
@@ -6884,11 +6897,332 @@ body.simulated-landscape .stake-nav--mobile {
   display: flex !important;
 }
 
-/* Flip badge in simulated landscape mode */
+/* ========== CONFIGURE STAKES POPUP: ULTRA-COMPACT & SCROLLABLE IN SIMULATED/MOBILE LANDSCAPE ========== */
+body.simulated-landscape .lobby-frame--stake,
+body.simulated-landscape .lobby-frame--stake .lobby-main,
+body.mobile-landscape-play .lobby-frame--stake,
+body.mobile-landscape-play .lobby-frame--stake .lobby-main {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+body.simulated-landscape .stake-screen,
+body.mobile-landscape-play .stake-screen {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  padding: clamp(2px, 0.8dvh, 6px) clamp(6px, 1.5vw, 12px) !important;
+  margin: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+body.simulated-landscape .stake-card,
+body.mobile-landscape-play .stake-card {
+  width: 100% !important;
+  max-width: min(580px, 96vw) !important;
+  max-height: calc(100% - 6px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: contain !important;
+  padding: 4px 14px 6px !important;
+  gap: 3px !important;
+  border-radius: 14px !important;
+  border: 1.5px solid rgba(232, 197, 71, 0.72) !important;
+  box-sizing: border-box !important;
+  margin: auto !important;
+}
+
+/* Slim elegant gold scrollbar */
+body.simulated-landscape .stake-card::-webkit-scrollbar,
+body.mobile-landscape-play .stake-card::-webkit-scrollbar {
+  width: 4px;
+}
+body.simulated-landscape .stake-card::-webkit-scrollbar-track,
+body.mobile-landscape-play .stake-card::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+}
+body.simulated-landscape .stake-card::-webkit-scrollbar-thumb,
+body.mobile-landscape-play .stake-card::-webkit-scrollbar-thumb {
+  background: rgba(232, 197, 71, 0.5);
+  border-radius: 4px;
+}
+
+/* Background suits: hide to avoid overlap & save visual space */
+body.simulated-landscape .stake-suit,
+body.mobile-landscape-play .stake-suit {
+  display: none !important;
+}
+
+/* Mobile nav topbar inside stake-card */
+body.simulated-landscape .stake-card > .stake-nav--mobile,
+body.mobile-landscape-play .stake-card > .stake-nav--mobile {
+  width: 100% !important;
+  margin-bottom: 1px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex-shrink: 0 !important;
+}
+
+body.simulated-landscape .stake-card > .stake-nav--mobile .stake-back,
+body.mobile-landscape-play .stake-card > .stake-nav--mobile .stake-back {
+  font-size: 11px !important;
+  padding: 2px 8px 2px 2px !important;
+  gap: 4px !important;
+}
+
+body.simulated-landscape .stake-card > .stake-nav--mobile .stake-back-icon,
+body.mobile-landscape-play .stake-card > .stake-nav--mobile .stake-back-icon {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+body.simulated-landscape .stake-card > .stake-nav--mobile .stake-step,
+body.mobile-landscape-play .stake-card > .stake-nav--mobile .stake-step {
+  font-size: 10px !important;
+  white-space: nowrap !important;
+}
+
+/* Ribbon and Emblem */
+body.simulated-landscape .stake-emblem,
+body.mobile-landscape-play .stake-emblem {
+  margin: 0 !important;
+  flex-shrink: 0 !important;
+}
+
+body.simulated-landscape .stake-ribbon,
+body.mobile-landscape-play .stake-ribbon {
+  min-width: min(240px, 55%) !important;
+  padding: 2px 14px !important;
+  border-radius: 4px !important;
+}
+
+body.simulated-landscape .stake-ribbon::before,
+body.simulated-landscape .stake-ribbon::after,
+body.mobile-landscape-play .stake-ribbon::before,
+body.mobile-landscape-play .stake-ribbon::after {
+  display: none !important;
+}
+
+body.simulated-landscape .stake-ribbon h2,
+body.mobile-landscape-play .stake-ribbon h2 {
+  font-size: 12.5px !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.08em !important;
+}
+
+body.simulated-landscape .stake-ribbon p,
+body.mobile-landscape-play .stake-ribbon p {
+  display: none !important;
+}
+
+/* Players selector */
+body.simulated-landscape .stake-players,
+body.mobile-landscape-play .stake-players {
+  gap: 2px !important;
+  flex-shrink: 0 !important;
+}
+
+body.simulated-landscape .stake-section-label,
+body.mobile-landscape-play .stake-section-label {
+  display: none !important;
+}
+
+body.simulated-landscape .stake-player-row,
+body.mobile-landscape-play .stake-player-row {
+  max-width: 340px !important;
+  gap: 6px !important;
+}
+
+body.simulated-landscape .stake-player-btn,
+body.mobile-landscape-play .stake-player-btn {
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+  border-radius: 7px !important;
+  gap: 4px !important;
+}
+
+body.simulated-landscape .stake-player-btn svg,
+body.mobile-landscape-play .stake-player-btn svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+/* Stakes / Point Value & Entry Fee */
+body.simulated-landscape .stake-values,
+body.mobile-landscape-play .stake-values {
+  gap: 8px !important;
+  max-width: 380px !important;
+  flex-shrink: 0 !important;
+}
+
+body.simulated-landscape .stake-metric,
+body.mobile-landscape-play .stake-metric {
+  gap: 1px !important;
+}
+
+body.simulated-landscape .stake-metric-head,
+body.mobile-landscape-play .stake-metric-head {
+  gap: 0 !important;
+  margin-bottom: 1px !important;
+}
+
+body.simulated-landscape .stake-metric-title,
+body.mobile-landscape-play .stake-metric-title {
+  font-size: 10.5px !important;
+  gap: 3px !important;
+}
+
+body.simulated-landscape .stake-metric-title svg,
+body.mobile-landscape-play .stake-metric-title svg {
+  width: 12px !important;
+  height: 12px !important;
+}
+
+body.simulated-landscape .stake-metric-sub,
+body.mobile-landscape-play .stake-metric-sub {
+  display: none !important;
+}
+
+body.simulated-landscape .stake-stepper,
+body.mobile-landscape-play .stake-stepper {
+  gap: 3px !important;
+}
+
+body.simulated-landscape .stake-step-btn,
+body.mobile-landscape-play .stake-step-btn {
+  width: 22px !important;
+  height: 22px !important;
+  border-radius: 6px !important;
+}
+
+body.simulated-landscape .stake-step-btn svg,
+body.mobile-landscape-play .stake-step-btn svg {
+  width: 11px !important;
+  height: 11px !important;
+}
+
+body.simulated-landscape .stake-step-value,
+body.mobile-landscape-play .stake-step-value {
+  min-width: 48px !important;
+  height: 22px !important;
+  padding: 0 6px !important;
+  font-size: 11.5px !important;
+  border-radius: 6px !important;
+}
+
+/* Slider */
+body.simulated-landscape .stake-slider-wrap,
+body.mobile-landscape-play .stake-slider-wrap {
+  max-width: 380px !important;
+  margin: 1px 0 !important;
+  gap: 1px !important;
+  flex-shrink: 0 !important;
+}
+
+body.simulated-landscape .rummy-slider,
+body.mobile-landscape-play .rummy-slider {
+  height: 3px !important;
+}
+
+body.simulated-landscape .rummy-slider::-webkit-slider-thumb,
+body.mobile-landscape-play .rummy-slider::-webkit-slider-thumb {
+  width: 15px !important;
+  height: 15px !important;
+  border-radius: 4px !important;
+}
+
+body.simulated-landscape .stake-range,
+body.mobile-landscape-play .stake-range {
+  font-size: 9px !important;
+}
+
+/* Max winnings hint */
+body.simulated-landscape .stake-winnings-hint,
+body.mobile-landscape-play .stake-winnings-hint {
+  font-size: 10.5px !important;
+  margin-top: 1px !important;
+  margin-bottom: 1px !important;
+  flex-shrink: 0 !important;
+}
+
+/* Play Now button */
+body.simulated-landscape .stake-play-btn,
+body.mobile-landscape-play .stake-play-btn {
+  padding: 5px 22px !important;
+  font-size: 12.5px !important;
+  max-width: 240px !important;
+  margin-top: 2px !important;
+  border-radius: 999px !important;
+  flex-shrink: 0 !important;
+}
+
+body.simulated-landscape .stake-play-btn svg,
+body.mobile-landscape-play .stake-play-btn svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+/* Summary line */
+body.simulated-landscape .stake-summary,
+body.mobile-landscape-play .stake-summary {
+  font-size: 9.5px !important;
+  margin-top: 1px !important;
+  flex-shrink: 0 !important;
+}
+
+/* Variant configs (Pool, Deals, 21-Cards) */
+body.simulated-landscape .stake-variant-config,
+body.mobile-landscape-play .stake-variant-config {
+  gap: 5px !important;
+  flex-shrink: 0 !important;
+}
+
+body.simulated-landscape .stake-variant-config button,
+body.mobile-landscape-play .stake-variant-config button {
+  padding: 4px 10px !important;
+  font-size: 11.5px !important;
+}
+
+/* Matchmaking overlay in simulated landscape */
+body.simulated-landscape .mm-overlay-card,
+body.simulated-landscape .mm-card,
+body.mobile-landscape-play .mm-overlay-card,
+body.mobile-landscape-play .mm-card {
+  max-width: min(420px, 92vw) !important;
+  max-height: calc(100% - 12px) !important;
+  overflow-y: auto !important;
+}
+
+body.simulated-landscape .hand-card-ghost {
+  transform: scale(1.06) rotate(94deg) !important;
+}
+
+body.simulated-landscape.simulated-flipped .hand-card-ghost {
+  transform: scale(1.06) rotate(274deg) !important;
+}
+
+/* Flip badge in simulated landscape mode (used in Lobby / fallback) */
 .simulated-flip-badge {
   position: fixed;
-  top: max(8px, env(safe-area-inset-top));
-  right: max(8px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  right: max(12px, env(safe-area-inset-right));
   z-index: 19999;
   display: inline-flex;
   align-items: center;
@@ -6910,6 +7244,12 @@ body.simulated-landscape .stake-nav--mobile {
 .simulated-flip-badge:active {
   transform: scale(0.95);
   background: rgba(30, 41, 59, 0.95);
+}
+
+/* On game table, the flip button is integrated into board-hud-right */
+.game-frame ~ .simulated-flip-badge,
+.game-frame .simulated-flip-badge {
+  display: none !important;
 }
 
 /* Keep play screens visually consistent on mobile landscape */
@@ -7114,26 +7454,26 @@ body.simulated-landscape {
   }
 }
 
-/* Compact portrait stake (only briefly before rotate overlay) */
+/* Compact portrait stake (only briefly before rotate overlay on non-simulated screens) */
 @media (orientation: portrait) and (max-width: 900px) {
-  .stake-screen {
+  body:not(.simulated-landscape) .stake-screen {
     max-width: 100%;
     padding: 8px 12px 20px;
   }
 
-  .stake-card {
+  body:not(.simulated-landscape) .stake-card {
     margin-top: 0;
     padding: clamp(6px, 1.2dvh, 10px) clamp(10px, 3vw, 14px) clamp(8px, 1.5dvh, 14px);
     border-radius: 18px;
     max-height: calc(100dvh - 16px);
-    overflow: hidden;
+    overflow-y: auto;
   }
 
-  .stake-nav {
+  body:not(.simulated-landscape) .stake-nav {
     width: 100%;
   }
 
-  .stake-step {
+  body:not(.simulated-landscape) .stake-step {
     white-space: normal;
     text-align: right;
   }

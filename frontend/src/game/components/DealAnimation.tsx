@@ -39,17 +39,69 @@ const STAGGER_MS = 120;
 const HANDS_Y = 0.305;
 const HANDS_X = 0.5;
 
+function getTableRotationDegrees(): number {
+  if (typeof document === 'undefined') return 0;
+  try {
+    const root = document.getElementById('root');
+    if (root) {
+      const transform = window.getComputedStyle(root).transform;
+      if (transform && transform !== 'none') {
+        const m = new DOMMatrix(transform);
+        const deg = Math.round(Math.atan2(m.b, m.a) * (180 / Math.PI));
+        return (deg + 360) % 360;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  if (document.body.classList.contains('simulated-flipped')) return 270;
+  if (document.body.classList.contains('simulated-landscape')) return 90;
+  return 0;
+}
+
 function measurePoint(
   table: HTMLElement,
   selector: string
 ): { x: number; y: number } | null {
   const el = table.querySelector(selector);
   if (!el) return null;
+
+  const tableW = table.offsetWidth || table.clientWidth;
+  const tableH = table.offsetHeight || table.clientHeight;
   const t = table.getBoundingClientRect();
   const r = el.getBoundingClientRect();
+
+  const sx = r.left + r.width / 2;
+  const sy = r.top + r.height / 2;
+
+  const tcx = t.left + t.width / 2;
+  const tcy = t.top + t.height / 2;
+
+  const rotDeg = getTableRotationDegrees();
+
+  if (rotDeg === 0) {
+    return {
+      x: sx - t.left,
+      y: sy - t.top,
+    };
+  }
+
+  // When rotated (e.g. simulated-landscape on iPhone / auto-rotate off):
+  // Screen delta from table center
+  const dxScreen = sx - tcx;
+  const dyScreen = sy - tcy;
+
+  // Unrotate screen deltas back into table's local coordinate space
+  const rad = (rotDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+
+  const localDx = dxScreen * cos + dyScreen * sin;
+  const localDy = -dxScreen * sin + dyScreen * cos;
+
   return {
-    x: r.left + r.width / 2 - t.left,
-    y: r.top + r.height / 2 - t.top,
+    x: tableW / 2 + localDx,
+    y: tableH / 2 + localDy,
   };
 }
 
@@ -92,15 +144,27 @@ export const DealAnimation: React.FC<Props> = ({
 
     const start = () => {
       if (cancelled) return;
+      const rotDeg = getTableRotationDegrees();
       const tableRect = table.getBoundingClientRect();
-      const ox = tableRect.width * HANDS_X;
-      const oy = tableRect.height * HANDS_Y;
+
+      // Local dimensions of the unrotated table stage
+      const tableW =
+        table.offsetWidth ||
+        table.clientWidth ||
+        (rotDeg === 90 || rotDeg === 270 ? tableRect.height : tableRect.width);
+      const tableH =
+        table.offsetHeight ||
+        table.clientHeight ||
+        (rotDeg === 90 || rotDeg === 270 ? tableRect.width : tableRect.height);
+
+      const ox = tableW * HANDS_X;
+      const oy = tableH * HANDS_Y;
       setOrigin({ x: ox, y: oy });
 
       // Keep the seat order from the table. Last seat in that list is dealt last.
       const circle = frozenTargets.map((t) => {
         const sel = t.selector ?? `#seat-${t.id}`;
-        const dest = measurePoint(table, sel) ?? { x: ox, y: oy + tableRect.height * 0.45 };
+        const dest = measurePoint(table, sel) ?? { x: ox, y: oy + tableH * 0.45 };
         return { id: t.id, dest };
       });
 

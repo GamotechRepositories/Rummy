@@ -7,13 +7,14 @@ import { PlayerHand } from './PlayerHand';
 import { ActionControls } from './ActionControls';
 import { DealAnimation, type DealTarget } from './DealAnimation';
 import { DeclareModal } from './DeclareModal';
-import { LogOut, Wifi, AlertCircle, Menu, X, ShieldAlert } from 'lucide-react';
+import { LogOut, Wifi, AlertCircle, Menu, X, ShieldAlert, RotateCw } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { FullscreenToggle } from './FullscreenToggle';
 import { soundEngine } from '../audio/soundEngine';
 import { GameResultModal } from './GameResultModal';
 import { PoolScoreboardModal } from './PoolScoreboardModal';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
+import { useLandscapeGate } from './LandscapeGate';
 
 function getPerimeterPosition(index: number, total: number): SeatPosition {
   // Clockwise from the viewer: first seat is on the left, last seat is the lower right.
@@ -51,6 +52,7 @@ export const GameBoard: React.FC = () => {
     resumePending,
   } = useGameStore();
 
+  const { simulatedLandscape, toggleFlip } = useLandscapeGate();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [scoreboardOpen, setScoreboardOpen] = React.useState(false);
   const [resumeFailed, setResumeFailed] = React.useState(false);
@@ -414,6 +416,21 @@ export const GameBoard: React.FC = () => {
                   title="Scoreboard"
                 >
                   Scores
+                </button>
+              )}
+              {simulatedLandscape && (
+                <button
+                  id="btn-table-flip"
+                  type="button"
+                  onClick={() => {
+                    soundEngine.play('click');
+                    toggleFlip();
+                  }}
+                  className="board-hud-menu board-hud-flip-btn"
+                  title="Flip orientation 180°"
+                  aria-label="Flip screen 180 degrees"
+                >
+                  <RotateCw size={15} />
                 </button>
               )}
               <SoundToggle compact />

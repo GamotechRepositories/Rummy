@@ -14,10 +14,11 @@ import {
   UsersRound,
   Target,
   Sparkles,
+  RotateCw,
 } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { FullscreenToggle } from './FullscreenToggle';
-import { LandscapeGate } from './LandscapeGate';
+import { LandscapeGate, useLandscapeGate } from './LandscapeGate';
 import { soundEngine } from '../audio/soundEngine';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import { tryLockLandscape } from '../hooks/useRequiresLandscape';
@@ -93,6 +94,34 @@ function StakeStepper({
     </div>
   );
 }
+
+const StakeNavRight: React.FC = () => {
+  const { simulatedLandscape, toggleFlip } = useLandscapeGate();
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div className="stake-step">
+        Step 2 of 2: <strong>Configure Stakes</strong>
+      </div>
+      {simulatedLandscape && (
+        <button
+          type="button"
+          onClick={() => {
+            soundEngine.play('click');
+            toggleFlip();
+          }}
+          className="board-hud-flip-btn"
+          style={{ width: '28px', height: '28px', borderRadius: '6px', flexShrink: 0 }}
+          title="Flip orientation 180°"
+          aria-label="Flip screen 180 degrees"
+        >
+          <RotateCw size={13} />
+        </button>
+      )}
+      <SoundToggle compact />
+      <FullscreenToggle compact />
+    </div>
+  );
+};
 
 export const LobbyScreen: React.FC = () => {
   const {
@@ -389,7 +418,10 @@ export const LobbyScreen: React.FC = () => {
   };
 
   return (
-    <LandscapeGate enabled={currentPage !== 'SELECT_VARIANT' || isMatchmaking}>
+    <LandscapeGate
+      enabled={currentPage !== 'SELECT_VARIANT' || isMatchmaking}
+      hideFloatingBadge={currentPage === 'CONFIGURE_TABLE'}
+    >
     <div
       className={`lobby-frame${currentPage === 'CONFIGURE_TABLE' ? ' lobby-frame--stake' : ''}`}
       style={{ color: '#f8fafc' }}
@@ -530,13 +562,7 @@ export const LobbyScreen: React.FC = () => {
                 </span>
                 Change Variant
               </button>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div className="stake-step">
-                  Step 2 of 2: <strong>Configure Stakes</strong>
-                </div>
-                <SoundToggle compact />
-                <FullscreenToggle compact />
-              </div>
+              <StakeNavRight />
             </div>
 
             <div className="stake-card">
@@ -561,13 +587,7 @@ export const LobbyScreen: React.FC = () => {
                   </span>
                   Change Variant
                 </button>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div className="stake-step">
-                    Step 2 of 2: <strong>Configure Stakes</strong>
-                  </div>
-                  <SoundToggle compact />
-                  <FullscreenToggle compact />
-                </div>
+                <StakeNavRight />
               </div>
 
               <div className="stake-emblem">
@@ -687,7 +707,7 @@ export const LobbyScreen: React.FC = () => {
                       <span>₹5.0 (₹400 Fee)</span>
                     </div>
                   </div>
-                  <div style={{ fontSize: 13, color: '#fef08a', fontWeight: 700, marginTop: 10, textAlign: 'center' }}>
+                  <div className="stake-winnings-hint" style={{ fontSize: 13, color: '#fef08a', fontWeight: 700, marginTop: 10, textAlign: 'center' }}>
                     🏆 Max Winnings: up to ₹ {Math.round((selectedPlayers - 1) * POINT_VALUE_TIERS[ptIndex].entry * 0.85)} (80 pts cap)
                   </div>
                 </>
@@ -696,6 +716,7 @@ export const LobbyScreen: React.FC = () => {
               {/* POOL RUMMY CONFIG */}
               {selectedVariant === 'POOL' && (
                 <div
+                  className="stake-variant-config"
                   style={{
                     width: '100%',
                     display: 'flex',
@@ -778,7 +799,7 @@ export const LobbyScreen: React.FC = () => {
                     })}
                   </div>
 
-                  <div style={{ fontSize: 13, color: '#fef08a', fontWeight: 700 }}>
+                  <div className="stake-winnings-hint" style={{ fontSize: 13, color: '#fef08a', fontWeight: 700 }}>
                     🏆 Estimated Winner Pool: ₹ {Math.round(poolEntry * selectedPlayers * 0.85)}
                   </div>
                 </div>
@@ -787,6 +808,7 @@ export const LobbyScreen: React.FC = () => {
               {/* DEALS RUMMY CONFIG */}
               {selectedVariant === 'DEALS' && (
                 <div
+                  className="stake-variant-config"
                   style={{
                     width: '100%',
                     display: 'flex',
@@ -873,7 +895,7 @@ export const LobbyScreen: React.FC = () => {
                       );
                     })}
                   </div>
-                  <div style={{ fontSize: 13, color: '#fef08a', fontWeight: 700 }}>
+                  <div className="stake-winnings-hint" style={{ fontSize: 13, color: '#fef08a', fontWeight: 700 }}>
                     🏆 Winner Takes All: ₹ {Math.round(dealsEntry * selectedPlayers * 0.85)}
                   </div>
                 </div>
@@ -882,6 +904,7 @@ export const LobbyScreen: React.FC = () => {
               {/* 21-CARD RUMMY CONFIG */}
               {selectedVariant === 'RUMMY_21' && (
                 <div
+                  className="stake-variant-config"
                   style={{
                     width: '100%',
                     display: 'flex',
@@ -924,7 +947,7 @@ export const LobbyScreen: React.FC = () => {
                       );
                     })}
                   </div>
-                  <span style={{ fontSize: 11, color: '#86efac', fontWeight: 700 }}>
+                  <span className="stake-winnings-hint" style={{ fontSize: 11, color: '#86efac', fontWeight: 700 }}>
                     Max Win: ~₹{(rummy21Entry * 0.85).toFixed(2)} (after 15% platform fee) • 120 Pts Cap
                   </span>
                 </div>

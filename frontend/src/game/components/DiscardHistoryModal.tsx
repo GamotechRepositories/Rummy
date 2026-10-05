@@ -245,6 +245,6 @@ export const DiscardHistoryModal: React.FC<DiscardHistoryModalProps> = ({
         </div>
       </div>
     </div>,
-    document.body
+    document.getElementById('root') || document.body
   );
 };

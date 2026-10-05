@@ -129,7 +129,7 @@ export function App() {
     <AppErrorBoundary>
       <div className="app-frame">
         {inGame ? (
-          <LandscapeGate enabled>
+          <LandscapeGate enabled hideFloatingBadge>
             <GameBoard />
           </LandscapeGate>
         ) : (
