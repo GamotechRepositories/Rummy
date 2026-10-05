@@ -134,13 +134,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         // Multi-node: refuse to create a ghost table when Redis says another server owns it
         if (routingRegistry.isOwnedByRemoteServer(tableId)) {
             String owner = routingRegistry.getServerForTable(tableId).orElse("unknown");
-            log.warn("[WS] Table {} owned by remote server {} — rejecting on {}", tableId, owner, routingRegistry.getServerInstanceId());
+            log.warn("[WS] Table {} owned by remote server {} — redirecting client from {}", tableId, owner, routingRegistry.getServerInstanceId());
             session.sendMessage(new TextMessage(objectMapper.writeValueAsString(
-                    WsServerMessage.of("ERROR", reqId, tableId, Map.of(
-                            "code", "TABLE_NOT_ON_THIS_SERVER",
-                            "message", "This table is hosted on another game server. Reconnect using matchedServerId.",
-                            "ownerServerId", owner,
-                            "localServerId", routingRegistry.getServerInstanceId()
+                    WsServerMessage.of("REDIRECT", reqId, tableId, Map.of(
+                            "targetServerId", owner,
+                            "reason", "Table is hosted on another node. Please reconnect using this targetServerId."
                     )))));
             return;
         }

@@ -201,6 +201,28 @@ class GameSocketClient {
         }
         break;
 
+      case 'REDIRECT':
+        if (msg.payload && typeof msg.payload === 'object' && 'targetServerId' in msg.payload) {
+          const { targetServerId, reason } = msg.payload as { targetServerId: string; reason?: string };
+          console.warn('[WS] Redirecting connection to sticky server node:', targetServerId, reason);
+          
+          this.isExplicitDisconnect = true;
+          this.stopHeartbeat();
+          if (this.ws) {
+            this.ws.close();
+            this.ws = null;
+          }
+          
+          // Append serverId to URL for Load Balancer sticky routing
+          const base = getWsBaseUrl();
+          const separator = base.includes('?') ? '&' : '?';
+          this.url = `${base}${separator}serverId=${encodeURIComponent(targetServerId)}`;
+          
+          // Reconnect immediately to the target node
+          setTimeout(() => this.connect(), 100);
+        }
+        break;
+
       case 'ERROR':
         if (msg.payload && typeof msg.payload === 'object' && 'message' in msg.payload) {
           const err = msg.payload as { message: string };
