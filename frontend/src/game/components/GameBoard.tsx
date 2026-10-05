@@ -15,6 +15,7 @@ import { GameResultModal } from './GameResultModal';
 import { PoolScoreboardModal } from './PoolScoreboardModal';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
 import { useLandscapeGate } from './LandscapeGate';
+import { useModalScroll } from '../hooks/useModalScroll';
 
 function getPerimeterPosition(index: number, total: number): SeatPosition {
   // Clockwise from the viewer: first seat is on the left, last seat is the lower right.
@@ -53,6 +54,7 @@ export const GameBoard: React.FC = () => {
   } = useGameStore();
 
   const { simulatedLandscape, toggleFlip } = useLandscapeGate();
+  const modalScroll = useModalScroll();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [scoreboardOpen, setScoreboardOpen] = React.useState(false);
   const [resumeFailed, setResumeFailed] = React.useState(false);
@@ -570,6 +572,9 @@ export const GameBoard: React.FC = () => {
             role="dialog"
             aria-label="Table Details & Leave Confirmation"
             onClick={(e) => e.stopPropagation()}
+            onWheel={modalScroll.onWheel}
+            onTouchStart={modalScroll.onTouchStart}
+            onTouchMove={modalScroll.onTouchMove}
           >
             <button
               type="button"
@@ -583,70 +588,79 @@ export const GameBoard: React.FC = () => {
               <X size={18} />
             </button>
 
-            <div className="royal-dialog-crest-wrap">
-              <div className="royal-dialog-crest-glow" />
-              <div className="royal-dialog-crest-badge">
-                <LogOut size={26} color="#fbbf24" style={{ transform: 'translateX(-1px)' }} />
-              </div>
-            </div>
-
-            <h3 className="royal-dialog-title">
-              {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped
-                ? 'Leave Active Table?'
-                : 'Table Details'}
-            </h3>
-            <p className="royal-dialog-subtitle">
-              {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped
-                ? 'Your hand is currently live. Leaving the table mid-game will forfeit the round.'
-                : gameState?.viewerDropped
-                ? 'You have dropped this hand. You can safely leave the table now.'
-                : 'Game has not started yet. You can leave now without any penalty.'}
-            </p>
-
-            <div className="table-menu-badge-wrap" style={{ display: 'flex', justifyContent: 'center' }}>
-              <span className="table-menu-name">
-                ♠ {variantName} · {maxSeats} Players
-              </span>
-            </div>
-
-            <div className="table-menu-rows" style={{ textAlign: 'left' }}>
-              {isPointsRummy ? (
-                <div className="table-menu-row">
-                  <span>Point value</span>
-                  <span className="table-menu-value--gold">{stakeLabel}</span>
+            <div className="royal-dialog-header">
+              <div className="royal-dialog-crest-wrap">
+                <div className="royal-dialog-crest-glow" />
+                <div className="royal-dialog-crest-badge">
+                  <LogOut size={26} color="#fbbf24" style={{ transform: 'translateX(-1px)' }} />
                 </div>
-              ) : (
+              </div>
+
+              <h3 className="royal-dialog-title">
+                {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped
+                  ? 'Leave Active Table?'
+                  : 'Table Details'}
+              </h3>
+              <p className="royal-dialog-subtitle">
+                {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped
+                  ? 'Your hand is currently live. Leaving the table mid-game will forfeit the round.'
+                  : gameState?.viewerDropped
+                  ? 'You have dropped this hand. You can safely leave the table now.'
+                  : 'Game has not started yet. You can leave now without any penalty.'}
+              </p>
+            </div>
+
+            <div
+              className="royal-dialog-body"
+              onWheel={modalScroll.onWheel}
+              onTouchStart={modalScroll.onTouchStart}
+              onTouchMove={modalScroll.onTouchMove}
+            >
+              <div className="table-menu-badge-wrap" style={{ display: 'flex', justifyContent: 'center' }}>
+                <span className="table-menu-name">
+                  ♠ {variantName} · {maxSeats} Players
+                </span>
+              </div>
+
+              <div className="table-menu-rows" style={{ textAlign: 'left' }}>
+                {isPointsRummy ? (
+                  <div className="table-menu-row">
+                    <span>Point value</span>
+                    <span className="table-menu-value--gold">{stakeLabel}</span>
+                  </div>
+                ) : (
+                  <div className="table-menu-row">
+                    <span>Entry fee</span>
+                    <span className="table-menu-value--gold">₹{entryFee.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="table-menu-row">
-                  <span>Entry fee</span>
-                  <span className="table-menu-value--gold">₹{entryFee.toFixed(2)}</span>
+                  <span>Table ID</span>
+                  <span className="table-menu-id">{gameState?.tableId ?? 'T1'}</span>
+                </div>
+                <div className="table-menu-row">
+                  <span>Display mode</span>
+                  <FullscreenToggle compact showLabel style={{ padding: '3px 8px', fontSize: '11px' }} />
+                </div>
+              </div>
+
+              {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped && (
+                <div className="royal-dialog-penalty-box">
+                  <div className="royal-dialog-penalty-label">
+                    <span className="royal-dialog-penalty-tag">
+                      <ShieldAlert size={13} />
+                      Forfeit Penalty
+                    </span>
+                    <span className="royal-dialog-penalty-desc">
+                      Max penalty points will apply
+                    </span>
+                  </div>
+                  <div className="royal-dialog-penalty-badge">
+                    +{gameState?.rulesetId?.includes('21') || gameState?.rulesetId === 'RUMMY_21' ? 120 : 80} PTS
+                  </div>
                 </div>
               )}
-              <div className="table-menu-row">
-                <span>Table ID</span>
-                <span className="table-menu-id">{gameState?.tableId ?? 'T1'}</span>
-              </div>
-              <div className="table-menu-row">
-                <span>Display mode</span>
-                <FullscreenToggle compact showLabel style={{ padding: '3px 8px', fontSize: '11px' }} />
-              </div>
             </div>
-
-            {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped && (
-              <div className="royal-dialog-penalty-box">
-                <div className="royal-dialog-penalty-label">
-                  <span className="royal-dialog-penalty-tag">
-                    <ShieldAlert size={13} />
-                    Forfeit Penalty
-                  </span>
-                  <span className="royal-dialog-penalty-desc">
-                    Max penalty points will apply
-                  </span>
-                </div>
-                <div className="royal-dialog-penalty-badge">
-                  +{gameState?.rulesetId?.includes('21') || gameState?.rulesetId === 'RUMMY_21' ? 120 : 80} PTS
-                </div>
-              </div>
-            )}
 
             <div className="royal-dialog-actions">
               <button

@@ -2296,6 +2296,10 @@ h1, h2, h3, h4, .font-display {
 .royal-dialog-backdrop {
   position: fixed;
   inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
   background: radial-gradient(circle at center, rgba(20, 8, 12, 0.76) 0%, rgba(5, 2, 4, 0.94) 100%);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -2306,6 +2310,11 @@ h1, h2, h3, h4, .font-display {
   padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
   animation: fadeIn 0.2s ease-out;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: contain !important;
+  touch-action: pan-y;
 }
 
 .royal-dialog-card {
@@ -2313,7 +2322,12 @@ h1, h2, h3, h4, .font-display {
   width: 100%;
   max-width: 420px;
   max-height: min(92dvh, calc(100% - 16px), 560px);
+  min-height: 0 !important;
+  flex-shrink: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   overscroll-behavior: contain;
@@ -2326,11 +2340,45 @@ h1, h2, h3, h4, .font-display {
     0 0 0 1px rgba(130, 24, 32, 0.55),
     0 0 32px rgba(212, 175, 55, 0.14),
     inset 0 1px 1px rgba(255, 235, 185, 0.38);
-  padding: 30px 26px 26px;
+  padding: 24px 22px 20px;
   text-align: center;
   animation: modalPopIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  margin: auto;
+  margin: auto !important;
   box-sizing: border-box;
+}
+
+.royal-dialog-header {
+  flex-shrink: 0;
+  width: 100%;
+}
+
+.royal-dialog-body {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  padding: 4px 2px;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 175, 55, 0.4) transparent;
+}
+
+.royal-dialog-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.royal-dialog-body::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+}
+
+.royal-dialog-body::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.5);
+  border-radius: 4px;
 }
 
 .royal-dialog-card::-webkit-scrollbar {
@@ -2351,7 +2399,7 @@ h1, h2, h3, h4, .font-display {
   width: min(880px, 95vw) !important;
   max-width: 880px !important;
   max-height: min(92vh, 700px);
-  padding: 26px 32px 24px;
+  padding: 24px 28px 20px;
 }
 
 .royal-dialog-close {
@@ -6000,9 +6048,10 @@ h1, h2, h3, h4, .font-display {
 .result-page-screen {
   position: fixed;
   inset: 0;
-  width: 100vw;
-  height: 100vh;
-  height: 100dvh;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
   z-index: 1500;
   display: flex;
   flex-direction: column;
@@ -6012,6 +6061,8 @@ h1, h2, h3, h4, .font-display {
   overflow-y: auto !important;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
   animation: fadeIn 0.25s ease-out;
   scrollbar-width: thin;
   scrollbar-color: rgba(212, 175, 55, 0.45) rgba(10, 4, 6, 0.85);
@@ -7229,86 +7280,448 @@ body.mobile-landscape-play .mm-card {
 
 /* ========== COMPACT & SCROLLABLE MODALS (TABLE DETAILS, DROP CONFIRM, LEAVE CONFIRM, SCOREBOARD) ========== */
 body.simulated-landscape .royal-dialog-backdrop,
-body.mobile-landscape-play .royal-dialog-backdrop,
-@media (orientation: landscape) and (max-height: 520px) {
-  .royal-dialog-backdrop {
-    padding: 6px 10px !important;
-    align-items: center !important;
-    justify-content: center !important;
-    overflow: hidden !important;
-  }
-}
-
-body.simulated-landscape .royal-dialog-backdrop,
 body.mobile-landscape-play .royal-dialog-backdrop {
-  padding: 6px 10px !important;
+  padding: 4px 8px !important;
   align-items: center !important;
   justify-content: center !important;
-  overflow: hidden !important;
-}
-
-body.simulated-landscape .royal-dialog-card,
-body.mobile-landscape-play .royal-dialog-card,
-@media (orientation: landscape) and (max-height: 520px) {
-  .royal-dialog-card {
-    width: 100% !important;
-    max-width: min(390px, 94vw) !important;
-    max-height: calc(100% - 12px) !important;
-    max-height: calc(100dvh - 12px) !important;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    -webkit-overflow-scrolling: touch !important;
-    touch-action: pan-y !important;
-    overscroll-behavior: contain !important;
-    padding: 10px 16px 12px !important;
-    border-radius: 16px !important;
-    border-width: 1.5px !important;
-    margin: auto !important;
-    box-sizing: border-box !important;
-  }
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: contain !important;
+  touch-action: manipulation !important;
 }
 
 body.simulated-landscape .royal-dialog-card,
 body.mobile-landscape-play .royal-dialog-card {
   width: 100% !important;
-  max-width: min(390px, 94vw) !important;
-  max-height: calc(100% - 12px) !important;
+  max-width: min(390px, 94%) !important;
+  max-height: calc(100% - 8px) !important;
+  min-height: 0 !important;
+  flex-shrink: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch !important;
-  touch-action: pan-y !important;
+  touch-action: manipulation !important;
   overscroll-behavior: contain !important;
-  padding: 10px 16px 12px !important;
-  border-radius: 16px !important;
+  padding: 8px 14px 10px !important;
+  border-radius: 14px !important;
   border-width: 1.5px !important;
   margin: auto !important;
   box-sizing: border-box !important;
 }
 
+body.simulated-landscape .royal-dialog-header,
+body.mobile-landscape-play .royal-dialog-header {
+  flex-shrink: 0 !important;
+  width: 100% !important;
+}
+
+body.simulated-landscape .royal-dialog-body,
+body.mobile-landscape-play .royal-dialog-body {
+  width: 100% !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: 180px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: manipulation !important;
+  overscroll-behavior: contain !important;
+  padding: 2px 2px !important;
+  box-sizing: border-box !important;
+}
+
 body.simulated-landscape .royal-dialog-close,
-body.mobile-landscape-play .royal-dialog-close,
+body.mobile-landscape-play .royal-dialog-close {
+  width: 26px !important;
+  height: 26px !important;
+  top: 8px !important;
+  right: 8px !important;
+}
+
+body.simulated-landscape .royal-dialog-crest-wrap,
+body.mobile-landscape-play .royal-dialog-crest-wrap {
+  width: 38px !important;
+  height: 38px !important;
+  margin: 0 auto 4px !important;
+}
+
+body.simulated-landscape .royal-dialog-crest-badge,
+body.mobile-landscape-play .royal-dialog-crest-badge {
+  width: 34px !important;
+  height: 34px !important;
+}
+
+body.simulated-landscape .royal-dialog-crest-badge svg,
+body.mobile-landscape-play .royal-dialog-crest-badge svg {
+  width: 17px !important;
+  height: 17px !important;
+}
+
+body.simulated-landscape .royal-dialog-title,
+body.mobile-landscape-play .royal-dialog-title {
+  font-size: 15px !important;
+  margin: 0 0 2px !important;
+  line-height: 1.2 !important;
+}
+
+body.simulated-landscape .royal-dialog-subtitle,
+body.mobile-landscape-play .royal-dialog-subtitle {
+  font-size: 11px !important;
+  margin: 0 0 6px !important;
+  line-height: 1.35 !important;
+  padding: 0 4px !important;
+}
+
+body.simulated-landscape .table-menu-badge-wrap,
+body.mobile-landscape-play .table-menu-badge-wrap {
+  padding: 0 0 4px !important;
+}
+
+body.simulated-landscape .table-menu-name,
+body.mobile-landscape-play .table-menu-name {
+  font-size: 10px !important;
+  padding: 2px 8px !important;
+}
+
+body.simulated-landscape .table-menu-rows,
+body.mobile-landscape-play .table-menu-rows {
+  margin: 0 0 6px !important;
+  padding: 2px 10px !important;
+}
+
+body.simulated-landscape .table-menu-row,
+body.mobile-landscape-play .table-menu-row {
+  padding: 2px 0 !important;
+  font-size: 11px !important;
+}
+
+body.simulated-landscape .table-menu-row span:first-child,
+body.mobile-landscape-play .table-menu-row span:first-child {
+  font-size: 10.5px !important;
+}
+
+body.simulated-landscape .royal-dialog-penalty-box,
+body.mobile-landscape-play .royal-dialog-penalty-box {
+  padding: 4px 8px !important;
+  margin-bottom: 6px !important;
+  border-radius: 8px !important;
+  gap: 8px !important;
+}
+
+body.simulated-landscape .royal-dialog-penalty-tag,
+body.mobile-landscape-play .royal-dialog-penalty-tag {
+  font-size: 8.5px !important;
+}
+
+body.simulated-landscape .royal-dialog-penalty-desc,
+body.mobile-landscape-play .royal-dialog-penalty-desc {
+  font-size: 9.5px !important;
+}
+
+body.simulated-landscape .royal-dialog-penalty-badge,
+body.mobile-landscape-play .royal-dialog-penalty-badge {
+  font-size: 11.5px !important;
+  padding: 2px 7px !important;
+  border-radius: 6px !important;
+}
+
+body.simulated-landscape .royal-dialog-actions,
+body.mobile-landscape-play .royal-dialog-actions {
+  flex-shrink: 0 !important;
+  width: 100% !important;
+  gap: 8px !important;
+  margin-top: 4px !important;
+}
+
+body.simulated-landscape .royal-dialog-actions button,
+body.mobile-landscape-play .royal-dialog-actions button {
+  padding: 6px 12px !important;
+  font-size: 11.5px !important;
+  border-radius: 8px !important;
+  min-height: 32px !important;
+  gap: 4px !important;
+}
+
+body.simulated-landscape .royal-dialog-actions button svg,
+body.mobile-landscape-play .royal-dialog-actions button svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+/* Pool scoreboard modal in simulated/mobile landscape */
+body.simulated-landscape .royal-dialog-card--scoreboard,
+body.mobile-landscape-play .royal-dialog-card--scoreboard {
+  width: min(720px, 96%) !important;
+  max-height: calc(100% - 10px) !important;
+  min-height: 0 !important;
+  flex-shrink: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 10px 14px !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: manipulation !important;
+}
+
+body.simulated-landscape .royal-scoreboard-wrap,
+body.mobile-landscape-play .royal-scoreboard-wrap {
+  max-height: 150px !important;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: manipulation !important;
+}
+
+/* Discard history dialog in simulated/mobile landscape */
+body.simulated-landscape .discard-history-overlay,
+body.mobile-landscape-play .discard-history-overlay {
+  padding: 6px !important;
+}
+
+body.simulated-landscape .discard-history-dialog,
+body.mobile-landscape-play .discard-history-dialog {
+  max-height: calc(100% - 10px) !important;
+  min-height: 0 !important;
+  flex-shrink: 1 !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: manipulation !important;
+}
+
+/* Character picker in simulated/mobile landscape */
+body.simulated-landscape .character-picker,
+body.mobile-landscape-play .character-picker {
+  max-height: calc(100% - 10px) !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+}
+
+/* Wallet modal in simulated/mobile landscape */
+body.simulated-landscape .wallet-modal-backdrop,
+body.mobile-landscape-play .wallet-modal-backdrop {
+  padding: 6px 12px !important;
+}
+
+body.simulated-landscape .wallet-modal-card,
+body.mobile-landscape-play .wallet-modal-card {
+  max-height: calc(100% - 12px) !important;
+  max-width: min(520px, 94vw) !important;
+  border-radius: 16px !important;
+}
+
+body.simulated-landscape .wallet-modal-body,
+body.mobile-landscape-play .wallet-modal-body {
+  padding: 10px 14px !important;
+  gap: 10px !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+}
+
+/* Showdown result screen in simulated/mobile landscape */
+body.simulated-landscape .result-page-screen,
+body.mobile-landscape-play .result-page-screen {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+  overscroll-behavior: contain !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+}
+
+body.simulated-landscape .result-top-bar,
+body.mobile-landscape-play .result-top-bar {
+  height: 38px !important;
+  min-height: 38px !important;
+  padding: 0 12px !important;
+  width: 100% !important;
+}
+
+body.simulated-landscape .result-back-btn,
+body.mobile-landscape-play .result-back-btn {
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+  border-radius: 6px !important;
+}
+
+body.simulated-landscape .result-top-title,
+body.mobile-landscape-play .result-top-title {
+  font-size: 12.5px !important;
+}
+
+body.simulated-landscape .result-top-pill,
+body.mobile-landscape-play .result-top-pill {
+  font-size: 9.5px !important;
+  padding: 2px 6px !important;
+}
+
+body.simulated-landscape .result-table-id-pill,
+body.mobile-landscape-play .result-table-id-pill {
+  font-size: 9.5px !important;
+  padding: 2px 6px !important;
+}
+
+body.simulated-landscape .result-page-content,
+body.mobile-landscape-play .result-page-content {
+  width: 100% !important;
+  max-width: min(840px, 96%) !important;
+  margin: 0 auto !important;
+  padding: 6px 12px 24px !important;
+  gap: 8px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+}
+
+body.simulated-landscape .result-hero-banner,
+body.mobile-landscape-play .result-hero-banner {
+  padding: 2px 0 4px !important;
+  gap: 3px !important;
+}
+
+body.simulated-landscape .result-hero-title,
+body.mobile-landscape-play .result-hero-title {
+  font-size: 16px !important;
+}
+
+body.simulated-landscape .result-hero-subtitle,
+body.mobile-landscape-play .result-hero-subtitle {
+  font-size: 11px !important;
+  line-height: 1.35 !important;
+  max-width: 480px !important;
+}
+
+body.simulated-landscape .result-pot-strip,
+body.mobile-landscape-play .result-pot-strip {
+  padding: 4px 12px !important;
+  max-width: 480px !important;
+}
+
+body.simulated-landscape .result-pot-strip-label,
+body.mobile-landscape-play .result-pot-strip-label {
+  font-size: 8.5px !important;
+}
+
+body.simulated-landscape .result-pot-strip-val,
+body.mobile-landscape-play .result-pot-strip-val {
+  font-size: 11.5px !important;
+}
+
+body.simulated-landscape .result-scoreboard-sheet,
+body.mobile-landscape-play .result-scoreboard-sheet {
+  border-radius: 12px !important;
+}
+
+body.simulated-landscape .result-sheet-header,
+body.mobile-landscape-play .result-sheet-header {
+  padding: 6px 12px !important;
+  font-size: 11.5px !important;
+}
+
+body.simulated-landscape .result-sheet-table-head,
+body.mobile-landscape-play .result-sheet-table-head {
+  padding: 4px 12px !important;
+  font-size: 9px !important;
+}
+
+body.simulated-landscape .result-sheet-row,
+body.mobile-landscape-play .result-sheet-row {
+  padding: 8px 12px !important;
+  gap: 6px !important;
+}
+
+body.simulated-landscape .result-bottom-bar,
+body.mobile-landscape-play .result-bottom-bar {
+  padding: 8px 14px !important;
+  margin: 8px auto 16px !important;
+  gap: 10px !important;
+}
+
+body.simulated-landscape .result-bottom-bar button,
+body.mobile-landscape-play .result-bottom-bar button {
+  padding: 7px 14px !important;
+  font-size: 12px !important;
+  min-width: 120px !important;
+}
+
+/* ========== SHORT SCREEN LANDSCAPE (MOBILE / BROWSER HEIGHT <= 520px) ========== */
 @media (orientation: landscape) and (max-height: 520px) {
+  .royal-dialog-backdrop {
+    padding: 4px 8px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain !important;
+    touch-action: manipulation !important;
+  }
+
+  .royal-dialog-card {
+    width: 100% !important;
+    max-width: min(390px, 94%) !important;
+    max-height: calc(100% - 8px) !important;
+    max-height: calc(100dvh - 8px) !important;
+    min-height: 0 !important;
+    flex-shrink: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: manipulation !important;
+    overscroll-behavior: contain !important;
+    padding: 8px 14px 10px !important;
+    border-radius: 14px !important;
+    border-width: 1.5px !important;
+    margin: auto !important;
+    box-sizing: border-box !important;
+  }
+
+  .royal-dialog-header {
+    flex-shrink: 0 !important;
+    width: 100% !important;
+  }
+
+  .royal-dialog-body {
+    width: 100% !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: 180px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: manipulation !important;
+    overscroll-behavior: contain !important;
+    padding: 2px 2px !important;
+    box-sizing: border-box !important;
+  }
+
   .royal-dialog-close {
     width: 26px !important;
     height: 26px !important;
     top: 8px !important;
     right: 8px !important;
   }
-}
 
-body.simulated-landscape .royal-dialog-crest-wrap,
-body.mobile-landscape-play .royal-dialog-crest-wrap,
-@media (orientation: landscape) and (max-height: 520px) {
   .royal-dialog-crest-wrap {
     width: 38px !important;
     height: 38px !important;
     margin: 0 auto 4px !important;
   }
-}
 
-body.simulated-landscape .royal-dialog-crest-badge,
-body.mobile-landscape-play .royal-dialog-crest-badge,
-@media (orientation: landscape) and (max-height: 520px) {
   .royal-dialog-crest-badge {
     width: 34px !important;
     height: 34px !important;
@@ -7318,32 +7731,20 @@ body.mobile-landscape-play .royal-dialog-crest-badge,
     width: 17px !important;
     height: 17px !important;
   }
-}
 
-body.simulated-landscape .royal-dialog-title,
-body.mobile-landscape-play .royal-dialog-title,
-@media (orientation: landscape) and (max-height: 520px) {
   .royal-dialog-title {
     font-size: 15px !important;
     margin: 0 0 2px !important;
     line-height: 1.2 !important;
   }
-}
 
-body.simulated-landscape .royal-dialog-subtitle,
-body.mobile-landscape-play .royal-dialog-subtitle,
-@media (orientation: landscape) and (max-height: 520px) {
   .royal-dialog-subtitle {
     font-size: 11px !important;
     margin: 0 0 6px !important;
     line-height: 1.35 !important;
     padding: 0 4px !important;
   }
-}
 
-body.simulated-landscape .table-menu-badge-wrap,
-body.mobile-landscape-play .table-menu-badge-wrap,
-@media (orientation: landscape) and (max-height: 520px) {
   .table-menu-badge-wrap {
     padding: 0 0 4px !important;
   }
@@ -7352,11 +7753,7 @@ body.mobile-landscape-play .table-menu-badge-wrap,
     font-size: 10px !important;
     padding: 2px 8px !important;
   }
-}
 
-body.simulated-landscape .table-menu-rows,
-body.mobile-landscape-play .table-menu-rows,
-@media (orientation: landscape) and (max-height: 520px) {
   .table-menu-rows {
     margin: 0 0 6px !important;
     padding: 2px 10px !important;
@@ -7370,11 +7767,7 @@ body.mobile-landscape-play .table-menu-rows,
   .table-menu-row span:first-child {
     font-size: 10.5px !important;
   }
-}
 
-body.simulated-landscape .royal-dialog-penalty-box,
-body.mobile-landscape-play .royal-dialog-penalty-box,
-@media (orientation: landscape) and (max-height: 520px) {
   .royal-dialog-penalty-box {
     padding: 4px 8px !important;
     margin-bottom: 6px !important;
@@ -7395,14 +7788,12 @@ body.mobile-landscape-play .royal-dialog-penalty-box,
     padding: 2px 7px !important;
     border-radius: 6px !important;
   }
-}
 
-body.simulated-landscape .royal-dialog-actions,
-body.mobile-landscape-play .royal-dialog-actions,
-@media (orientation: landscape) and (max-height: 520px) {
   .royal-dialog-actions {
+    flex-shrink: 0 !important;
+    width: 100% !important;
     gap: 8px !important;
-    margin-top: 2px !important;
+    margin-top: 4px !important;
   }
 
   .royal-dialog-actions button {
@@ -7417,85 +7808,189 @@ body.mobile-landscape-play .royal-dialog-actions,
     width: 14px !important;
     height: 14px !important;
   }
-}
 
-/* Pool scoreboard modal in simulated/mobile landscape */
-body.simulated-landscape .royal-dialog-card--scoreboard,
-body.mobile-landscape-play .royal-dialog-card--scoreboard,
-@media (orientation: landscape) and (max-height: 520px) {
   .royal-dialog-card--scoreboard {
-    width: min(720px, 96vw) !important;
+    width: min(720px, 96%) !important;
     max-height: calc(100% - 10px) !important;
     max-height: calc(100dvh - 10px) !important;
+    min-height: 0 !important;
+    flex-shrink: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
     padding: 10px 14px !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
-    touch-action: pan-y !important;
+    touch-action: manipulation !important;
   }
-}
 
-/* Discard history dialog in simulated/mobile landscape */
-body.simulated-landscape .discard-history-overlay,
-body.mobile-landscape-play .discard-history-overlay,
-@media (orientation: landscape) and (max-height: 520px) {
+  .royal-scoreboard-wrap {
+    max-height: 150px !important;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: manipulation !important;
+  }
+
   .discard-history-overlay {
     padding: 6px !important;
   }
-}
 
-body.simulated-landscape .discard-history-dialog,
-body.mobile-landscape-play .discard-history-dialog,
-@media (orientation: landscape) and (max-height: 520px) {
   .discard-history-dialog {
     max-height: calc(100% - 10px) !important;
     max-height: calc(100dvh - 10px) !important;
+    min-height: 0 !important;
+    flex-shrink: 1 !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
-    touch-action: pan-y !important;
+    touch-action: manipulation !important;
   }
-}
 
-/* Character picker in simulated/mobile landscape */
-body.simulated-landscape .character-picker,
-body.mobile-landscape-play .character-picker,
-@media (orientation: landscape) and (max-height: 520px) {
   .character-picker {
     max-height: calc(100% - 10px) !important;
     max-height: calc(100dvh - 10px) !important;
+    min-height: 0 !important;
+    flex-shrink: 1 !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
-    touch-action: pan-y !important;
+    touch-action: manipulation !important;
   }
-}
 
-/* Wallet modal in simulated/mobile landscape */
-body.simulated-landscape .wallet-modal-backdrop,
-body.mobile-landscape-play .wallet-modal-backdrop,
-@media (orientation: landscape) and (max-height: 520px) {
   .wallet-modal-backdrop {
     padding: 6px 12px !important;
   }
-}
 
-body.simulated-landscape .wallet-modal-card,
-body.mobile-landscape-play .wallet-modal-card,
-@media (orientation: landscape) and (max-height: 520px) {
   .wallet-modal-card {
     max-height: calc(100% - 12px) !important;
     max-height: calc(100dvh - 12px) !important;
     max-width: min(520px, 94vw) !important;
+    min-height: 0 !important;
+    flex-shrink: 1 !important;
     border-radius: 16px !important;
+    touch-action: manipulation !important;
   }
-}
 
-body.simulated-landscape .wallet-modal-body,
-body.mobile-landscape-play .wallet-modal-body,
-@media (orientation: landscape) and (max-height: 520px) {
   .wallet-modal-body {
     padding: 10px 14px !important;
     gap: 10px !important;
+    min-height: 0 !important;
+    flex: 1 1 auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: manipulation !important;
+  }
+
+  .result-page-screen {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
     -webkit-overflow-scrolling: touch !important;
     touch-action: pan-y !important;
+    overscroll-behavior: contain !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+  }
+
+  .result-top-bar {
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: 0 12px !important;
+    width: 100% !important;
+  }
+
+  .result-back-btn {
+    padding: 3px 8px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+  }
+
+  .result-top-title {
+    font-size: 12.5px !important;
+  }
+
+  .result-top-pill {
+    font-size: 9.5px !important;
+    padding: 2px 6px !important;
+  }
+
+  .result-table-id-pill {
+    font-size: 9.5px !important;
+    padding: 2px 6px !important;
+  }
+
+  .result-page-content {
+    width: 100% !important;
+    max-width: min(840px, 96%) !important;
+    margin: 0 auto !important;
+    padding: 6px 12px 24px !important;
+    gap: 8px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    box-sizing: border-box !important;
+  }
+
+  .result-hero-banner {
+    padding: 2px 0 4px !important;
+    gap: 3px !important;
+  }
+
+  .result-hero-title {
+    font-size: 16px !important;
+  }
+
+  .result-hero-subtitle {
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+    max-width: 480px !important;
+  }
+
+  .result-pot-strip {
+    padding: 4px 12px !important;
+    max-width: 480px !important;
+  }
+
+  .result-pot-strip-label {
+    font-size: 8.5px !important;
+  }
+
+  .result-pot-strip-val {
+    font-size: 11.5px !important;
+  }
+
+  .result-scoreboard-sheet {
+    border-radius: 12px !important;
+  }
+
+  .result-sheet-header {
+    padding: 6px 12px !important;
+    font-size: 11.5px !important;
+  }
+
+  .result-sheet-table-head {
+    padding: 4px 12px !important;
+    font-size: 9px !important;
+  }
+
+  .result-sheet-row {
+    padding: 8px 12px !important;
+    gap: 6px !important;
+  }
+
+  .result-bottom-bar {
+    padding: 8px 14px !important;
+    margin: 8px auto 16px !important;
+    gap: 10px !important;
+  }
+
+  .result-bottom-bar button {
+    padding: 7px 14px !important;
+    font-size: 12px !important;
+    min-width: 120px !important;
   }
 }
 

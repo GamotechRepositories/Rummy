@@ -4,6 +4,7 @@ import { X, Trophy } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { socketClient } from '../websocket/GameSocketClient';
 import { photoForCharacter, getAvatarForPlayer } from '../utils/avatarUtils';
+import { useModalScroll } from '../hooks/useModalScroll';
 
 interface PoolScoreboardModalProps {
   isOpen: boolean;
@@ -12,6 +13,7 @@ interface PoolScoreboardModalProps {
 
 export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen, onClose }) => {
   const { gameState, playerId, displayName, avatarId } = useGameStore();
+  const modalScroll = useModalScroll();
 
   if (!isOpen || !gameState) return null;
 
@@ -120,10 +122,12 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
     >
       <div
         className="royal-dialog-card royal-dialog-card--scoreboard"
-        style={{ width: 'min(880px, 95vw)', maxWidth: '880px' }}
         role="dialog"
         aria-label="Pool Scoreboard"
         onClick={(e) => e.stopPropagation()}
+        onWheel={modalScroll.onWheel}
+        onTouchStart={modalScroll.onTouchStart}
+        onTouchMove={modalScroll.onTouchMove}
       >
         {/* Close Button */}
         <button
@@ -138,41 +142,48 @@ export const PoolScoreboardModal: React.FC<PoolScoreboardModalProps> = ({ isOpen
           <X size={18} />
         </button>
 
-        {/* Crest */}
-        <div className="royal-dialog-crest-wrap">
-          <div className="royal-dialog-crest-glow royal-dialog-crest-glow--amber" />
-          <div className="royal-dialog-crest-badge">
-            <Trophy size={26} color="#fbbf24" />
+        <div className="royal-dialog-header">
+          {/* Crest */}
+          <div className="royal-dialog-crest-wrap">
+            <div className="royal-dialog-crest-glow royal-dialog-crest-glow--amber" />
+            <div className="royal-dialog-crest-badge">
+              <Trophy size={26} color="#fbbf24" />
+            </div>
+          </div>
+
+          {/* Title & Subtitle */}
+          <h3 className="royal-dialog-title">
+            {isDeals
+              ? (isTieBreaker ? '⚡ Deals Sudden-Death Playoff ⚡' : `${totalDeals} Deals Scoreboard`)
+              : `Pool ${threshold} Scoreboard`}
+          </h3>
+          <p className="royal-dialog-subtitle">
+            {isDeals
+              ? (isTieBreaker
+                  ? `Playoff Deal ${currentDeal} in progress · Tied leaders playing sudden-death deal to decide the champion!`
+                  : `Deal ${currentDeal} of ${totalDeals} · Player with most chips after ${totalDeals} deals wins!`)
+              : `Deal ${currentDeal} in progress · ${activeSurvivors} of ${allPlayers.length} players active`}
+          </p>
+
+          {/* Variant Badge */}
+          <div className="table-menu-badge-wrap" style={{ padding: '0 0 10px', display: 'flex', justifyContent: 'center' }}>
+            <span className="table-menu-name">
+              {isDeals
+                ? (isTieBreaker
+                    ? `⚡ Playoff Active · Starting Chips: ${totalDeals * 80}`
+                    : `🪙 Deals Rummy · ${totalDeals} Deals · Starting Chips: ${totalDeals * 80}`)
+                : `♠ Pool ${threshold} · Elimination at ${threshold} pts`}
+            </span>
           </div>
         </div>
 
-        {/* Title & Subtitle */}
-        <h3 className="royal-dialog-title">
-          {isDeals
-            ? (isTieBreaker ? '⚡ Deals Sudden-Death Playoff ⚡' : `${totalDeals} Deals Scoreboard`)
-            : `Pool ${threshold} Scoreboard`}
-        </h3>
-        <p className="royal-dialog-subtitle">
-          {isDeals
-            ? (isTieBreaker
-                ? `Playoff Deal ${currentDeal} in progress · Tied leaders playing sudden-death deal to decide the champion!`
-                : `Deal ${currentDeal} of ${totalDeals} · Player with most chips after ${totalDeals} deals wins!`)
-            : `Deal ${currentDeal} in progress · ${activeSurvivors} of ${allPlayers.length} players active`}
-        </p>
-
-        {/* Variant Badge */}
-        <div className="table-menu-badge-wrap" style={{ padding: '0 0 14px', display: 'flex', justifyContent: 'center' }}>
-          <span className="table-menu-name">
-            {isDeals
-              ? (isTieBreaker
-                  ? `⚡ Playoff Active · Starting Chips: ${totalDeals * 80}`
-                  : `🪙 Deals Rummy · ${totalDeals} Deals · Starting Chips: ${totalDeals * 80}`)
-              : `♠ Pool ${threshold} · Elimination at ${threshold} pts`}
-          </span>
-        </div>
-
         {/* Scoreboard Table Section */}
-        <div className="royal-scoreboard-wrap">
+        <div
+          className="royal-scoreboard-wrap"
+          onWheel={modalScroll.onWheel}
+          onTouchStart={modalScroll.onTouchStart}
+          onTouchMove={modalScroll.onTouchMove}
+        >
           <table className="royal-scoreboard-table">
             <thead>
               <tr>

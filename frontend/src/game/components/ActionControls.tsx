@@ -18,8 +18,10 @@ import { isDiscardPhase, isDrawPhase } from '../utils/turnPhase';
 import { calculateHandPenalty, isJoker } from '../rules/clientValidator';
 import { TurnTimerRing } from './TurnTimerRing';
 import { photoForCharacter } from '../utils/avatarUtils';
+import { useModalScroll } from '../hooks/useModalScroll';
 
 export const ActionControls: React.FC = () => {
+  const modalScroll = useModalScroll();
   const {
     gameState,
     selectedCardIds,
@@ -479,8 +481,16 @@ export const ActionControls: React.FC = () => {
 
       {confirmDropOpen &&
         createPortal(
-          <div className="royal-dialog-backdrop" role="presentation">
-            <div className="royal-dialog-card" role="dialog" aria-label="Confirm drop">
+          <div className="royal-dialog-backdrop" role="presentation" onClick={() => setConfirmDropOpen(false)}>
+            <div
+              className="royal-dialog-card"
+              role="dialog"
+              aria-label="Confirm drop"
+              onClick={(e) => e.stopPropagation()}
+              onWheel={modalScroll.onWheel}
+              onTouchStart={modalScroll.onTouchStart}
+              onTouchMove={modalScroll.onTouchMove}
+            >
               <button
                 type="button"
                 className="royal-dialog-close"
@@ -490,29 +500,38 @@ export const ActionControls: React.FC = () => {
                 <XCircle size={18} />
               </button>
 
-              <div className="royal-dialog-crest-wrap">
-                <div className="royal-dialog-crest-glow royal-dialog-crest-glow--amber" />
-                <div className="royal-dialog-crest-badge">
-                  <Flag size={26} color="#fbbf24" />
+              <div className="royal-dialog-header">
+                <div className="royal-dialog-crest-wrap">
+                  <div className="royal-dialog-crest-glow royal-dialog-crest-glow--amber" />
+                  <div className="royal-dialog-crest-badge">
+                    <Flag size={26} color="#fbbf24" />
+                  </div>
                 </div>
+
+                <h3 className="royal-dialog-title">Drop This Hand?</h3>
+                <p className="royal-dialog-subtitle">
+                  You will fold this hand safely and sit out until the next deal starts.
+                </p>
               </div>
 
-              <h3 className="royal-dialog-title">Drop This Hand?</h3>
-              <p className="royal-dialog-subtitle">
-                You will fold this hand safely and sit out until the next deal starts.
-              </p>
-
-              <div className="royal-dialog-penalty-box">
-                <div className="royal-dialog-penalty-label">
-                  <span className="royal-dialog-penalty-tag">
-                    {isFirstTurn ? 'FIRST DROP PENALTY' : 'MIDDLE DROP PENALTY'}
-                  </span>
-                  <span className="royal-dialog-penalty-desc">
-                    Will be added to your score
-                  </span>
-                </div>
-                <div className="royal-dialog-penalty-badge">
-                  +{dropPenaltyPoints} PTS
+              <div
+                className="royal-dialog-body"
+                onWheel={modalScroll.onWheel}
+                onTouchStart={modalScroll.onTouchStart}
+                onTouchMove={modalScroll.onTouchMove}
+              >
+                <div className="royal-dialog-penalty-box">
+                  <div className="royal-dialog-penalty-label">
+                    <span className="royal-dialog-penalty-tag">
+                      {isFirstTurn ? 'FIRST DROP PENALTY' : 'MIDDLE DROP PENALTY'}
+                    </span>
+                    <span className="royal-dialog-penalty-desc">
+                      Will be added to your score
+                    </span>
+                  </div>
+                  <div className="royal-dialog-penalty-badge">
+                    +{dropPenaltyPoints} PTS
+                  </div>
                 </div>
               </div>
 
@@ -539,8 +558,16 @@ export const ActionControls: React.FC = () => {
 
       {confirmRejoinOpen &&
         createPortal(
-          <div className="royal-dialog-backdrop" role="presentation">
-            <div className="royal-dialog-card" role="dialog" aria-label="Confirm Re-Join">
+          <div className="royal-dialog-backdrop" role="presentation" onClick={() => setConfirmRejoinOpen(false)}>
+            <div
+              className="royal-dialog-card"
+              role="dialog"
+              aria-label="Confirm Re-Join"
+              onClick={(e) => e.stopPropagation()}
+              onWheel={modalScroll.onWheel}
+              onTouchStart={modalScroll.onTouchStart}
+              onTouchMove={modalScroll.onTouchMove}
+            >
               <button
                 type="button"
                 className="royal-dialog-close"
@@ -550,42 +577,51 @@ export const ActionControls: React.FC = () => {
                 <XCircle size={18} />
               </button>
 
-              <div className="royal-dialog-crest-wrap">
-                <div className="royal-dialog-crest-glow" style={{ background: 'rgba(16, 185, 129, 0.4)' }} />
-                <div className="royal-dialog-crest-badge" style={{ border: '2px solid #34d399' }}>
-                  <Sparkles size={26} color="#34d399" />
+              <div className="royal-dialog-header">
+                <div className="royal-dialog-crest-wrap">
+                  <div className="royal-dialog-crest-glow" style={{ background: 'rgba(16, 185, 129, 0.4)' }} />
+                  <div className="royal-dialog-crest-badge" style={{ border: '2px solid #34d399' }}>
+                    <Sparkles size={26} color="#34d399" />
+                  </div>
                 </div>
+
+                <h3 className="royal-dialog-title">Re-Join Table?</h3>
+                <p className="royal-dialog-subtitle">
+                  You are re-entering this Pool tournament. You will participate from the next deal.
+                </p>
               </div>
 
-              <h3 className="royal-dialog-title">Re-Join Table?</h3>
-              <p className="royal-dialog-subtitle">
-                You are re-entering this Pool tournament. You will participate from the next deal.
-              </p>
-
               <div
-                className="royal-dialog-penalty-box"
-                style={{
-                  background: 'rgba(16, 185, 129, 0.12)',
-                  border: '1px solid rgba(52, 211, 153, 0.35)',
-                }}
+                className="royal-dialog-body"
+                onWheel={modalScroll.onWheel}
+                onTouchStart={modalScroll.onTouchStart}
+                onTouchMove={modalScroll.onTouchMove}
               >
-                <div className="royal-dialog-penalty-label">
-                  <span className="royal-dialog-penalty-tag" style={{ color: '#6ee7b7' }}>
-                    ENTRY FEE: ₹{gameState.rejoinFee || lastGameConfig?.entryFee || 8}
-                  </span>
-                  <span className="royal-dialog-penalty-desc">
-                    Starting Score: <strong>{gameState.rejoinScore} pts</strong> (Leader + 1)
-                  </span>
-                </div>
                 <div
-                  className="royal-dialog-penalty-badge"
+                  className="royal-dialog-penalty-box"
                   style={{
-                    color: '#34d399',
-                    background: 'rgba(52, 211, 153, 0.15)',
-                    border: '1px solid rgba(52, 211, 153, 0.4)',
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    border: '1px solid rgba(52, 211, 153, 0.35)',
                   }}
                 >
-                  {gameState.rejoinScore} PTS
+                  <div className="royal-dialog-penalty-label">
+                    <span className="royal-dialog-penalty-tag" style={{ color: '#6ee7b7' }}>
+                      ENTRY FEE: ₹{gameState.rejoinFee || lastGameConfig?.entryFee || 8}
+                    </span>
+                    <span className="royal-dialog-penalty-desc">
+                      Starting Score: <strong>{gameState.rejoinScore} pts</strong> (Leader + 1)
+                    </span>
+                  </div>
+                  <div
+                    className="royal-dialog-penalty-badge"
+                    style={{
+                      color: '#34d399',
+                      background: 'rgba(52, 211, 153, 0.15)',
+                      border: '1px solid rgba(52, 211, 153, 0.4)',
+                    }}
+                  >
+                    {gameState.rejoinScore} PTS
+                  </div>
                 </div>
               </div>
 

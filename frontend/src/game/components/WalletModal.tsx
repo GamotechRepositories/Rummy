@@ -13,6 +13,7 @@ import {
   Gift,
 } from 'lucide-react';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { useModalScroll } from '../hooks/useModalScroll';
 
 interface WalletTransaction {
   id: string;
@@ -33,6 +34,7 @@ interface WalletModalProps {
 
 export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
   const { playerId } = useGameStore();
+  const modalScroll = useModalScroll();
   const [totalBalance, setTotalBalance] = useState<number>(1000);
   const [depositBalance, setDepositBalance] = useState<number>(600);
   const [winningsBalance, setWinningsBalance] = useState<number>(400);
@@ -171,13 +173,17 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
     >
       <div
         className="wallet-modal-card"
+        onClick={(e) => e.stopPropagation()}
+        onWheel={modalScroll.onWheel}
+        onTouchStart={modalScroll.onTouchStart}
+        onTouchMove={modalScroll.onTouchMove}
         style={{
           background: 'linear-gradient(170deg, #1e293b 0%, #0f172a 60%, #020617 100%)',
           border: '1.5px solid rgba(212, 175, 55, 0.45)',
           borderRadius: '24px',
           width: '100%',
           maxWidth: '520px',
-          maxHeight: '90vh',
+          maxHeight: 'min(92dvh, calc(100% - 16px), 640px)',
           display: 'flex',
           flexDirection: 'column',
           boxShadow: '0 25px 60px rgba(0,0,0,0.85), 0 0 45px rgba(212, 175, 55, 0.15)',
@@ -194,6 +200,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
             alignItems: 'center',
             justifyContent: 'space-between',
             background: 'rgba(212, 175, 55, 0.06)',
+            flexShrink: 0,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -242,7 +249,13 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
         </div>
 
         {/* Scrollable Body */}
-        <div className="wallet-modal-body" style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div
+          className="wallet-modal-body"
+          onWheel={modalScroll.onWheel}
+          onTouchStart={modalScroll.onTouchStart}
+          onTouchMove={modalScroll.onTouchMove}
+          style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', minHeight: 0, flex: '1 1 auto' }}
+        >
           {/* Total Balance Card */}
           <div
             style={{
