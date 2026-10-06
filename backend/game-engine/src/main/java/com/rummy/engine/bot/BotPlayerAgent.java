@@ -153,6 +153,9 @@ public final class BotPlayerAgent implements PlayerAgent {
 
         if (topDiscard != null) {
             boolean isTopJoker = topDiscard.isPrintedJoker() || (cutCard != null && topDiscard.getCard().isWildJoker(cutCard));
+            if (isTopJoker && view.topDiscardPickable()) {
+                return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.DISCARD_PILE, now);
+            }
             if (!isTopJoker) {
                 // INTENTIONAL BLUNDER: Medium bot has 8% chance to ignore a good open card
                 boolean blunder = (difficulty == BotDifficulty.MEDIUM && random.nextDouble() < 0.08);
@@ -185,9 +188,12 @@ public final class BotPlayerAgent implements PlayerAgent {
 
     private GameCommand decideDiscardOrDeclare(PlayerGameView view, Card cutCard, RummyRules rules, String cmdId, Instant now) {
         List<CardInstance> hand = view.hand();
+        String forbiddenCardId = (view.isDrawnFromDiscard() && view.drawnCardInstanceId() != null)
+                ? view.drawnCardInstanceId()
+                : null;
 
         // 1. Check if 14 cards contain a winning declaration
-        Optional<HandEvaluator.EvaluationResult> winning = HandEvaluator.findWinningDeclaration(hand, cutCard, rules);
+        Optional<HandEvaluator.EvaluationResult> winning = HandEvaluator.findWinningDeclaration(hand, cutCard, rules, forbiddenCardId);
         if (winning.isPresent()) {
             HandEvaluator.EvaluationResult win = winning.get();
             return new DeclareCommand(cmdId, view.gameId(), playerId, win.finishCard().getInstanceId(), win.meldedGroups(), now);
@@ -200,10 +206,6 @@ public final class BotPlayerAgent implements PlayerAgent {
         // 3. Select optimal discard by finding the best card to release (lowest value to us, safest against opponents)
         HandEvaluator.EvaluationResult eval = getCachedDeadwood(view, cutCard);
         List<CardInstance> deadwood = eval.deadwoodCards();
-
-        String forbiddenCardId = (view.isDrawnFromDiscard() && view.drawnCardInstanceId() != null)
-                ? view.drawnCardInstanceId()
-                : null;
 
         CardInstance cardToDiscard;
         List<CardInstance> eligibleDeadwood = deadwood.stream()

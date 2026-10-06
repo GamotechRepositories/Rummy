@@ -117,22 +117,26 @@ class MultiTableLoadSimulationTest {
         String gameId = actor.getState().getGameId();
 
         // 2 players join
-        String p1 = "USR_RECONN_1";
-        String p2 = "USR_RECONN_2";
+        String seat0 = "USR_RECONN_1";
+        String seat1 = "USR_RECONN_2";
 
         WebSocketSession session1 = mock(WebSocketSession.class);
         when(session1.isOpen()).thenReturn(true);
         WebSocketSession session2 = mock(WebSocketSession.class);
         when(session2.isOpen()).thenReturn(true);
 
-        actor.registerSession(p1, session1);
-        actor.registerSession(p2, session2);
+        actor.registerSession(seat0, session1);
+        actor.registerSession(seat1, session2);
 
-        actor.processCommand(new JoinCommand(UUID.randomUUID().toString(), gameId, p1, "Reconn Player 1", 0, false, Instant.now()), "req_j1");
-        actor.processCommand(new JoinCommand(UUID.randomUUID().toString(), gameId, p2, "Reconn Player 2", 1, false, Instant.now()), "req_j2");
-        actor.processCommand(new ReadyCommand(UUID.randomUUID().toString(), gameId, p1, Instant.now()), "req_r1");
-        actor.processCommand(new ReadyCommand(UUID.randomUUID().toString(), gameId, p2, Instant.now()), "req_r2");
-        actor.processCommand(new StartGameCommand(UUID.randomUUID().toString(), gameId, p1, Instant.now()), "req_start");
+        actor.processCommand(new JoinCommand(UUID.randomUUID().toString(), gameId, seat0, "Reconn Player 1", 0, false, Instant.now()), "req_j1");
+        actor.processCommand(new JoinCommand(UUID.randomUUID().toString(), gameId, seat1, "Reconn Player 2", 1, false, Instant.now()), "req_j2");
+        actor.processCommand(new ReadyCommand(UUID.randomUUID().toString(), gameId, seat0, Instant.now()), "req_r1");
+        actor.processCommand(new ReadyCommand(UUID.randomUUID().toString(), gameId, seat1, Instant.now()), "req_r2");
+        actor.processCommand(new StartGameCommand(UUID.randomUUID().toString(), gameId, seat0, Instant.now()), "req_start");
+
+        // The toss decides who plays first
+        String p1 = actor.getState().getTurnState().getCurrentPlayerId();
+        String p2 = p1.equals(seat0) ? seat1 : seat0;
 
         // Player 1 draws
         actor.processCommand(new DrawCommand(UUID.randomUUID().toString(), gameId, p1, DrawSource.CLOSED_DECK, Instant.now()), "req_d1");

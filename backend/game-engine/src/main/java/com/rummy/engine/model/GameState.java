@@ -113,6 +113,23 @@ public final class GameState implements Serializable {
         return discardPile.get(discardPile.size() - 1);
     }
 
+    /**
+     * Whether the current player may take the open card. Jokers can never be taken from the open pile,
+     * except the very first open card of the deal, which only the first player may take.
+     */
+    public boolean isTopDiscardPickable() {
+        CardInstance top = topDiscard();
+        if (top == null) {
+            return false;
+        }
+        boolean joker = top.isPrintedJoker()
+                || (cutJoker != null && top.getCard().isWildJoker(cutJoker.getCard()));
+        if (!joker) {
+            return true;
+        }
+        return turnState != null && turnState.getTurnNumber() == 1 && discardPile.size() == 1;
+    }
+
     public void addToDiscardPile(CardInstance card) {
         Objects.requireNonNull(card, "card must not be null");
         discardPile.add(card);

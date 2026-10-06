@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Leaving mid-hand: a drop before drawing, the full penalty after")
 class LeavePenaltyTest {
 
-    private final GameEngine engine = new GameEngine();
+    private final GameEngine engine = new GameEngine(() -> 0L, 0);
     private final Instant now = Instant.now();
 
     private GameState startThreePlayers(RummyRules rules) {

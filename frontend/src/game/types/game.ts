@@ -141,6 +141,12 @@ export interface PlayerGameView {
   firstDropAvailable?: boolean;
   drawnCardInstanceId?: string | null;
   isDrawnFromDiscard?: boolean;
+  /** Entry stake in rupees; on points tables the most a player can lose (point value = stake / max penalty). */
+  stakeTier?: number;
+  /** The active player's normal turn time ran out and they are on extra time. */
+  inExtraTime?: boolean;
+  /** Server-computed: the open card may be taken now (a joker only as the deal's first open card). */
+  topDiscardPickable?: boolean;
 }
 
 export type GroupValidationType = 'PURE_SEQUENCE' | 'IMPURE_SEQUENCE' | 'SET' | 'INVALID';

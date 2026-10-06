@@ -74,6 +74,12 @@ public final class HandEvaluator {
      * Searches all candidate finish cards and partitions the remaining cards.
      */
     public static Optional<EvaluationResult> findWinningDeclaration(List<CardInstance> hand, Card cutJoker, RummyRules rules) {
+        return findWinningDeclaration(hand, cutJoker, rules, null);
+    }
+
+    /** As above, but never uses {@code forbiddenFinishId} (the card just taken from the open pile) as the finish card. */
+    public static Optional<EvaluationResult> findWinningDeclaration(List<CardInstance> hand, Card cutJoker, RummyRules rules,
+                                                                    String forbiddenFinishId) {
         int targetCards = rules != null ? rules.getCardsPerPlayer() : 13;
         int expectedHand = targetCards + 1;
         if (hand == null || hand.size() != expectedHand) {
@@ -83,6 +89,9 @@ public final class HandEvaluator {
         // Try each card as the finish card
         for (int i = 0; i < hand.size(); i++) {
             CardInstance finishCandidate = hand.get(i);
+            if (finishCandidate.getInstanceId().equals(forbiddenFinishId)) {
+                continue;
+            }
             List<CardInstance> remaining = new ArrayList<>(hand);
             remaining.remove(i);
 

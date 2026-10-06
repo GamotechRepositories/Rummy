@@ -25,6 +25,8 @@ public final class PlayerState implements Serializable {
     private boolean hasDropped;
     private int consecutiveMissedTurns;
     private int turnsCompleted;
+    /** Extra-time bank left for this deal, used once the normal turn timer runs out. */
+    private int extraTimeSeconds;
     private Instant lastActionAt;
 
     public PlayerState(String playerId, String displayName, int seatIndex, boolean isBot, String avatarId) {
@@ -149,6 +151,7 @@ public final class PlayerState implements Serializable {
         this.hasDropped = false;
         this.consecutiveMissedTurns = 0;
         this.turnsCompleted = 0;
+        this.extraTimeSeconds = 0;
         this.lastActionAt = Instant.now();
     }
 
@@ -171,7 +174,8 @@ public final class PlayerState implements Serializable {
     /** Restores captured progress verbatim. See {@link GameStateSnapshots}. */
     void restoreProgress(List<CardInstance> hand, List<CardInstance> lastHand, PlayerStatus status,
                          int score, int cumulativeScore, long chipBalance, boolean hasDeclared, boolean hasDropped,
-                         int consecutiveMissedTurns, int turnsCompleted, Instant lastActionAt) {
+                         int consecutiveMissedTurns, int turnsCompleted, int extraTimeSeconds, Instant lastActionAt) {
+        this.extraTimeSeconds = extraTimeSeconds;
         this.hand.clear();
         this.hand.addAll(hand);
         this.lastHand = new ArrayList<>(lastHand);
@@ -265,6 +269,14 @@ public final class PlayerState implements Serializable {
 
     public int getTurnsCompleted() {
         return turnsCompleted;
+    }
+
+    public int getExtraTimeSeconds() {
+        return extraTimeSeconds;
+    }
+
+    public void setExtraTimeSeconds(int extraTimeSeconds) {
+        this.extraTimeSeconds = Math.max(0, extraTimeSeconds);
     }
 
     public Instant getLastActionAt() {

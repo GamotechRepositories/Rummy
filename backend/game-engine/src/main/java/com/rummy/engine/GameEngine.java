@@ -6,8 +6,10 @@ import com.rummy.engine.model.*;
 import com.rummy.engine.rules.DeclarationResult;
 import com.rummy.engine.rules.RummyRules;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.*;
+import java.util.random.RandomGenerator;
 
 /**
  * Server-authoritative in-memory Game Engine.
@@ -19,6 +21,21 @@ import java.util.*;
 public final class GameEngine {
 
     public static final long DEFAULT_TURN_TIMEOUT_SECONDS = 30L;
+    /** Extra-time bank each player gets per deal, spent in one go when a turn's normal time runs out. */
+    public static final int DEFAULT_EXTRA_TIME_SECONDS = 30;
+
+    /** Picks who plays first on a table's first deal (the toss). */
+    private final RandomGenerator tossRandom;
+    private final int extraTimeSeconds;
+
+    public GameEngine() {
+        this(new SecureRandom(), DEFAULT_EXTRA_TIME_SECONDS);
+    }
+
+    public GameEngine(RandomGenerator tossRandom, int extraTimeSeconds) {
+        this.tossRandom = Objects.requireNonNull(tossRandom, "tossRandom must not be null");
+        this.extraTimeSeconds = Math.max(0, extraTimeSeconds);
+    }
 
     public EngineResult process(GameState state, GameCommand command, RummyRules rules) {
         Objects.requireNonNull(state, "GameState must not be null");
@@ -85,7 +102,8 @@ public final class GameEngine {
 
     private EngineResult handleStartGame(GameState state, StartGameCommand cmd, RummyRules rules) {
         // Rematch / Play Next Deal after a finished hand
-        if (state.getStatus() == GameStatus.COMPLETED || state.getStatus() == GameStatus.ABORTED) {
+        boolean rematch = state.getStatus() == GameStatus.COMPLETED || state.getStatus() == GameStatus.ABORTED;
+        if (rematch) {
             long nonEliminatedCount = state.getPlayers().stream()
                     .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
                     .count();
@@ -134,6 +152,7 @@ public final class GameEngine {
             if (player.getStatus() != PlayerStatus.ELIMINATED) {
                 player.addCards(deck.drawBatch(rules.getCardsPerPlayer()));
                 player.setStatus(PlayerStatus.ACTIVE);
+                player.setExtraTimeSeconds(extraTimeSeconds);
             }
         }
 
@@ -141,17 +160,26 @@ public final class GameEngine {
         CardInstance initialDiscard = deck.draw();
         state.addToDiscardPile(initialDiscard);
 
-        // First player starts from dealer seat index (rotates across deals)
         List<PlayerState> activePlayers = state.getPlayers().stream()
                 .filter(p -> p.getStatus() == PlayerStatus.ACTIVE)
                 .sorted(Comparator.comparingInt(PlayerState::getSeatIndex))
                 .toList();
 
-        int targetSeat = state.getDealerSeatIndex();
-        PlayerState firstPlayer = activePlayers.stream()
-                .filter(p -> p.getSeatIndex() >= targetSeat)
-                .findFirst()
-                .orElse(activePlayers.get(0));
+        PlayerState firstPlayer;
+        if (!rematch && state.getDealNumber() <= 1) {
+            // First deal at this table: a random toss decides who plays first; the dealer sits just before them.
+            int first = tossRandom.nextInt(activePlayers.size());
+            firstPlayer = activePlayers.get(first);
+            int dealer = (first - 1 + activePlayers.size()) % activePlayers.size();
+            state.setDealerSeatIndex(activePlayers.get(dealer).getSeatIndex());
+        } else {
+            // Later deals: the dealer has rotated; the player after the dealer plays first.
+            int dealerSeat = state.getDealerSeatIndex();
+            firstPlayer = activePlayers.stream()
+                    .filter(p -> p.getSeatIndex() > dealerSeat)
+                    .findFirst()
+                    .orElse(activePlayers.get(0));
+        }
 
         // Account for dealing animation so the first player's turn timer starts after card distribution
         int totalCardsDealt = (int) (state.getPlayers().stream().filter(p -> p.getStatus() == PlayerStatus.ACTIVE).count() * rules.getCardsPerPlayer());
@@ -215,9 +243,7 @@ public final class GameEngine {
             if (state.getDiscardPile().isEmpty()) {
                 return EngineResult.failure(state, "Discard pile is empty");
             }
-            CardInstance topCard = state.getDiscardPile().get(state.getDiscardPile().size() - 1);
-            Card cutCard = state.getCutJoker() != null ? state.getCutJoker().getCard() : null;
-            if (topCard.isPrintedJoker() || (cutCard != null && topCard.getCard().isWildJoker(cutCard))) {
+            if (!state.isTopDiscardPickable()) {
                 return EngineResult.failure(state, "Cannot pick a joker from the open discard pile");
             }
             drawnCard = state.takeTopDiscard();
@@ -309,6 +335,9 @@ public final class GameEngine {
         }
         if (!player.hasCard(cmd.finishCardInstanceId())) {
             return EngineResult.failure(state, "Finish card " + cmd.finishCardInstanceId() + " not found in hand");
+        }
+        if (turn.isDrawnFromDiscard() && cmd.finishCardInstanceId().equals(turn.getDrawnCardInstanceId())) {
+            return EngineResult.failure(state, "Cannot finish with the card you just picked from the open discard pile");
         }
         if (!groupsMatchHandWithoutFinish(cmd, player)) {
             return EngineResult.failure(state, "Declared groups must contain each of your other "
@@ -465,6 +494,13 @@ public final class GameEngine {
         }
 
         PlayerState player = state.requirePlayer(cmd.playerId());
+        if (!turn.isExtraTime() && player.getExtraTimeSeconds() > 0) {
+            // Normal time is up: continue the same turn on the player's extra-time bank.
+            Instant extendedDeadline = cmd.timestamp().plusSeconds(player.getExtraTimeSeconds());
+            player.setExtraTimeSeconds(0);
+            state.setTurnState(turn.withExtraTime(extendedDeadline));
+            return EngineResult.success(state, List.of());
+        }
         player.incrementMissedTurns();
 
         List<GameEvent> events = new ArrayList<>();

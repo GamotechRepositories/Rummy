@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class GameEngineTest {
 
-    private final GameEngine engine = new GameEngine();
+    private final GameEngine engine = new GameEngine(() -> 0L, 0);
     private final PointsRummyRules rules = new PointsRummyRules();
 
     @Test

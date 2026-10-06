@@ -928,7 +928,8 @@ public final class TableActor {
                     tournamentWinnerId,
                     stakeTier,
                     new ArrayList<>(lastEliminatedNames),
-                    effectiveTotalDeals
+                    effectiveTotalDeals,
+                    stakeTier
             );
             // Serialize under the table lock: the view references live state that the next command mutates.
             try {

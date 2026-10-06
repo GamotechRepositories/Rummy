@@ -3,7 +3,6 @@ import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { CardView } from './CardView';
 import { checkOverallDeclaration } from '../rules/clientValidator';
-import confetti from 'canvas-confetti';
 import { Award, AlertTriangle, X } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 
@@ -33,21 +32,13 @@ export const DeclareModal: React.FC = () => {
     .filter((g) => g.cards.length > 0);
 
   const evaluation = checkOverallDeclaration(remainingGroups, gameState.cutJoker, gameState.rulesetId);
+  const finishIsPickedOpenCard =
+    !!gameState.isDrawnFromDiscard && !!finishCardId && finishCardId === gameState.drawnCardInstanceId;
 
   const handleConfirmDeclare = () => {
-    if (!finishCardId) return;
+    if (!finishCardId || finishIsPickedOpenCard) return;
 
-    if (evaluation.isValid) {
-      soundEngine.play('win');
-      confetti({
-        particleCount: 120,
-        spread: 70,
-        origin: { y: 0.6 },
-      });
-    } else {
-      soundEngine.play('error');
-    }
-
+    soundEngine.play(evaluation.isValid ? 'click' : 'error');
     socketClient.declare(finishCardId, remainingGroups);
     setDeclareModalOpen(false);
   };
@@ -117,7 +108,25 @@ export const DeclareModal: React.FC = () => {
           </div>
         )}
 
-        {evaluation.isValid ? (
+        {finishIsPickedOpenCard ? (
+          <div
+            style={{
+              padding: '12px 16px',
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid var(--color-invalid)',
+              borderRadius: '10px',
+              color: '#fca5a5',
+              fontSize: '13px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+            }}
+          >
+            <AlertTriangle size={18} color="var(--color-invalid)" />
+            <span>You cannot finish with the card you just picked from the open pile. Choose another card.</span>
+          </div>
+        ) : evaluation.isValid ? (
           <div
             style={{
               padding: '12px 16px',
@@ -170,7 +179,9 @@ export const DeclareModal: React.FC = () => {
             id="btn-confirm-declare"
             className="btn-primary"
             onClick={handleConfirmDeclare}
+            disabled={finishIsPickedOpenCard}
             style={{
+              opacity: finishIsPickedOpenCard ? 0.5 : 1,
               background: evaluation.isValid
                 ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
                 : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',

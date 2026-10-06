@@ -35,7 +35,7 @@ class TableActorTest {
         scheduler = Executors.newSingleThreadScheduledExecutor();
         Deck deck = Deck.createStandard13CardDeck();
         GameState initialState = new GameState("G_TEST", "T_TEST", "POINTS_13", "1.0.0", List.of(), deck);
-        tableActor = new TableActor("T_TEST", initialState, new PointsRummyRules(), new GameEngine(), objectMapper, scheduler);
+        tableActor = new TableActor("T_TEST", initialState, new PointsRummyRules(), new GameEngine(() -> 0L, 0), objectMapper, scheduler);
     }
 
     @AfterEach
@@ -120,7 +120,7 @@ class TableActorTest {
     void testPoolRummyMultiDealAndElimination() {
         Deck deck = Deck.createStandard13CardDeck();
         GameState poolState = new GameState("G_POOL", "T_POOL", "POOL_101", "1.0.0", List.of(), deck);
-        TableActor poolActor = new TableActor("T_POOL", poolState, new com.rummy.engine.rules.Pool101Rules(), new GameEngine(), objectMapper, scheduler);
+        TableActor poolActor = new TableActor("T_POOL", poolState, new com.rummy.engine.rules.Pool101Rules(), new GameEngine(() -> 0L, 0), objectMapper, scheduler);
 
         Instant now = Instant.now();
         poolActor.processCommand(new JoinCommand("c1", "G_POOL", "P1", "Player 1", 0, false, now), "req-1");
@@ -170,7 +170,7 @@ class TableActorTest {
     void testPoolRummyRejoinRejectedWhenMatchFinished() {
         Deck deck = Deck.createStandard13CardDeck();
         GameState poolState = new GameState("G_POOL_END", "T_POOL_END", "POOL_101", "1.0.0", List.of(), deck);
-        TableActor poolActor = new TableActor("T_POOL_END", poolState, new com.rummy.engine.rules.Pool101Rules(), new GameEngine(), objectMapper, scheduler);
+        TableActor poolActor = new TableActor("T_POOL_END", poolState, new com.rummy.engine.rules.Pool101Rules(), new GameEngine(() -> 0L, 0), objectMapper, scheduler);
 
         Instant now = Instant.now();
         poolActor.processCommand(new JoinCommand("c1", "G_POOL_END", "P1", "Player 1", 0, false, now), "req-1");
@@ -199,7 +199,7 @@ class TableActorTest {
     void testDealsRummyMultiDealChipsAndProgression() {
         Deck deck = Deck.createStandard13CardDeck();
         GameState dealsState = new GameState("G_DEALS", "T_DEALS", "DEALS_2", "1.0.0", List.of(), deck);
-        TableActor dealsActor = new TableActor("T_DEALS", dealsState, new DealsRummyRules(2), new GameEngine(), objectMapper, scheduler);
+        TableActor dealsActor = new TableActor("T_DEALS", dealsState, new DealsRummyRules(2), new GameEngine(() -> 0L, 0), objectMapper, scheduler);
 
         Instant now = Instant.now();
         dealsActor.processCommand(new JoinCommand("c1", "G_DEALS", "P1", "Player 1", 0, false, now), "req-1");
@@ -279,7 +279,7 @@ class TableActorTest {
     void testDealsTieBreakerAndUnderflowProtection() {
         Deck deck = Deck.createStandard13CardDeck();
         GameState dealsState = new GameState("G_TIE", "T_TIE", "DEALS_2", "1.0.0", List.of(), deck);
-        TableActor actor = new TableActor("T_TIE", dealsState, new DealsRummyRules(2), new GameEngine(), objectMapper, scheduler);
+        TableActor actor = new TableActor("T_TIE", dealsState, new DealsRummyRules(2), new GameEngine(() -> 0L, 0), objectMapper, scheduler);
 
         Instant now = Instant.now();
         actor.processCommand(new JoinCommand("c1", "G_TIE", "P1", "Player 1", 0, false, now), "r1");

@@ -25,8 +25,6 @@ import java.util.Optional;
 @RequestMapping("/api/matchmaking")
 public class MatchmakingController {
 
-    private static final int MAX_STAKE_TIER = 100_000;
-
     static final String TEST_POOL = "test";
 
     private final MatchmakingService matchmakingService;
@@ -47,14 +45,23 @@ public class MatchmakingController {
         request.setPlayerId(AuthenticatedPlayer.resolve(httpRequest, request.getPlayerId()));
         request.setPool(isTestPlayer(request.getPlayerId()) ? TEST_POOL : null);
 
-        if (request.getStakeTier() < 0 || request.getStakeTier() > MAX_STAKE_TIER
-                || request.getMaxPlayers() < 2 || request.getMaxPlayers() > 6) {
+        Optional<String> ruleset = StakeTiers.offeredRuleset(request.getRulesetId());
+        if (ruleset.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of(
                     "success", false,
                     "error", "INVALID_REQUEST",
-                    "message", "stakeTier must be 0-" + MAX_STAKE_TIER + " and maxPlayers 2-6"
+                    "message", "This game variant is not offered"
             ));
         }
+        if (!StakeTiers.isOffered(ruleset.get(), request.getStakeTier(), request.getMaxPlayers())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "INVALID_REQUEST",
+                    "message", "Choose one of the offered tables: stakes " + StakeTiers.stakesFor(ruleset.get())
+                            + ", 2 or 6 players"
+            ));
+        }
+        request.setRulesetId(ruleset.get());
 
         try {
             MatchmakingTicket ticket = matchmakingService.enqueue(request);

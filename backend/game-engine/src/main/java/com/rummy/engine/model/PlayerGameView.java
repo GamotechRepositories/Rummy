@@ -59,7 +59,13 @@ public record PlayerGameView(
         String drawnCardInstanceId,
         boolean isDrawnFromDiscard,
         /** Dropping now would cost the first-drop penalty (no turn played or missed yet). */
-        boolean firstDropAvailable
+        boolean firstDropAvailable,
+        /** Entry stake of a paid table in rupees (points tables: the most a player can lose). 0 for free tables. */
+        int stakeTier,
+        /** The current turn has run past its normal time and is on the active player's extra-time bank. */
+        boolean inExtraTime,
+        /** The active player may take the open card now (jokers only as the deal's first open card). */
+        boolean topDiscardPickable
 ) implements Serializable {
 
     public PlayerGameView(
@@ -77,7 +83,7 @@ public record PlayerGameView(
                 winningGroups, viewerSeatIndex, rulesetId, dealNumber, eliminationThreshold, viewerCumulativeScore, viewerIsEliminated,
                 standings, dealHistory, nextDealCountdown, tournamentWinnerId, dealerSeatIndex, canRejoin, rejoinScore, rejoinFee,
                 freshlyEliminatedNames, totalDeals, viewerChipBalance, hasTakenFirstTurn, drawnCardInstanceId, isDrawnFromDiscard,
-                !hasTakenFirstTurn);
+                !hasTakenFirstTurn, 0, false, false);
     }
 
     public record OpponentView(
@@ -401,6 +407,20 @@ public record PlayerGameView(
                                       int rejoinFee,
                                       List<String> freshlyEliminatedNames,
                                       int totalDeals) {
+        return from(state, viewerPlayerId, eliminationThreshold, dealHistory, nextDealCountdown, tournamentWinnerId,
+                rejoinFee, freshlyEliminatedNames, totalDeals, 0);
+    }
+
+    public static PlayerGameView from(GameState state,
+                                      String viewerPlayerId,
+                                      int eliminationThreshold,
+                                      List<DealScoreRecord> dealHistory,
+                                      Integer nextDealCountdown,
+                                      String tournamentWinnerId,
+                                      int rejoinFee,
+                                      List<String> freshlyEliminatedNames,
+                                      int totalDeals,
+                                      int stakeTier) {
         Objects.requireNonNull(state, "state must not be null");
         Objects.requireNonNull(viewerPlayerId, "viewerPlayerId must not be null");
 
@@ -527,7 +547,10 @@ public record PlayerGameView(
                 viewer.hasTakenFirstTurn(),
                 drawnCardInstanceId,
                 isDrawnFromDiscard,
-                !viewer.hasTakenFirstTurn() && viewer.getConsecutiveMissedTurns() == 0
+                !viewer.hasTakenFirstTurn() && viewer.getConsecutiveMissedTurns() == 0,
+                stakeTier,
+                turn != null && turn.isExtraTime(),
+                state.getStatus() == GameStatus.IN_PROGRESS && state.isTopDiscardPickable()
         );
     }
 }

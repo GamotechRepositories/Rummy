@@ -407,6 +407,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 }
             }
             case "START_GAME" -> {
+                // Next deals are dealt by the server; a finished match must never be restarted by a client.
+                if (tableActor.getState().getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
+                    sendError(session, "GAME_ALREADY_STARTED", "This game has already been dealt", reqId);
+                    return;
+                }
                 StartGameCommand cmd = new StartGameCommand(reqId, gameId, playerId, now);
                 tableActor.processCommand(cmd, reqId);
             }

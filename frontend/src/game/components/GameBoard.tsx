@@ -241,7 +241,7 @@ export const GameBoard: React.FC = () => {
   const prevDealRef = useRef<number | null>(null);
 
   const rawRulesetId = (gameState?.rulesetId ?? lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
-  const entryFee = lastGameConfig?.entryFee ?? 8;
+  const entryFee = gameState?.stakeTier || lastGameConfig?.entryFee || 8;
   const maxSeats = lastGameConfig?.maxPlayers ?? Math.max(2, opponents.length + 1);
   const isPointsRummy = rawRulesetId.includes('POINT');
   const isRummy21 = rawRulesetId.includes('21');
@@ -292,12 +292,16 @@ export const GameBoard: React.FC = () => {
     (gameState?.totalDeals && gameState.totalDeals > 1)
   );
 
-  const pointValue = entryFee / 80;
-  const stakeLabel = isPointsRummy
+  const isPointsTable = isPointsRummy || isRummy21;
+  const pointValue = entryFee / (isRummy21 ? 120 : 80);
+  const stakeLabel = isPointsTable
     ? `₹${pointValue >= 1 ? pointValue.toFixed(0) : pointValue.toFixed(2)}/pt`
     : `Entry ₹${entryFee}`;
 
-  const totalPot = ((opponents.length + 1) * entryFee).toFixed(2);
+  // Points tables have no pot: each loser pays their own points; the stake is the most anyone can lose.
+  const potLabel = isPointsTable ? 'MAX LOSS ' : 'POT ';
+  const potAmount = (isPointsTable ? entryFee : (opponents.length + 1) * entryFee).toFixed(2);
+  const leaveRupees = isPointsTable ? (leavePenalty * pointValue).toFixed(2) : null;
 
   if (!gameState) {
     return (
@@ -399,7 +403,7 @@ export const GameBoard: React.FC = () => {
                 )}
                 <span className="board-info-sep" aria-hidden />
                 <span className="board-info-pot">
-                  <span className="board-info-pot-label">POT </span>₹{totalPot}
+                  <span className="board-info-pot-label">{potLabel}</span>₹{potAmount}
                 </span>
                 <span
                   className={`board-info-live${
@@ -631,7 +635,7 @@ export const GameBoard: React.FC = () => {
               </div>
 
               <div className="table-menu-rows" style={{ textAlign: 'left' }}>
-                {isPointsRummy ? (
+                {isPointsTable ? (
                   <div className="table-menu-row">
                     <span>Point value</span>
                     <span className="table-menu-value--gold">{stakeLabel}</span>
@@ -652,7 +656,7 @@ export const GameBoard: React.FC = () => {
                 </div>
               </div>
 
-              {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped && (
+              {gameState?.gameStatus === 'IN_PROGRESS' && gameState?.viewerStatus === 'ACTIVE' && (
                 <div className="royal-dialog-penalty-box">
                   <div className="royal-dialog-penalty-label">
                     <span className="royal-dialog-penalty-tag">
@@ -663,6 +667,7 @@ export const GameBoard: React.FC = () => {
                       {leaveCountsAsDrop
                         ? (leaveOnFirstTurn ? 'First drop points will apply' : 'Middle drop points will apply')
                         : 'Max penalty points will apply'}
+                      {leaveRupees !== null && ` · You lose ₹${leaveRupees}`}
                     </span>
                   </div>
                   <div className="royal-dialog-penalty-badge">

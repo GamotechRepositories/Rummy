@@ -46,7 +46,8 @@ public record GameStateSnapshot(
             boolean dropped,
             int consecutiveMissedTurns,
             int turnsCompleted,
-            String lastActionAt) {
+            String lastActionAt,
+            int extraTimeSeconds) {
     }
 
     public record Turn(
@@ -56,6 +57,7 @@ public record GameStateSnapshot(
             String startedAt,
             String deadline,
             String drawnCardInstanceId,
-            boolean drawnFromDiscard) {
+            boolean drawnFromDiscard,
+            boolean extraTime) {
     }
 }

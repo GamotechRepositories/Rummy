@@ -10,6 +10,8 @@ interface TurnTimerRingProps {
   showText?: boolean;
   showBadge?: boolean;
   enableTickSound?: boolean;
+  /** The turn is running on the player's extra-time bank. */
+  extraTime?: boolean;
 }
 
 export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
@@ -20,6 +22,7 @@ export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
   showText = false,
   showBadge = false,
   enableTickSound = false,
+  extraTime = false,
 }) => {
   const getTimerState = () => {
     if (!turnDeadline) return { secs: 0, ratio: 0 };
@@ -237,6 +240,28 @@ export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
       {showText && (
         <span className={`turn-timer-center-text turn-timer-center-text--${phase}`}>
           {secondsRemaining}
+        </span>
+      )}
+
+      {extraTime && (
+        <span
+          style={{
+            position: 'absolute',
+            bottom: '-6px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '1px 6px',
+            borderRadius: '6px',
+            background: 'rgba(245, 158, 11, 0.9)',
+            color: '#1f1300',
+            fontSize: '9px',
+            fontWeight: 900,
+            letterSpacing: '0.4px',
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+          }}
+        >
+          EXTRA TIME
         </span>
       )}
     </div>

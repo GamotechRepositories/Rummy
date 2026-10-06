@@ -102,6 +102,11 @@ export const ActionControls: React.FC = () => {
     : isPool201
       ? (isFirstTurn ? 25 : 50)
       : (isFirstTurn ? 20 : 40);
+  const isPointsTable = isRummy21 || (gameState.rulesetId ?? '').toUpperCase().includes('POINT');
+  const tableStake = gameState.stakeTier || lastGameConfig?.entryFee || 0;
+  const dropRupees = isPointsTable && tableStake > 0
+    ? (dropPenaltyPoints * tableStake) / (isRummy21 ? 120 : 80)
+    : null;
 
   const handleOpenDeclare = () => {
     if (selectedCardIds.length !== 1) return;
@@ -120,6 +125,7 @@ export const ActionControls: React.FC = () => {
   };
 
   const isTopDiscardJoker = !!(gameState.topDiscard && isJoker(gameState.topDiscard, wildJoker));
+  const openCardPickable = gameState.topDiscardPickable ?? !isTopDiscardJoker;
 
   const handleDraw = (source: 'CLOSED_DECK' | 'DISCARD_PILE') => {
     if (!drawPhase) {
@@ -127,7 +133,7 @@ export const ActionControls: React.FC = () => {
       return;
     }
     if (source === 'DISCARD_PILE') {
-      if (isTopDiscardJoker) {
+      if (!openCardPickable) {
         soundEngine.play('error');
         return;
       }
@@ -210,6 +216,7 @@ export const ActionControls: React.FC = () => {
                   strokeWidth={4.5}
                   showBadge={false}
                   enableTickSound={true}
+                  extraTime={!!gameState.inExtraTime}
                 />
               </div>
             )}
@@ -430,8 +437,8 @@ export const ActionControls: React.FC = () => {
                 type="button"
                 className="bcb-action"
                 onClick={() => handleDraw('DISCARD_PILE')}
-                disabled={!drawPhase || !gameState.topDiscard || isTopDiscardJoker}
-                title={isTopDiscardJoker ? 'Cannot pick a joker from the open discard pile' : undefined}
+                disabled={!drawPhase || !gameState.topDiscard || !openCardPickable}
+                title={!openCardPickable ? 'Cannot pick a joker from the open discard pile' : undefined}
               >
                 <ArrowDownToLine size={18} />
                 Open
@@ -511,7 +518,9 @@ export const ActionControls: React.FC = () => {
 
                 <h3 className="royal-dialog-title">Drop This Hand?</h3>
                 <p className="royal-dialog-subtitle">
-                  You will fold this hand safely and sit out until the next deal starts.
+                  {isPointsTable
+                    ? 'You give up this hand. The penalty is settled when the hand ends.'
+                    : 'You will fold this hand and sit out until the next deal starts.'}
                 </p>
               </div>
 
@@ -527,7 +536,9 @@ export const ActionControls: React.FC = () => {
                       {isFirstTurn ? 'FIRST DROP PENALTY' : 'MIDDLE DROP PENALTY'}
                     </span>
                     <span className="royal-dialog-penalty-desc">
-                      Will be added to your score
+                      {dropRupees !== null
+                        ? `You lose ₹${dropRupees.toFixed(2)}`
+                        : 'Will be added to your score'}
                     </span>
                   </div>
                   <div className="royal-dialog-penalty-badge">

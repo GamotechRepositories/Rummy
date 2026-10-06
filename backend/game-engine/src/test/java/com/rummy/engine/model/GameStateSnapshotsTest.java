@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DisplayName("Game state snapshots")
 class GameStateSnapshotsTest {
 
-    private final GameEngine engine = new GameEngine();
+    private final GameEngine engine = new GameEngine(() -> 0L, 0);
     private final PointsRummyRules rules = new PointsRummyRules();
 
     @Test

@@ -16,6 +16,8 @@ public final class TurnState implements Serializable {
     private final Instant turnDeadline;
     private final String drawnCardInstanceId;
     private final boolean drawnFromDiscard;
+    /** The player ran out of normal turn time and is now using their extra-time bank. */
+    private final boolean extraTime;
 
     public TurnState(int turnNumber,
                      String currentPlayerId,
@@ -24,6 +26,18 @@ public final class TurnState implements Serializable {
                      Instant turnDeadline,
                      String drawnCardInstanceId,
                      boolean drawnFromDiscard) {
+        this(turnNumber, currentPlayerId, phase, turnStartedAt, turnDeadline, drawnCardInstanceId, drawnFromDiscard, false);
+    }
+
+    public TurnState(int turnNumber,
+                     String currentPlayerId,
+                     TurnPhase phase,
+                     Instant turnStartedAt,
+                     Instant turnDeadline,
+                     String drawnCardInstanceId,
+                     boolean drawnFromDiscard,
+                     boolean extraTime) {
+        this.extraTime = extraTime;
         this.turnNumber = turnNumber;
         this.currentPlayerId = Objects.requireNonNull(currentPlayerId, "currentPlayerId must not be null");
         this.phase = Objects.requireNonNull(phase, "phase must not be null");
@@ -49,7 +63,13 @@ public final class TurnState implements Serializable {
             throw new IllegalStateException("Cannot draw card when phase is " + this.phase);
         }
         return new TurnState(this.turnNumber, this.currentPlayerId, TurnPhase.AWAITING_DISCARD,
-                this.turnStartedAt, this.turnDeadline, cardInstanceId, fromDiscard);
+                this.turnStartedAt, this.turnDeadline, cardInstanceId, fromDiscard, this.extraTime);
+    }
+
+    /** Same turn and phase, continued on the player's extra time until {@code deadline}. */
+    public TurnState withExtraTime(Instant deadline) {
+        return new TurnState(this.turnNumber, this.currentPlayerId, this.phase,
+                this.turnStartedAt, deadline, this.drawnCardInstanceId, this.drawnFromDiscard, true);
     }
 
     /**
@@ -101,6 +121,10 @@ public final class TurnState implements Serializable {
 
     public boolean isDrawnFromDiscard() {
         return drawnFromDiscard;
+    }
+
+    public boolean isExtraTime() {
+        return extraTime;
     }
 
     @Override

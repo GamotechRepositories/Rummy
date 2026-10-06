@@ -86,6 +86,20 @@ public class MockOperatorController {
 
     @EventListener(ApplicationReadyEvent.class)
     public void register() {
+        saveOperator();
+        log.warn("[MockOperator] ENABLED - test money only{}. Open {}/mock-operator/",
+                accessKey.isEmpty() ? "" : " (access key required)", baseUrl);
+    }
+
+    /** Re-creates the operator if its document was deleted while the server was running. */
+    private void ensureRegistered() {
+        if (registry.find(OPERATOR_ID).isEmpty()) {
+            saveOperator();
+            log.warn("[MockOperator] Operator document was missing; registered it again");
+        }
+    }
+
+    private synchronized void saveOperator() {
         OperatorDocument doc = registry.find(OPERATOR_ID).orElse(null);
         Instant now = Instant.now();
         if (doc == null) {
@@ -108,8 +122,6 @@ public class MockOperatorController {
         registry.save(doc);
         secret = doc.getSecret();
         walletClient.useLocalWalletUrl(OPERATOR_ID, walletUrl);
-        log.warn("[MockOperator] ENABLED - test money only{}. Open {}/mock-operator/",
-                accessKey.isEmpty() ? "" : " (access key required)", baseUrl);
     }
 
     @GetMapping(value = {"", "/"}, produces = MediaType.TEXT_HTML_VALUE)
@@ -123,6 +135,7 @@ public class MockOperatorController {
                     + (key != null ? "<p class='error'>That key is not right.</p>" : "")
                     + "</section>");
         }
+        ensureRegistered();
         String hiddenKey = hidden("key", key);
         StringBuilder rows = new StringBuilder();
         int count = 0;
@@ -145,21 +158,26 @@ public class MockOperatorController {
                 : "<ul class='players'>" + rows + "</ul>";
         return page("<section class='card'><h2>New player</h2>"
                 + "<form class='grid' method='get' action='/mock-operator/play'>" + hiddenKey
-                + "<label>Player id<input name='player' required pattern='[A-Za-z0-9_.@:-]{1,64}' placeholder='alice' autofocus></label>"
-                + "<label>Display name<input name='name' maxlength='20' placeholder='Alice'></label>"
+                + "<label>Player id<input name='player' pattern='[A-Za-z0-9_.@:-]{1,64}' placeholder='Leave empty for a new one' autofocus></label>"
+                + "<label>Display name<input name='name' maxlength='20' placeholder='Optional'></label>"
                 + "<button class='btn gold'>Play</button></form>"
-                + "<p class='muted'>New players start with ₹" + rupees(STARTING_BALANCE_PAISE).replace(".00", "")
+                + "<p class='muted'>Use the same player id to come back as that player. New players start with ₹" + rupees(STARTING_BALANCE_PAISE).replace(".00", "")
                 + " of test money. Use a second browser or a private window to play as another player at the same table.</p></section>"
                 + "<section class='card'><h2>Test players <span class='count'>" + count + "</span></h2>" + list + "</section>");
     }
 
     @GetMapping("/play")
-    public ResponseEntity<?> play(@RequestParam String player,
+    public ResponseEntity<?> play(@RequestParam(required = false) String player,
                                   @RequestParam(required = false) String name,
                                   @RequestParam(required = false) String key) {
         if (!keyOk(key)) {
             return ResponseEntity.notFound().build();
         }
+        ensureRegistered();
+        if (player == null || player.isBlank()) {
+            player = "tester" + (1000 + new SecureRandom().nextInt(9000));
+        }
+        player = player.trim();
         try {
             String displayName = name != null && !name.isBlank() ? name : player;
             OperatorLaunchService.Launch launch = launches.launch(OPERATOR_ID, player, displayName);

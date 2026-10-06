@@ -171,6 +171,7 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
             turnDeadline={turnDeadline ?? null}
             strokeWidth={4.5}
             showBadge={false}
+            extraTime={!!gameState?.inExtraTime}
           />
         </div>
       )}

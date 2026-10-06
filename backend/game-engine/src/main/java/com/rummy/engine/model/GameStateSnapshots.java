@@ -40,13 +40,13 @@ public final class GameStateSnapshots {
                     ids(p.getHandSnapshot()), ids(p.lastHandSnapshot()), p.getStatus().name(),
                     p.getScore(), p.getCumulativeScore(), p.getChipBalance(),
                     p.isHasDeclared(), p.isHasDropped(), p.getConsecutiveMissedTurns(), p.getTurnsCompleted(),
-                    instant(p.getLastActionAt())));
+                    instant(p.getLastActionAt()), p.getExtraTimeSeconds()));
         }
         TurnState t = s.getTurnState();
         GameStateSnapshot.Turn turn = t == null ? null : new GameStateSnapshot.Turn(
                 t.getTurnNumber(), t.getCurrentPlayerId(), t.getPhase().name(),
                 instant(t.getTurnStartedAt()), instant(t.getTurnDeadline()),
-                t.getDrawnCardInstanceId(), t.isDrawnFromDiscard());
+                t.getDrawnCardInstanceId(), t.isDrawnFromDiscard(), t.isExtraTime());
         List<List<String>> winningGroups = null;
         if (s.getWinningGroups() != null) {
             winningGroups = new ArrayList<>();
@@ -76,13 +76,13 @@ public final class GameStateSnapshots {
             PlayerState player = new PlayerState(p.playerId(), p.displayName(), p.seatIndex(), p.bot(), p.avatarId());
             player.restoreProgress(cards(p.hand()), cards(p.lastHand()), PlayerStatus.valueOf(p.status()),
                     p.score(), p.cumulativeScore(), p.chipBalance(), p.declared(), p.dropped(),
-                    p.consecutiveMissedTurns(), p.turnsCompleted(), instant(p.lastActionAt()));
+                    p.consecutiveMissedTurns(), p.turnsCompleted(), p.extraTimeSeconds(), instant(p.lastActionAt()));
             players.add(player);
         }
         GameStateSnapshot.Turn t = snap.turn();
         TurnState turn = t == null ? null : new TurnState(t.turnNumber(), t.currentPlayerId(),
                 TurnPhase.valueOf(t.phase()), instant(t.startedAt()), instant(t.deadline()),
-                t.drawnCardInstanceId(), t.drawnFromDiscard());
+                t.drawnCardInstanceId(), t.drawnFromDiscard(), t.extraTime());
         List<CardGroup> winningGroups = null;
         if (snap.winningGroups() != null) {
             winningGroups = new ArrayList<>();
