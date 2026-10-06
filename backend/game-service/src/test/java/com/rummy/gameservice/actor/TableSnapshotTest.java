@@ -71,7 +71,7 @@ class TableSnapshotTest {
         RummyRules pool = RulesetRegistry.requireRuleset("POOL_101");
         TableActor original = dealtTable("TBL_POOL", pool, true);
         String gameId = original.getState().getGameId();
-        original.processCommand(new DropCommand("drop", gameId, "P1", Instant.now()), "drop");
+        TurnTestSupport.dropOnTurn(original, "drop", "P1");
         assertThat(original.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
         assertThat(original.isLive()).as("next deal pending").isTrue();
 
@@ -101,7 +101,7 @@ class TableSnapshotTest {
         assertThat(waiting.captureSnapshot()).isEmpty();
 
         TableActor finished = dealtTable("TBL_DONE", RulesetRegistry.requireRuleset("POINTS_13"), false);
-        finished.processCommand(new DropCommand("d", finished.getState().getGameId(), "P2", Instant.now()), "drop");
+        TurnTestSupport.dropOnTurn(finished, "d", "P2");
         assertThat(finished.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
         assertThat(finished.captureSnapshot()).isEmpty();
     }

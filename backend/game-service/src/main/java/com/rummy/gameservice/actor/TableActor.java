@@ -877,6 +877,9 @@ public final class TableActor {
                         persistenceService.recordGameFinished(state, tableId);
                     }
                     settleMatchWallet(finishedEvent.winnerPlayerId(), finishedEvent.finalScores(), requestId);
+                    for (String leaver : voluntaryAbandoners) {
+                        state.getPlayer(leaver).ifPresent(PlayerState::markEliminated);
+                    }
                     if (sessionService != null) {
                         sessionService.clearAllHumanBindings(tableId);
                         log.info("[TableActor:{}] Cleared player session bindings after game finish", tableId);
@@ -1526,8 +1529,15 @@ public final class TableActor {
             if (p.getStatus() == PlayerStatus.ACTIVE && state.getStatus() == GameStatus.IN_PROGRESS) {
                 processCommand(new DropCommand(reqId, state.getGameId(), playerId, Instant.now(), true), "LEAVE_FORFEIT");
             }
-            p.markEliminated();
-            log.info("[TableActor:{}] Player {} marked eliminated upon voluntary leave", tableId, playerId);
+            boolean pointsHandOpen = !rules.isEliminationGame() && !rules.isDealsGame()
+                    && state.getStatus() == GameStatus.IN_PROGRESS && p.getStatus() == PlayerStatus.DROPPED;
+            if (pointsHandOpen) {
+                // Eliminated players score 0, so stay DROPPED until this hand is settled at the drop penalty.
+                log.info("[TableActor:{}] Player {} left; eliminated after this hand settles", tableId, playerId);
+            } else {
+                p.markEliminated();
+                log.info("[TableActor:{}] Player {} marked eliminated upon voluntary leave", tableId, playerId);
+            }
         }
     }
 

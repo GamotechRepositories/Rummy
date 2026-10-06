@@ -48,6 +48,7 @@ class CrashRefundMongoTest {
         dbName = "rummy_crash_test_" + UUID.randomUUID().toString().substring(0, 8);
         mongo = new MongoTemplate(client, dbName);
         wallet = new WalletService();
+        TestFunding.fund(wallet, "P1", "P2");
         survivorNode = new ClusterNodeService(new TableRoutingRegistry(null, "node-survivor"), mongo, 45);
         crashedNode = new ClusterNodeService(new TableRoutingRegistry(null, "node-crashed"), mongo, 45);
         survivor = new StakeEscrowService(mongo, wallet, survivorNode);
@@ -130,6 +131,6 @@ class CrashRefundMongoTest {
     }
 
     private BigDecimal balance(String playerId) {
-        return wallet.getOrCreateWallet(playerId).getFreePlayBalance();
+        return wallet.getOrCreateWallet(playerId).getBalance();
     }
 }

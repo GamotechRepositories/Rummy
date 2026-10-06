@@ -61,14 +61,28 @@ class ApiAuthFilterTest {
     }
 
     @Test
-    void guestEndpointIsPublic() throws Exception {
+    void operatorLaunchEndpointsArePublic() throws Exception {
+        for (String path : new String[]{"/api/operator/launch", "/api/operator/session"}) {
+            MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            MockFilterChain chain = new MockFilterChain();
+
+            filter.doFilter(request, response, chain);
+
+            assertThat(chain.getRequest()).as(path).isNotNull();
+        }
+    }
+
+    @Test
+    void guestLoginIsGone() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/auth/guest");
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
 
         filter.doFilter(request, response, chain);
 
-        assertThat(chain.getRequest()).isNotNull();
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(chain.getRequest()).isNull();
     }
 
     @Test

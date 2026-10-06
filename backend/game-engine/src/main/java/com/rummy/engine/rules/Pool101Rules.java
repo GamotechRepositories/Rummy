@@ -1,6 +1,7 @@
 package com.rummy.engine.rules;
 
 import com.rummy.engine.model.Card;
+import com.rummy.engine.model.CardInstance;
 
 import java.util.List;
 
@@ -120,6 +121,11 @@ public final class Pool101Rules implements RummyRules {
     @Override
     public int calculateLosingScore(List<CardGroup> groups, Card cutJoker) {
         return ScoreCalculator.calculateHandPoints(groups, cutJoker, maximumPenalty);
+    }
+
+    @Override
+    public int scoreLosingHand(List<CardInstance> hand, Card cutJoker) {
+        return ScoreCalculator.bestHandPoints(hand, cutJoker, maximumPenalty);
     }
 
     @Override

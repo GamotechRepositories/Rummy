@@ -137,6 +137,8 @@ export interface PlayerGameView {
   totalDeals?: number;
   viewerChipBalance?: number;
   hasTakenFirstTurn?: boolean;
+  /** Server-computed: dropping now costs the first-drop penalty. */
+  firstDropAvailable?: boolean;
   drawnCardInstanceId?: string | null;
   isDrawnFromDiscard?: boolean;
 }

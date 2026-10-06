@@ -10,6 +10,7 @@ import com.rummy.engine.model.GameStatus;
 import com.rummy.gameservice.cluster.ClusterNodeService;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
 import com.rummy.gameservice.wallet.StakeEscrowService;
+import com.rummy.gameservice.wallet.TestFunding;
 import com.rummy.gameservice.wallet.WalletService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -104,6 +105,7 @@ class TableReclaimTest {
     @DisplayName("A matched table nobody joined is dropped and its escrowed stakes refunded")
     void noShowTableRefunded() {
         WalletService wallet = new WalletService();
+        TestFunding.fund(wallet, "P1");
         StakeEscrowService escrows = new StakeEscrowService(null, wallet, new ClusterNodeService(routing, null, 45));
         manager.setEscrows(escrows);
         TableActor actor = manager.getOrCreateTable("TBL_MM_noshow", null);
@@ -114,7 +116,7 @@ class TableReclaimTest {
 
         assertThat(manager.reclaimIdleTables(Instant.now().plusSeconds(601))).isEqualTo(1);
 
-        assertThat(wallet.getOrCreateWallet("P1").getFreePlayBalance()).isEqualByComparingTo("1000");
+        assertThat(wallet.getOrCreateWallet("P1").getBalance()).isEqualByComparingTo("1000");
     }
 
     @Test
@@ -158,7 +160,7 @@ class TableReclaimTest {
         TableActor actor = seatedPointsTable(tableId);
         String gameId = actor.getState().getGameId();
         actor.processCommand(new StartGameCommand("s", gameId, "P1", Instant.now()), "start");
-        actor.processCommand(new DropCommand("d", gameId, "P2", Instant.now()), "drop");
+        TurnTestSupport.dropOnTurn(actor, "d", "P2");
         assertThat(actor.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
         return actor;
     }

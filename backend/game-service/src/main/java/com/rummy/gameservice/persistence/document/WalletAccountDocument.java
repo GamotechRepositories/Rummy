@@ -10,11 +10,15 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * MongoDB Wallet Account Document.
- * Supports Free-Play tokens and Real-Money balances with optimistic concurrency control (@Version).
+ * A player's INR balance as recorded by this platform, with optimistic concurrency control (@Version).
+ *
+ * <p>For players launched by an operator the operator's wallet holds the money; this balance mirrors the
+ * last balance the operator reported. Accounts start at zero: no money is ever created here.
  */
 @Document(collection = "wallet_accounts")
 public class WalletAccountDocument implements Serializable {
+
+    public static final String CURRENCY = "INR";
 
     @Id
     private String id;
@@ -22,12 +26,10 @@ public class WalletAccountDocument implements Serializable {
     @Indexed(unique = true)
     private String playerId;
 
+    private BigDecimal balance;
+    /** Pre-INR accounts stored their balance here; read only when {@link #balance} was never written. */
     private BigDecimal freePlayBalance;
-    private BigDecimal realMoneyBalance; // Locked in free-play mode
-    private BigDecimal reservedBalance;
-    private String currency; // "TOKENS"
-    private boolean isRealMoneyEnabled;
-    private Instant lastDailyClaimAt;
+    private String currency;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -35,11 +37,8 @@ public class WalletAccountDocument implements Serializable {
     private Long version;
 
     public WalletAccountDocument() {
-        this.freePlayBalance = BigDecimal.valueOf(1000); // 1,000 complimentary free-play tokens
-        this.realMoneyBalance = BigDecimal.ZERO;
-        this.reservedBalance = BigDecimal.ZERO;
-        this.currency = "TOKENS";
-        this.isRealMoneyEnabled = false;
+        this.balance = BigDecimal.ZERO;
+        this.currency = CURRENCY;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
     }
@@ -65,52 +64,23 @@ public class WalletAccountDocument implements Serializable {
         this.playerId = playerId;
     }
 
-    public BigDecimal getFreePlayBalance() {
-        return freePlayBalance;
+    public BigDecimal getBalance() {
+        if (balance != null) {
+            return balance;
+        }
+        return freePlayBalance != null ? freePlayBalance : BigDecimal.ZERO;
     }
 
-    public void setFreePlayBalance(BigDecimal freePlayBalance) {
-        this.freePlayBalance = freePlayBalance;
-    }
-
-    public BigDecimal getRealMoneyBalance() {
-        return realMoneyBalance;
-    }
-
-    public void setRealMoneyBalance(BigDecimal realMoneyBalance) {
-        this.realMoneyBalance = realMoneyBalance;
-    }
-
-    public BigDecimal getReservedBalance() {
-        return reservedBalance;
-    }
-
-    public void setReservedBalance(BigDecimal reservedBalance) {
-        this.reservedBalance = reservedBalance;
+    public void setBalance(BigDecimal balance) {
+        this.balance = balance;
     }
 
     public String getCurrency() {
-        return currency;
+        return currency != null ? currency : CURRENCY;
     }
 
     public void setCurrency(String currency) {
         this.currency = currency;
-    }
-
-    public boolean isRealMoneyEnabled() {
-        return isRealMoneyEnabled;
-    }
-
-    public void setRealMoneyEnabled(boolean realMoneyEnabled) {
-        isRealMoneyEnabled = realMoneyEnabled;
-    }
-
-    public Instant getLastDailyClaimAt() {
-        return lastDailyClaimAt;
-    }
-
-    public void setLastDailyClaimAt(Instant lastDailyClaimAt) {
-        this.lastDailyClaimAt = lastDailyClaimAt;
     }
 
     public Instant getCreatedAt() {

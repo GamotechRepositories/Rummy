@@ -1,17 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
-import {
-  IndianRupee,
-  PlusCircle,
-  ArrowUpRight,
-  ShieldCheck,
-  History,
-  X,
-  CreditCard,
-  Building,
-  Smartphone,
-  Gift,
-} from 'lucide-react';
+import { IndianRupee, PlusCircle, ShieldCheck, History, X, RefreshCw } from 'lucide-react';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import { authFetch } from '../utils/authClient';
 import { useModalScroll } from '../hooks/useModalScroll';
@@ -26,6 +15,7 @@ interface WalletTransaction {
   currency: string;
   description: string;
   createdAt: string;
+  metadata?: { operatorStatus?: string };
 }
 
 interface WalletModalProps {
@@ -33,129 +23,70 @@ interface WalletModalProps {
   onClose: () => void;
 }
 
+const TYPE_LABELS: Record<string, string> = {
+  GAME_ENTRY_STAKE: 'Table entry',
+  REJOIN_FEE: 'Rejoin fee',
+  GAME_WIN: 'Winnings',
+  GAME_REFUND: 'Unused stake returned',
+  GAME_ENTRY_REFUND: 'Entry returned',
+  GAME_ABORT_REFUND: 'Game cancelled, entry returned',
+  GAME_CRASH_REFUND: 'Game cancelled, entry returned',
+  REJOIN_REFUND: 'Rejoin fee returned',
+};
+
+function isCredit(type: string): boolean {
+  return type.includes('WIN') || type.includes('REFUND');
+}
+
+/**
+ * Shows the player's balance with their operator. Money is added and withdrawn in the operator's
+ * own cashier, which "Add Cash" opens.
+ */
 export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
   const { playerId } = useGameStore();
   const modalScroll = useModalScroll();
-  const [totalBalance, setTotalBalance] = useState<number>(1000);
-  const [depositBalance, setDepositBalance] = useState<number>(600);
-  const [winningsBalance, setWinningsBalance] = useState<number>(400);
-
-  const [activeTab, setActiveTab] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
-  const [depositAmount, setDepositAmount] = useState<number>(500);
-  const [withdrawAmount, setWithdrawAmount] = useState<number>(200);
-  const [upiId, setUpiId] = useState<string>('player@upi');
-  const [payMethod, setPayMethod] = useState<'UPI' | 'NETBANKING' | 'CARD'>('UPI');
-
+  const [balance, setBalance] = useState<number | null>(null);
+  const [cashierUrl, setCashierUrl] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchWallet = async () => {
+  const fetchWallet = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${playerId}`);
       if (res.ok) {
         const data = await res.json();
-        const total = data.totalBalance ?? data.freePlayBalance ?? 1000;
-        setTotalBalance(total);
-        setDepositBalance(data.depositBalance ?? total * 0.6);
-        setWinningsBalance(data.winningsBalance ?? total * 0.4);
+        setBalance(Number(data.balance ?? 0));
+        setCashierUrl(typeof data.cashierUrl === 'string' && data.cashierUrl ? data.cashierUrl : null);
+      } else {
+        setError('Could not load your balance.');
       }
-
       const txRes = await authFetch(`${getApiBaseUrl()}/api/wallet/transactions?playerId=${playerId}`);
       if (txRes.ok) {
-        const txData = await txRes.json();
-        setTransactions(txData);
+        setTransactions(await txRes.json());
       }
     } catch {
-      // Fallback
+      setError('Could not reach the server.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [playerId]);
 
   useEffect(() => {
     if (isOpen) {
-      fetchWallet();
+      void fetchWallet();
     }
-  }, [isOpen, playerId]);
-
-  const handleDeposit = async () => {
-    if (depositAmount <= 0) return;
-    try {
-      setLoading(true);
-      const res = await authFetch(
-        `${getApiBaseUrl()}/api/wallet/deposit?playerId=${playerId}&amount=${depositAmount}&method=${payMethod}`,
-        { method: 'POST' }
-      );
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setFeedback(`✅ ₹ ${depositAmount} successfully deposited via ${payMethod}!`);
-        await fetchWallet();
-      } else {
-        setFeedback(data.message || 'Deposit failed');
-      }
-      setTimeout(() => setFeedback(null), 4000);
-    } catch {
-      setFeedback('Deposit network error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleWithdraw = async () => {
-    if (withdrawAmount <= 0) return;
-    if (withdrawAmount > winningsBalance) {
-      setFeedback('⚠️ Withdrawal amount cannot exceed your Winnings Balance.');
-      setTimeout(() => setFeedback(null), 4000);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const res = await authFetch(
-        `${getApiBaseUrl()}/api/wallet/withdraw?playerId=${playerId}&amount=${withdrawAmount}&method=UPI&destination=${encodeURIComponent(
-          upiId
-        )}`,
-        { method: 'POST' }
-      );
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setFeedback(`✅ ₹ ${withdrawAmount} successfully withdrawn to ${upiId}!`);
-        await fetchWallet();
-      } else {
-        setFeedback(data.message || 'Withdrawal failed');
-      }
-      setTimeout(() => setFeedback(null), 4000);
-    } catch {
-      setFeedback('Withdrawal network error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleClaimDaily = async () => {
-    try {
-      setLoading(true);
-      const res = await authFetch(`${getApiBaseUrl()}/api/wallet/claim-daily?playerId=${playerId}`, {
-        method: 'POST',
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setFeedback('🎁 Claimed ₹ 500 Daily Login Cash!');
-        await fetchWallet();
-      } else {
-        setFeedback(data.message || 'Daily bonus already claimed for today!');
-      }
-      setTimeout(() => setFeedback(null), 4000);
-    } catch {
-      setFeedback('Bonus claim error');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [isOpen, fetchWallet]);
 
   if (!isOpen) return null;
+
+  const openCashier = () => {
+    if (cashierUrl) {
+      window.open(cashierUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   return (
     <div
@@ -221,12 +152,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
               <IndianRupee size={22} strokeWidth={2.5} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#f8fafc' }}>
-                Real Cash Wallet
-              </h3>
-              <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>
-                Account ID: {playerId} · INR (₹)
-              </p>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#f8fafc' }}>Wallet</h3>
+              <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>INR (₹) · held by your gaming account</p>
             </div>
           </div>
           <button
@@ -257,7 +184,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
           onTouchMove={modalScroll.onTouchMove}
           style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', minHeight: 0, flex: '1 1 auto' }}
         >
-          {/* Total Balance Card */}
+          {/* Balance Card */}
           <div
             style={{
               background: 'radial-gradient(ellipse at 50% 20%, #7f1d1d 0%, #450a0a 70%, #1c0303 100%)',
@@ -269,7 +196,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
             }}
           >
             <div style={{ fontSize: '12px', fontWeight: 700, color: '#fca5a5', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
-              Total Cash Balance
+              Available Balance
             </div>
             <div
               style={{
@@ -280,309 +207,82 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '6px',
-                margin: '6px 0 12px 0',
+                margin: '6px 0 4px 0',
               }}
             >
               <span>₹</span>
-              <span>{totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span>
+                {balance === null
+                  ? '—'
+                  : balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             </div>
-
-            {/* Split: Deposit vs Winnings */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '10px',
-                paddingTop: '12px',
-                borderTop: '1px solid rgba(255,255,255,0.1)',
-                fontSize: '12px',
-              }}
-            >
-              <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: '10px' }}>
-                <div style={{ color: '#cbd5e1', fontSize: '11px' }}>Deposit Cash</div>
-                <div style={{ fontWeight: 800, color: '#f8fafc', fontSize: '15px', marginTop: '2px' }}>
-                  ₹ {depositBalance.toFixed(2)}
-                </div>
-              </div>
-              <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: '10px' }}>
-                <div style={{ color: '#cbd5e1', fontSize: '11px' }}>Winnings (Withdrawable)</div>
-                <div style={{ fontWeight: 800, color: '#34d399', fontSize: '15px', marginTop: '2px' }}>
-                  ₹ {winningsBalance.toFixed(2)}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Action Tabs: Add Cash vs Withdraw */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              background: 'rgba(0,0,0,0.4)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '14px',
-              padding: '4px',
-              gap: '4px',
-            }}
-          >
             <button
               type="button"
-              onClick={() => setActiveTab('DEPOSIT')}
+              onClick={() => void fetchWallet()}
+              disabled={loading}
               style={{
-                padding: '10px',
-                borderRadius: '10px',
+                background: 'transparent',
                 border: 'none',
-                background:
-                  activeTab === 'DEPOSIT'
-                    ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                    : 'transparent',
-                color: activeTab === 'DEPOSIT' ? '#ffffff' : '#94a3b8',
-                fontWeight: 800,
-                fontSize: '14px',
+                color: '#fca5a5',
+                fontSize: '11px',
                 cursor: 'pointer',
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                transition: 'all 0.2s',
+                gap: '4px',
               }}
             >
-              <PlusCircle size={16} /> + Add Cash
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('WITHDRAW')}
-              style={{
-                padding: '10px',
-                borderRadius: '10px',
-                border: 'none',
-                background:
-                  activeTab === 'WITHDRAW'
-                    ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
-                    : 'transparent',
-                color: activeTab === 'WITHDRAW' ? '#ffffff' : '#94a3b8',
-                fontWeight: 800,
-                fontSize: '14px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                transition: 'all 0.2s',
-              }}
-            >
-              <ArrowUpRight size={16} /> ↗ Withdraw
+              <RefreshCw size={12} /> {loading ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
 
-          {/* Feedback alert */}
-          {feedback && (
+          {error && (
             <div
               style={{
-                background: feedback.includes('✅') || feedback.includes('🎁') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                border: `1px solid ${feedback.includes('✅') || feedback.includes('🎁') ? '#10b981' : '#ef4444'}`,
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid #ef4444',
                 borderRadius: '10px',
                 padding: '10px 14px',
                 fontSize: '13px',
                 fontWeight: 700,
-                color: feedback.includes('✅') || feedback.includes('🎁') ? '#34d399' : '#fca5a5',
+                color: '#fca5a5',
                 textAlign: 'center',
               }}
             >
-              {feedback}
+              {error}
             </div>
           )}
 
-          {/* DEPOSIT FORM */}
-          {activeTab === 'DEPOSIT' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 700, color: '#e2e8f0' }}>Select Deposit Amount:</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-                {[100, 200, 500, 1000].map((amt) => {
-                  const isSelected = depositAmount === amt;
-                  return (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setDepositAmount(amt)}
-                      style={{
-                        padding: '10px 0',
-                        borderRadius: '10px',
-                        border: isSelected ? '2px solid #10b981' : '1px solid rgba(255,255,255,0.12)',
-                        background: isSelected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(15, 23, 42, 0.6)',
-                        color: isSelected ? '#34d399' : '#f8fafc',
-                        fontSize: '14px',
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      ₹ {amt}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Payment Method Selector */}
-              <div style={{ fontSize: '13px', fontWeight: 700, color: '#e2e8f0' }}>Payment Mode:</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                {[
-                  { id: 'UPI' as const, label: 'UPI / GPay', icon: <Smartphone size={15} /> },
-                  { id: 'NETBANKING' as const, label: 'NetBanking', icon: <Building size={15} /> },
-                  { id: 'CARD' as const, label: 'Cards', icon: <CreditCard size={15} /> },
-                ].map((m) => {
-                  const isSel = payMethod === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setPayMethod(m.id)}
-                      style={{
-                        padding: '8px 6px',
-                        borderRadius: '10px',
-                        border: isSel ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
-                        background: isSel ? 'rgba(16, 185, 129, 0.15)' : 'rgba(0,0,0,0.3)',
-                        color: isSel ? '#34d399' : '#cbd5e1',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      {m.icon}
-                      {m.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                disabled={loading}
-                onClick={handleDeposit}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  borderRadius: '14px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: '#ffffff',
-                  fontSize: '16px',
-                  fontWeight: 900,
-                  cursor: 'pointer',
-                  boxShadow: '0 6px 20px rgba(16, 185, 129, 0.35)',
-                  marginTop: '4px',
-                }}
-              >
-                {loading ? 'Processing…' : `Deposit ₹ ${depositAmount} Instantly`}
-              </button>
-            </div>
-          )}
-
-          {/* WITHDRAW FORM */}
-          {activeTab === 'WITHDRAW' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#e2e8f0', marginBottom: '6px' }}>
-                  Withdrawal Amount (₹):
-                </label>
-                <input
-                  type="number"
-                  value={withdrawAmount}
-                  max={winningsBalance}
-                  min={50}
-                  onChange={(e) => setWithdrawAmount(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  style={{
-                    width: '100%',
-                    background: 'rgba(0,0,0,0.4)',
-                    border: '1px solid rgba(255,255,255,0.15)',
-                    borderRadius: '10px',
-                    color: '#fff',
-                    fontSize: '16px',
-                    fontWeight: 700,
-                    padding: '10px 14px',
-                    outline: 'none',
-                  }}
-                />
-                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
-                  Max withdrawable winnings: <strong style={{ color: '#34d399' }}>₹ {winningsBalance.toFixed(2)}</strong>
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#e2e8f0', marginBottom: '6px' }}>
-                  UPI ID / Virtual Payment Address:
-                </label>
-                <input
-                  type="text"
-                  value={upiId}
-                  onChange={(e) => setUpiId(e.target.value)}
-                  placeholder="yourname@okhdfcbank"
-                  style={{
-                    width: '100%',
-                    background: 'rgba(0,0,0,0.4)',
-                    border: '1px solid rgba(255,255,255,0.15)',
-                    borderRadius: '10px',
-                    color: '#fff',
-                    fontSize: '14px',
-                    padding: '10px 14px',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <button
-                type="button"
-                disabled={loading || winningsBalance < 50}
-                onClick={handleWithdraw}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  borderRadius: '14px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                  color: '#ffffff',
-                  fontSize: '16px',
-                  fontWeight: 900,
-                  cursor: winningsBalance < 50 ? 'not-allowed' : 'pointer',
-                  opacity: winningsBalance < 50 ? 0.6 : 1,
-                  boxShadow: '0 6px 20px rgba(59, 130, 246, 0.35)',
-                  marginTop: '4px',
-                }}
-              >
-                {loading ? 'Processing…' : `Withdraw ₹ ${withdrawAmount} to UPI`}
-              </button>
-            </div>
-          )}
-
-          {/* Daily Bonus Button */}
-          <div style={{ paddingTop: '8px' }}>
-            <button
-              type="button"
-              onClick={handleClaimDaily}
-              style={{
-                width: '100%',
-                padding: '10px',
-                borderRadius: '12px',
-                border: '1px solid rgba(212,175,55,0.3)',
-                background: 'rgba(212,175,55,0.08)',
-                color: '#fef08a',
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-              }}
-            >
-              <Gift size={16} color="#fbbf24" /> Claim Daily ₹500 Free Cash Bonus
-            </button>
+          <button
+            type="button"
+            disabled={!cashierUrl}
+            onClick={openCashier}
+            style={{
+              width: '100%',
+              padding: '14px',
+              borderRadius: '14px',
+              border: 'none',
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              color: '#ffffff',
+              fontSize: '16px',
+              fontWeight: 900,
+              cursor: cashierUrl ? 'pointer' : 'not-allowed',
+              opacity: cashierUrl ? 1 : 0.6,
+              boxShadow: '0 6px 20px rgba(16, 185, 129, 0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}
+          >
+            <PlusCircle size={18} /> Add Cash / Withdraw
+          </button>
+          <div style={{ fontSize: '11px', color: '#94a3b8', textAlign: 'center', marginTop: '-8px' }}>
+            {cashierUrl
+              ? 'Opens your gaming account cashier. Your balance here updates after you return.'
+              : 'Add cash and withdraw from your gaming account app.'}
           </div>
 
-          {/* Trust badge */}
           <div
             style={{
               display: 'flex',
@@ -597,33 +297,23 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
             }}
           >
             <ShieldCheck size={18} color="#10b981" style={{ flexShrink: 0 }} />
-            <span>100% Secure SSL Ledger · RNG Certified · Instant UPI Settlements</span>
+            <span>Every entry and payout is recorded once, with a transaction id shared with your account.</span>
           </div>
 
-          {/* Recent Real Cash Transactions */}
+          {/* Recent Transactions */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ fontSize: '13px', fontWeight: 800, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <History size={15} /> Recent Cash Transactions
+              <History size={15} /> Recent Game Transactions
             </div>
-            <div
-              style={{
-                maxHeight: '160px',
-                overflowY: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-              }}
-            >
+            <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {transactions.length === 0 ? (
                 <div style={{ fontSize: '12px', color: '#64748b', textAlign: 'center', padding: '12px' }}>
-                  No cash transactions recorded yet.
+                  No transactions yet.
                 </div>
               ) : (
-                transactions.slice(0, 10).map((t) => {
-                  const isPositive =
-                    t.transactionType.includes('CREDIT') ||
-                    t.transactionType.includes('WIN') ||
-                    t.transactionType.includes('DEPOSIT');
+                transactions.slice(0, 20).map((t) => {
+                  const positive = isCredit(t.transactionType);
+                  const pending = t.metadata?.operatorStatus === 'QUEUED';
                   return (
                     <div
                       key={t.id || t.idempotencyKey}
@@ -639,11 +329,16 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
                       }}
                     >
                       <div>
-                        <div style={{ fontWeight: 700, color: '#f8fafc' }}>{t.transactionType}</div>
-                        <div style={{ fontSize: '10px', color: '#64748b' }}>{t.description}</div>
+                        <div style={{ fontWeight: 700, color: '#f8fafc' }}>
+                          {TYPE_LABELS[t.transactionType] ?? t.transactionType}
+                          {pending && <span style={{ color: '#fbbf24', fontWeight: 600 }}> · processing</span>}
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#64748b' }}>
+                          {t.createdAt ? new Date(t.createdAt).toLocaleString('en-IN') : t.description}
+                        </div>
                       </div>
-                      <div style={{ fontWeight: 900, color: isPositive ? '#34d399' : '#f87171' }}>
-                        {isPositive ? '+' : '-'} ₹ {Math.abs(t.amount)}
+                      <div style={{ fontWeight: 900, color: positive ? '#34d399' : '#f87171' }}>
+                        {positive ? '+' : '-'} ₹ {Math.abs(t.amount).toFixed(2)}
                       </div>
                     </div>
                   );

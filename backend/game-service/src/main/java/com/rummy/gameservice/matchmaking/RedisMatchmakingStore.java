@@ -188,6 +188,7 @@ public class RedisMatchmakingStore implements MatchmakingStore {
         public String status;
         public String matchedTableId;
         public String matchedServerId;
+        public String pool;
 
         static TicketDto from(MatchmakingTicket t) {
             TicketDto d = new TicketDto();
@@ -203,6 +204,7 @@ public class RedisMatchmakingStore implements MatchmakingStore {
             d.status = t.getStatus().name();
             d.matchedTableId = t.getMatchedTableId();
             d.matchedServerId = t.getMatchedServerId();
+            d.pool = t.getPool();
             return d;
         }
 
@@ -215,6 +217,7 @@ public class RedisMatchmakingStore implements MatchmakingStore {
             }
             t.setMatchedTableId(matchedTableId);
             t.setMatchedServerId(matchedServerId);
+            t.setPool(pool);
             return t;
         }
     }

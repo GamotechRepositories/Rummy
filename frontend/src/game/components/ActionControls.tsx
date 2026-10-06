@@ -95,7 +95,8 @@ export const ActionControls: React.FC = () => {
     socketClient.discard(cardId);
   };
 
-  const isFirstTurn = !(gameState.hasTakenFirstTurn ?? ((gameState.discardHistory?.length ?? 0) > 1));
+  const isFirstTurn = gameState.firstDropAvailable
+    ?? !(gameState.hasTakenFirstTurn ?? ((gameState.discardHistory?.length ?? 0) > 1));
   const dropPenaltyPoints = isRummy21
     ? (isFirstTurn ? 30 : 60)
     : isPool201

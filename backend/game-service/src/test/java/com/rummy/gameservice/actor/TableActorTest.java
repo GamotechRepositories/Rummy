@@ -89,6 +89,33 @@ class TableActorTest {
     }
 
     @Test
+    @DisplayName("Points: a player who leaves mid-hand is settled at the drop penalty, not 0")
+    void leaverIsSettledAtDropPenalty() {
+        Instant now = Instant.now();
+        for (int i = 1; i <= 3; i++) {
+            tableActor.processCommand(new JoinCommand("j" + i, "G_TEST", "P" + i, "Player " + i, i - 1, false, now), "join-" + i);
+            tableActor.processCommand(new ReadyCommand("r" + i, "G_TEST", "P" + i, now), "ready-" + i);
+        }
+        tableActor.processCommand(new StartGameCommand("s", "G_TEST", "P1", now), "start");
+        String current = tableActor.getState().getTurnState().getCurrentPlayerId();
+        List<String> waiting = tableActor.getState().getPlayers().stream()
+                .map(PlayerState::getPlayerId).filter(id -> !id.equals(current)).toList();
+        String leaver = waiting.get(0);
+
+        tableActor.handleVoluntaryLeave(leaver, "leave");
+        assertThat(tableActor.getState().requirePlayer(leaver).getStatus()).isEqualTo(PlayerStatus.DROPPED);
+
+        EngineResult end = tableActor.processCommand(new DropCommand("d", "G_TEST", waiting.get(1), now, true), "drop");
+        com.rummy.engine.event.GameFinishedEvent finished = end.events().stream()
+                .filter(com.rummy.engine.event.GameFinishedEvent.class::isInstance)
+                .map(com.rummy.engine.event.GameFinishedEvent.class::cast)
+                .findFirst().orElseThrow();
+
+        assertThat(finished.finalScores()).containsEntry(leaver, 20);
+        assertThat(tableActor.getState().requirePlayer(leaver).getStatus()).isEqualTo(PlayerStatus.ELIMINATED);
+    }
+
+    @Test
     @DisplayName("Pool Rummy: Deal finish under threshold records deal history and does not eliminate player")
     void testPoolRummyMultiDealAndElimination() {
         Deck deck = Deck.createStandard13CardDeck();
@@ -105,7 +132,7 @@ class TableActorTest {
         assertThat(poolActor.getState().getStatus()).isEqualTo(GameStatus.IN_PROGRESS);
 
         // Player 2 drops in Deal 1 (first drop = 20 pts)
-        poolActor.processCommand(new DropCommand("c6", "G_POOL", "P2", now), "req-6");
+        TurnTestSupport.dropOnTurn(poolActor, "c6", "P2");
 
         // Deal 1 is COMPLETED because P2 dropped, but P2's score is 20 < 101, so neither is ELIMINATED
         assertThat(poolActor.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
@@ -155,7 +182,7 @@ class TableActorTest {
         // P2 eliminated with 105 points in Deal 1 -> P1 is the sole survivor, so tournament concludes
         PlayerState p2 = poolActor.getState().getPlayer("P2").orElseThrow();
         p2.setCumulativeScore(105);
-        poolActor.processCommand(new DropCommand("c6", "G_POOL_END", "P2", now), "req-6");
+        TurnTestSupport.dropOnTurn(poolActor, "c6", "P2");
 
         // Since P2 has 105 + 20 = 125 >= 101, P2 is eliminated. Sole survivor P1 is crowned winner!
         assertThat(poolActor.getTournamentWinnerId()).isEqualTo("P1");
@@ -192,7 +219,7 @@ class TableActorTest {
         assertThat(p2.getChipBalance()).isEqualTo(160);
 
         // Player 2 drops in Deal 1 (first drop = 20 pts penalty)
-        dealsActor.processCommand(new DropCommand("c6", "G_DEALS", "P2", now), "req-6");
+        TurnTestSupport.dropOnTurn(dealsActor, "c6", "P2");
 
         // Deal 1 COMPLETED
         assertThat(dealsActor.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
@@ -216,7 +243,7 @@ class TableActorTest {
         assertThat(p2.getChipBalance()).isEqualTo(140);
 
         // In Deal 2, P1 drops (first drop = 20 pts penalty)
-        dealsActor.processCommand(new DropCommand("c7", "G_DEALS", "P1", now), "req-7");
+        TurnTestSupport.dropOnTurn(dealsActor, "c7", "P1");
 
         // Deal 2 finishes: P1 loses 20 chips -> 160, P2 gains 20 chips -> 160
         assertThat(dealsActor.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
@@ -238,7 +265,7 @@ class TableActorTest {
         assertThat(dealsActor.getState().getDealNumber()).isEqualTo(3);
 
         // In Deal 3, P2 drops (first drop = 20 pts penalty)
-        dealsActor.processCommand(new DropCommand("c8", "G_DEALS", "P2", now), "req-8");
+        TurnTestSupport.dropOnTurn(dealsActor, "c8", "P2");
         assertThat(dealsActor.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
         assertThat(p1.getChipBalance()).isEqualTo(180);
         assertThat(p2.getChipBalance()).isEqualTo(140);
@@ -267,7 +294,7 @@ class TableActorTest {
         // Artificial test setup: P2 has only 10 chips left, P1 has 160 chips
         p2.setChipBalance(10);
         // P2 drops: 20 pts penalty. Because P2 only has 10 chips, chips lost must be capped at 10 (not negative)!
-        actor.processCommand(new DropCommand("c6", "G_TIE", "P2", now), "r6");
+        TurnTestSupport.dropOnTurn(actor, "c6", "P2");
 
         assertThat(p2.getChipBalance()).isEqualTo(0); // Clamped, not -10
         assertThat(p1.getChipBalance()).isEqualTo(170); // Gained 10 chips (conserved)

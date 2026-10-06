@@ -22,29 +22,32 @@ class WalletServiceTest {
         walletService = new WalletService();
     }
 
+    /** Gives a test player ₹1000 to play with. */
+    private void fund(String playerId) {
+        walletService.credit(playerId, BigDecimal.valueOf(1000), "TEST_FUNDING", "FUND_" + playerId, null, "Test funding", null);
+    }
+
     @Test
-    @DisplayName("Initial wallet provisioning creates 1000 free-play tokens")
+    @DisplayName("A new wallet starts empty, in INR: no free money")
     void testInitialWalletCreation() {
         WalletAccountDocument wallet = walletService.getOrCreateWallet("USR_ALICE");
         assertThat(wallet.getPlayerId()).isEqualTo("USR_ALICE");
-        assertThat(wallet.getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1000));
-        assertThat(wallet.isRealMoneyEnabled()).isFalse(); // Compliance gate
+        assertThat(wallet.getBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(wallet.getCurrency()).isEqualTo("INR");
     }
 
     @Test
     @DisplayName("Credit and debit modify balance and produce immutable ledger transactions")
     void testCreditAndDebit() {
         String playerId = "USR_BOB";
-        walletService.getOrCreateWallet(playerId);
+        fund(playerId);
 
-        // Credit 500
         WalletTransactionDocument creditTx = walletService.credit(
-                playerId, BigDecimal.valueOf(500), "PROMOTIONAL_CREDIT", "TX_CREDIT_01", null, "Bonus", null
+                playerId, BigDecimal.valueOf(500), "GAME_WIN", "TX_CREDIT_01", null, "Win", null
         );
         assertThat(creditTx.getBalanceBefore()).isEqualByComparingTo(BigDecimal.valueOf(1000));
         assertThat(creditTx.getBalanceAfter()).isEqualByComparingTo(BigDecimal.valueOf(1500));
 
-        // Debit 300
         WalletTransactionDocument debitTx = walletService.debit(
                 playerId, BigDecimal.valueOf(300), "GAME_ENTRY", "TX_DEBIT_01", "G100", "Game entry", null
         );
@@ -52,23 +55,23 @@ class WalletServiceTest {
         assertThat(debitTx.getBalanceAfter()).isEqualByComparingTo(BigDecimal.valueOf(1200));
 
         List<WalletTransactionDocument> history = walletService.getTransactions(playerId);
-        assertThat(history).hasSize(2);
+        assertThat(history).hasSize(3);
     }
 
     @Test
     @DisplayName("Idempotency: Duplicate transaction keys return existing transaction without double credit/debit")
     void testIdempotencyProtection() {
         String playerId = "USR_CHARLIE";
+        fund(playerId);
 
-        walletService.credit(playerId, BigDecimal.valueOf(200), "DEPOSIT", "IDEMPOTENT_KEY_123", null, "Test", null);
-        assertThat(walletService.getOrCreateWallet(playerId).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1200));
+        walletService.credit(playerId, BigDecimal.valueOf(200), "GAME_WIN", "IDEMPOTENT_KEY_123", null, "Test", null);
+        assertThat(walletService.getOrCreateWallet(playerId).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1200));
 
-        // Repeat with identical idempotency key
         WalletTransactionDocument duplicate = walletService.credit(
-                playerId, BigDecimal.valueOf(200), "DEPOSIT", "IDEMPOTENT_KEY_123", null, "Test", null
+                playerId, BigDecimal.valueOf(200), "GAME_WIN", "IDEMPOTENT_KEY_123", null, "Test", null
         );
         assertThat(duplicate.getBalanceAfter()).isEqualByComparingTo(BigDecimal.valueOf(1200));
-        assertThat(walletService.getOrCreateWallet(playerId).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1200));
+        assertThat(walletService.getOrCreateWallet(playerId).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1200));
     }
 
     @Test
@@ -76,23 +79,8 @@ class WalletServiceTest {
     void testInsufficientBalanceDebitFails() {
         String playerId = "USR_DAVE";
         assertThatThrownBy(() -> walletService.debit(playerId, BigDecimal.valueOf(5000), "GAME_ENTRY", "TX_FAIL", null, "Overdraw", null))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Insufficient free-play token balance");
-    }
-
-    @Test
-    @DisplayName("Game settlement debits loser and credits winner pot")
-    void testGameSettlement() {
-        String winner = "USR_WINNER";
-        String loser = "USR_LOSER";
-
-        walletService.getOrCreateWallet(winner); // 1000
-        walletService.getOrCreateWallet(loser);  // 1000
-
-        walletService.settleGame("GAME_SETTLE_1", winner, List.of(loser), BigDecimal.valueOf(250));
-
-        assertThat(walletService.getOrCreateWallet(loser).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(750));
-        assertThat(walletService.getOrCreateWallet(winner).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1250));
+                .isInstanceOf(InsufficientBalanceException.class)
+                .hasMessageContaining("Insufficient balance");
     }
 
     @Test
@@ -100,13 +88,11 @@ class WalletServiceTest {
     void testPointsRummySettlementWithRakeAndRefund() {
         String winner = "USR_PW_WIN";
         String loser = "USR_PW_LOSE";
-
-        walletService.getOrCreateWallet(winner); // 1000
-        walletService.getOrCreateWallet(loser);  // 1000
+        fund(winner);
+        fund(loser);
 
         BigDecimal stakeTier = BigDecimal.valueOf(100);
 
-        // Simulate entry debit at matchmaking start
         walletService.debit(winner, stakeTier, "GAME_ENTRY_STAKE", "STAKE_MATCH_1_" + winner, "MATCH_1", "Entry", null);
         walletService.debit(loser, stakeTier, "GAME_ENTRY_STAKE", "STAKE_MATCH_1_" + loser, "MATCH_1", "Entry", null);
 
@@ -123,13 +109,12 @@ class WalletServiceTest {
         assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(42.50));   // 50 - 7.50
 
         // Loser had 900 + 50.00 refund = 950.00 (Net loss: -50.00)
-        assertThat(walletService.getOrCreateWallet(loser).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(950.00));
+        assertThat(walletService.getOrCreateWallet(loser).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(950.00));
 
         // Winner had 900 + 100 (stake return) + 42.50 (net prize) = 1042.50 (Net win: +42.50)
-        assertThat(walletService.getOrCreateWallet(winner).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1042.50));
+        assertThat(walletService.getOrCreateWallet(winner).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1042.50));
 
-        // Platform Treasury received 7.50 rake
-        assertThat(walletService.getPlatformTreasuryBalance()).isEqualByComparingTo(BigDecimal.valueOf(1007.50));
+        assertThat(walletService.getPlatformTreasuryBalance()).isEqualByComparingTo(BigDecimal.valueOf(7.50));
     }
 
     @Test
@@ -137,13 +122,11 @@ class WalletServiceTest {
     void testPoolRummySettlementWith15PercentRake() {
         String winner = "USR_POOL_W";
         String loser = "USR_POOL_L";
-
-        walletService.getOrCreateWallet(winner); // 1000
-        walletService.getOrCreateWallet(loser);  // 1000
+        fund(winner);
+        fund(loser);
 
         BigDecimal stakeTier = BigDecimal.valueOf(100);
 
-        // Matchmaking debits entry
         walletService.debit(winner, stakeTier, "GAME_ENTRY_STAKE", "STAKE_MATCH_2_" + winner, "MATCH_2", "Entry", null);
         walletService.debit(loser, stakeTier, "GAME_ENTRY_STAKE", "STAKE_MATCH_2_" + loser, "MATCH_2", "Entry", null);
 
@@ -159,7 +142,7 @@ class WalletServiceTest {
         assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(170.00));
 
         // Winner had 900 + 170 = 1070
-        assertThat(walletService.getOrCreateWallet(winner).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1070.00));
+        assertThat(walletService.getOrCreateWallet(winner).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1070.00));
     }
 
     @Test
@@ -168,22 +151,18 @@ class WalletServiceTest {
         String winner = "USR_POOL_W2";
         String loser = "USR_POOL_L2";
         String rejoiner = "USR_POOL_RJ";
-
-        walletService.getOrCreateWallet(winner);   // 1000
-        walletService.getOrCreateWallet(loser);    // 1000
-        walletService.getOrCreateWallet(rejoiner); // 1000
+        fund(winner);
+        fund(loser);
+        fund(rejoiner);
 
         BigDecimal stakeTier = BigDecimal.valueOf(100);
 
         walletService.debit(winner, stakeTier, "GAME_ENTRY_STAKE", "STAKE_MATCH_3_" + winner, "MATCH_3", "Entry", null);
         walletService.debit(loser, stakeTier, "GAME_ENTRY_STAKE", "STAKE_MATCH_3_" + loser, "MATCH_3", "Entry", null);
         walletService.debit(rejoiner, stakeTier, "GAME_ENTRY_STAKE", "STAKE_MATCH_3_" + rejoiner, "MATCH_3", "Entry", null);
-        // Rejoiner rejoins once
         walletService.debit(rejoiner, stakeTier, "REJOIN_FEE", "REJOIN_MATCH_3_" + rejoiner, "MATCH_3", "Rejoin", null);
 
-        // Gross pot = 100 + 100 + (100 + 100) = 400
-        // Rake = 15% of 400 = 60
-        // Net winner prize = 340
+        // Gross pot = 100 + 100 + (100 + 100) = 400; rake 60; net prize 340
         GameSettlementResult result = walletService.settleMatch(
                 "MATCH_3", "TBL_3", "POOL_101", stakeTier, winner,
                 java.util.Map.of(winner, 0, loser, 80, rejoiner, 60),
@@ -196,12 +175,11 @@ class WalletServiceTest {
         assertThat(result.platformRakeAmount()).isEqualByComparingTo(BigDecimal.valueOf(60.00));
         assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(340.00));
 
-        // Rejoiner total loss = 200
         assertThat(result.playerDetails().get(rejoiner).lossAmount()).isEqualByComparingTo(BigDecimal.valueOf(200.00));
         assertThat(result.playerDetails().get(rejoiner).netWalletDelta()).isEqualByComparingTo(BigDecimal.valueOf(-200.00));
 
         // Winner wallet: 1000 - 100 + 340 = 1240
-        assertThat(walletService.getOrCreateWallet(winner).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1240.00));
+        assertThat(walletService.getOrCreateWallet(winner).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1240.00));
     }
 
     @Test
@@ -209,13 +187,11 @@ class WalletServiceTest {
     void testTwentyOneCardRummySettlement() {
         String winner = "USR_21_WIN";
         String loser = "USR_21_LOSE";
-
-        walletService.getOrCreateWallet(winner); // 1000
-        walletService.getOrCreateWallet(loser);  // 1000
+        fund(winner);
+        fund(loser);
 
         BigDecimal stakeTier = BigDecimal.valueOf(120);
 
-        // Entry stake debited
         walletService.debit(winner, stakeTier, "GAME_ENTRY_STAKE", "STAKE_21_" + winner, "M21", "Entry", null);
         walletService.debit(loser, stakeTier, "GAME_ENTRY_STAKE", "STAKE_21_" + loser, "M21", "Entry", null);
 
@@ -231,18 +207,15 @@ class WalletServiceTest {
         assertThat(result.platformRakeAmount()).isEqualByComparingTo(BigDecimal.valueOf(4.50)); // 15% of 30
         assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(25.50));
 
-        // Loser had 880 + 90.00 refund = 970.00 (Net loss: -30.00)
-        assertThat(walletService.getOrCreateWallet(loser).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(970.00));
-
-        // Winner had 880 + 120 (stake return) + 25.50 (net prize) = 1025.50 (Net win: +25.50)
-        assertThat(walletService.getOrCreateWallet(winner).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1025.50));
+        assertThat(walletService.getOrCreateWallet(loser).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(970.00));
+        assertThat(walletService.getOrCreateWallet(winner).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1025.50));
     }
 
     @Test
     @DisplayName("Concurrent debits never overdraw the wallet")
     void testConcurrentDebitsDoNotOverdraw() throws Exception {
         String playerId = "USR_RACE";
-        walletService.getOrCreateWallet(playerId); // 1000
+        fund(playerId);
 
         int threads = 50;
         java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(16);
@@ -268,19 +241,7 @@ class WalletServiceTest {
         pool.shutdown();
 
         assertThat(succeeded.get()).isEqualTo(10);
-        assertThat(walletService.getOrCreateWallet(playerId).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.ZERO);
-    }
-
-    @Test
-    @DisplayName("Daily bonus can only be claimed once per 24h")
-    void testDailyBonusOnlyOnce() {
-        String playerId = "USR_DAILY";
-        walletService.claimDailyFreeTokens(playerId);
-
-        assertThatThrownBy(() -> walletService.claimDailyFreeTokens(playerId))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("already claimed");
-        assertThat(walletService.getOrCreateWallet(playerId).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1500));
+        assertThat(walletService.getOrCreateWallet(playerId).getBalance()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -288,9 +249,8 @@ class WalletServiceTest {
     void testDealsRummySettlement() {
         String winner = "USR_DEALS_W";
         String loser = "USR_DEALS_L";
-
-        walletService.getOrCreateWallet(winner); // 1000
-        walletService.getOrCreateWallet(loser);  // 1000
+        fund(winner);
+        fund(loser);
 
         BigDecimal stakeTier = BigDecimal.valueOf(50);
 
@@ -309,6 +269,6 @@ class WalletServiceTest {
         assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(85.00));
 
         // Winner had 950 + 85 = 1035
-        assertThat(walletService.getOrCreateWallet(winner).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1035.00));
+        assertThat(walletService.getOrCreateWallet(winner).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1035.00));
     }
 }

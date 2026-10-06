@@ -57,8 +57,28 @@ public record PlayerGameView(
         long viewerChipBalance,
         boolean hasTakenFirstTurn,
         String drawnCardInstanceId,
-        boolean isDrawnFromDiscard
+        boolean isDrawnFromDiscard,
+        /** Dropping now would cost the first-drop penalty (no turn played or missed yet). */
+        boolean firstDropAvailable
 ) implements Serializable {
+
+    public PlayerGameView(
+            String tableId, String gameId, String viewerPlayerId, GameStatus gameStatus, long sequence,
+            List<CardInstance> hand, List<OpponentView> opponents, CardInstance topDiscard, CardInstance cutJoker,
+            int closedDeckRemaining, String activePlayerId, TurnPhase turnPhase, Instant turnDeadline, boolean isMyTurn,
+            String winnerId, List<CardInstance> discardHistory, int viewerScore, PlayerStatus viewerStatus,
+            List<CardGroup> winningGroups, int viewerSeatIndex, String rulesetId, int dealNumber, int eliminationThreshold,
+            int viewerCumulativeScore, boolean viewerIsEliminated, List<PlayerStanding> standings,
+            List<DealScoreRecord> dealHistory, Integer nextDealCountdown, String tournamentWinnerId, int dealerSeatIndex,
+            boolean canRejoin, int rejoinScore, int rejoinFee, List<String> freshlyEliminatedNames, int totalDeals,
+            long viewerChipBalance, boolean hasTakenFirstTurn, String drawnCardInstanceId, boolean isDrawnFromDiscard) {
+        this(tableId, gameId, viewerPlayerId, gameStatus, sequence, hand, opponents, topDiscard, cutJoker, closedDeckRemaining,
+                activePlayerId, turnPhase, turnDeadline, isMyTurn, winnerId, discardHistory, viewerScore, viewerStatus,
+                winningGroups, viewerSeatIndex, rulesetId, dealNumber, eliminationThreshold, viewerCumulativeScore, viewerIsEliminated,
+                standings, dealHistory, nextDealCountdown, tournamentWinnerId, dealerSeatIndex, canRejoin, rejoinScore, rejoinFee,
+                freshlyEliminatedNames, totalDeals, viewerChipBalance, hasTakenFirstTurn, drawnCardInstanceId, isDrawnFromDiscard,
+                !hasTakenFirstTurn);
+    }
 
     public record OpponentView(
             String playerId,
@@ -506,7 +526,8 @@ public record PlayerGameView(
                 viewer.getChipBalance(),
                 viewer.hasTakenFirstTurn(),
                 drawnCardInstanceId,
-                isDrawnFromDiscard
+                isDrawnFromDiscard,
+                !viewer.hasTakenFirstTurn() && viewer.getConsecutiveMissedTurns() == 0
         );
     }
 }

@@ -24,6 +24,7 @@ public class MatchmakingTicket {
     private volatile Status status;
     private volatile String matchedTableId;
     private volatile String matchedServerId;
+    private volatile String pool;
 
     public MatchmakingTicket(String ticketId, String playerId, String playerName,
                              String rulesetId, int stakeTier, int maxPlayers, boolean allowAiFallback) {
@@ -124,7 +125,17 @@ public class MatchmakingTicket {
         this.matchedServerId = matchedServerId;
     }
 
+    public String getPool() {
+        return pool;
+    }
+
+    public void setPool(String pool) {
+        this.pool = pool == null || pool.isBlank() ? null : pool;
+    }
+
+    /** Players are only ever matched within one queue, so the pool keeps test players apart from real ones. */
     public String getQueueKey() {
-        return rulesetId + ":" + stakeTier + ":" + maxPlayers;
+        String key = rulesetId + ":" + stakeTier + ":" + maxPlayers;
+        return pool == null ? key : key + ":" + pool;
     }
 }

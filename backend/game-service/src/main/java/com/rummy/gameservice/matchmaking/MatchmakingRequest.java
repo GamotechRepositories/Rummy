@@ -1,6 +1,11 @@
 package com.rummy.gameservice.matchmaking;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 public class MatchmakingRequest {
+    /** Server-assigned player pool (e.g. test players); never taken from the client. */
+    @JsonIgnore
+    private String pool;
     private String playerId;
     private String playerName;
     private String avatarId;
@@ -79,5 +84,15 @@ public class MatchmakingRequest {
 
     public void setAllowAiFallback(boolean allowAiFallback) {
         this.allowAiFallback = allowAiFallback;
+    }
+
+    @JsonIgnore
+    public String getPool() {
+        return pool;
+    }
+
+    @JsonIgnore
+    public void setPool(String pool) {
+        this.pool = pool;
     }
 }

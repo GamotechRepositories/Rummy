@@ -244,6 +244,15 @@ export const GameBoard: React.FC = () => {
   const entryFee = lastGameConfig?.entryFee ?? 8;
   const maxSeats = lastGameConfig?.maxPlayers ?? Math.max(2, opponents.length + 1);
   const isPointsRummy = rawRulesetId.includes('POINT');
+  const isRummy21 = rawRulesetId.includes('21');
+  const cardsPerPlayer = isRummy21 ? 21 : 13;
+  const leaveAfterDraw = !!gameState?.isMyTurn && gameState?.turnPhase === 'AWAITING_DISCARD';
+  const leaveCountsAsDrop = !leaveAfterDraw && !rawRulesetId.includes('POOL') && !rawRulesetId.includes('DEALS');
+  const leaveOnFirstTurn = gameState?.firstDropAvailable
+    ?? !(gameState?.hasTakenFirstTurn ?? ((gameState?.discardHistory?.length ?? 0) > 1));
+  const leavePenalty = leaveCountsAsDrop
+    ? (isRummy21 ? (leaveOnFirstTurn ? 30 : 60) : (leaveOnFirstTurn ? 20 : 40))
+    : (isRummy21 ? 120 : 80);
 
   useEffect(() => {
     const curDeal = gameState?.dealNumber;
@@ -263,9 +272,6 @@ export const GameBoard: React.FC = () => {
     }
     prevDealRef.current = curDeal;
   }, [gameState?.dealNumber, rawRulesetId]);
-
-  const isRummy21 = rawRulesetId.includes('21');
-  const cardsPerPlayer = isRummy21 ? 21 : 13;
 
   let variantName = 'Point Rummy';
   if (rawRulesetId.includes('POOL')) {
@@ -603,7 +609,9 @@ export const GameBoard: React.FC = () => {
               </h3>
               <p className="royal-dialog-subtitle">
                 {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped
-                  ? 'Your hand is currently live. Leaving the table mid-game will forfeit the round.'
+                  ? (leaveCountsAsDrop
+                    ? 'Your hand is currently live. Leaving now counts as a drop.'
+                    : 'Your hand is currently live. Leaving the table mid-game will forfeit the round.')
                   : gameState?.viewerDropped
                   ? 'You have dropped this hand. You can safely leave the table now.'
                   : 'Game has not started yet. You can leave now without any penalty.'}
@@ -649,14 +657,16 @@ export const GameBoard: React.FC = () => {
                   <div className="royal-dialog-penalty-label">
                     <span className="royal-dialog-penalty-tag">
                       <ShieldAlert size={13} />
-                      Forfeit Penalty
+                      {leaveCountsAsDrop ? 'Drop Penalty' : 'Forfeit Penalty'}
                     </span>
                     <span className="royal-dialog-penalty-desc">
-                      Max penalty points will apply
+                      {leaveCountsAsDrop
+                        ? (leaveOnFirstTurn ? 'First drop points will apply' : 'Middle drop points will apply')
+                        : 'Max penalty points will apply'}
                     </span>
                   </div>
                   <div className="royal-dialog-penalty-badge">
-                    +{gameState?.rulesetId?.includes('21') || gameState?.rulesetId === 'RUMMY_21' ? 120 : 80} PTS
+                    +{leavePenalty} PTS
                   </div>
                 </div>
               )}

@@ -2,10 +2,10 @@ import { getApiBaseUrl } from './apiConfig';
 
 const TOKEN_KEY = 'rummy_auth_token';
 const PLAYER_ID_KEY = 'rummy_player_id';
-const ADMIN_KEY_STORAGE = 'rummy_admin_key';
-const REFRESH_WHEN_REMAINING_MS = 7 * 24 * 60 * 60 * 1000;
+const DISPLAY_NAME_KEY = 'rummy_display_name';
+const REFRESH_WHEN_REMAINING_MS = 2 * 60 * 60 * 1000;
 
-interface TokenResponse {
+export interface TokenResponse {
   token: string;
   playerId: string;
   displayName?: string;
@@ -47,17 +47,63 @@ function storeToken(response: TokenResponse): string {
     localStorage.setItem(TOKEN_KEY, response.token);
     localStorage.setItem(PLAYER_ID_KEY, response.playerId);
     sessionStorage.setItem(PLAYER_ID_KEY, response.playerId);
+    if (response.displayName) {
+      localStorage.setItem(DISPLAY_NAME_KEY, response.displayName);
+      sessionStorage.setItem(DISPLAY_NAME_KEY, response.displayName);
+    }
   } catch {
     // storage unavailable (private mode) — token still usable for this page load
   }
   return response.token;
 }
 
+function clearToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Removes the one-time launch code from the address bar (so it is not bookmarked or shared)
+ * and returns it.
+ */
+export function takeLaunchCodeFromUrl(): string | null {
+  try {
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('launch');
+    if (!code) return null;
+    url.searchParams.delete('launch');
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    return code;
+  } catch {
+    return null;
+  }
+}
+
+/** Exchanges an operator launch code for a session. Null if the link expired or was already used. */
+export async function redeemLaunchCode(code: string): Promise<TokenResponse | null> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/operator/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) return null;
+    const session = (await res.json()) as TokenResponse;
+    storeToken(session);
+    return session;
+  } catch {
+    return null;
+  }
+}
+
 let inflight: Promise<string | null> | null = null;
 
 /**
- * Returns a valid JWT, minting a guest identity on first visit and refreshing
- * tokens that are close to expiry. Concurrent callers share one request.
+ * Returns a valid session token, refreshing it when close to expiry, or null when the player has no
+ * session (they must open the game from their operator). Concurrent callers share one request.
  */
 export function ensureAuthToken(displayName?: string): Promise<string | null> {
   if (inflight) return inflight;
@@ -65,34 +111,24 @@ export function ensureAuthToken(displayName?: string): Promise<string | null> {
     const existing = getAuthToken();
     const expMs = existing ? (decodeClaims(existing)?.exp ?? 0) * 1000 : 0;
     const now = Date.now();
-    const existingValid = !!existing && expMs > now;
-
-    if (existingValid && expMs - now > REFRESH_WHEN_REMAINING_MS) {
+    if (!existing || expMs <= now) {
+      if (existing) clearToken();
+      return null;
+    }
+    if (expMs - now > REFRESH_WHEN_REMAINING_MS) {
       return existing;
     }
-
-    const base = getApiBaseUrl();
     try {
-      if (existingValid) {
-        const res = await fetch(`${base}/api/auth/refresh`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${existing}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(displayName ? { name: displayName } : {}),
-        });
-        if (res.ok) return storeToken(await res.json());
-        if (res.status !== 401) return existing;
-      }
-
-      const res = await fetch(`${base}/api/auth/guest`, {
+      const res = await fetch(`${getApiBaseUrl()}/api/auth/refresh`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: displayName || 'Player' }),
+        headers: { Authorization: `Bearer ${existing}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(displayName ? { name: displayName } : {}),
       });
       if (res.ok) return storeToken(await res.json());
     } catch {
-      // backend offline — keep whatever token we still have
+      // backend offline — the current token is still valid for now
     }
-    return existingValid ? existing : null;
+    return existing;
   })().finally(() => {
     inflight = null;
   });
@@ -105,26 +141,4 @@ export async function authFetch(input: string, init: RequestInit = {}): Promise<
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   return fetch(input, { ...init, headers });
-}
-
-/** fetch() for operator endpoints; the key is entered manually and kept only in this browser. */
-export function adminFetch(input: string, init: RequestInit = {}): Promise<Response> {
-  const headers = new Headers(init.headers);
-  let key: string | null = null;
-  try {
-    key = localStorage.getItem(ADMIN_KEY_STORAGE);
-  } catch {
-    key = null;
-  }
-  if (key) headers.set('X-Admin-Key', key);
-  return fetch(input, { ...init, headers });
-}
-
-export function setAdminKey(key: string | null): void {
-  try {
-    if (key) localStorage.setItem(ADMIN_KEY_STORAGE, key);
-    else localStorage.removeItem(ADMIN_KEY_STORAGE);
-  } catch {
-    // ignore
-  }
 }

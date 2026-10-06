@@ -1,8 +1,11 @@
 package com.rummy.engine.rules;
 
+import com.rummy.engine.bot.HandEvaluator;
 import com.rummy.engine.model.Card;
+import com.rummy.engine.model.CardInstance;
 import com.rummy.engine.model.PlayerState;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -47,6 +50,19 @@ public interface RummyRules {
      * Calculate losing penalty points for an undeclared hand.
      */
     int calculateLosingScore(List<CardGroup> groups, Card cutJoker);
+
+    /**
+     * Penalty for a loser's whole hand when another player declares. By default the hand is arranged by
+     * the bots' quick meld finder; Indian 13-card variants override this with the exact best arrangement.
+     */
+    default int scoreLosingHand(List<CardInstance> hand, Card cutJoker) {
+        HandEvaluator.EvaluationResult eval = HandEvaluator.evaluateDeadwood(hand, cutJoker);
+        List<CardGroup> groups = new ArrayList<>(eval.meldedGroups());
+        if (!eval.deadwoodCards().isEmpty()) {
+            groups.add(CardGroup.of(eval.deadwoodCards()));
+        }
+        return calculateLosingScore(groups, cutJoker);
+    }
 
     /**
      * Elimination threshold score (e.g. 101 for Pool 101, 201 for Pool 201).

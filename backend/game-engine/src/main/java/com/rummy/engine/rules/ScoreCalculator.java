@@ -103,4 +103,114 @@ public final class ScoreCalculator {
     public static int calculateHandPoints(List<CardGroup> groups, Card cutJoker) {
         return calculateHandPoints(groups, cutJoker, DEFAULT_MAX_PENALTY);
     }
+
+    private static final int MAX_SOLVER_CARDS = 16;
+    private static final int INFEASIBLE = Integer.MAX_VALUE / 2;
+    private static final byte INVALID = 0, SET = 1, IMPURE = 2, PURE = 3;
+
+    /**
+     * The lowest penalty this hand can score under the rules above, over every way of arranging it
+     * (melds of any length, unmelded cards left ungrouped). Losers are scored with this when someone
+     * declares, so nobody pays for an arrangement worse than the best one they hold.
+     */
+    public static int bestHandPoints(List<CardInstance> hand, Card cutJoker, int maxPenalty) {
+        int n = hand == null ? 0 : hand.size();
+        if (n == 0) {
+            return 0;
+        }
+        if (n > MAX_SOLVER_CARDS) {
+            return calculateHandPoints(List.of(CardGroup.of(hand)), cutJoker, maxPenalty);
+        }
+        int full = (1 << n) - 1;
+        int[] sum = new int[full + 1];
+        byte[] type = new byte[full + 1];
+        boolean anyPure = false;
+        List<CardInstance> cards = new ArrayList<>(n);
+        for (int mask = 1; mask <= full; mask++) {
+            int low = Integer.numberOfTrailingZeros(mask);
+            sum[mask] = sum[mask & (mask - 1)] + hand.get(low).getCard().points(cutJoker);
+            if (Integer.bitCount(mask) < 3) {
+                continue;
+            }
+            cards.clear();
+            for (int m = mask; m != 0; m &= m - 1) {
+                cards.add(hand.get(Integer.numberOfTrailingZeros(m)));
+            }
+            type[mask] = switch (DeclarationValidator.classifyGroup(CardGroup.of(cards), cutJoker)) {
+                case PURE_SEQUENCE -> PURE;
+                case IMPURE_SEQUENCE -> IMPURE;
+                case SET -> SET;
+                default -> INVALID;
+            };
+            anyPure |= type[mask] == PURE;
+        }
+
+        int total = sum[full];
+        int best = total;
+        if (anyPure) {
+            // At least one pure sequence: everything outside the pure sequences counts.
+            best = Math.min(best, total - maxPureCovered(full, sum, type, new int[full + 1]));
+            // At least two sequences, one of them pure: only ungrouped cards count.
+            int[] memo = new int[(full + 1) * 6];
+            java.util.Arrays.fill(memo, -1);
+            best = Math.min(best, minUngrouped(full, 0, 0, sum, type, memo));
+        }
+        return Math.min(best, maxPenalty);
+    }
+
+    /** Most points that disjoint pure sequences can cover within {@code mask}. */
+    private static int maxPureCovered(int mask, int[] sum, byte[] type, int[] memo) {
+        if (mask == 0) {
+            return 0;
+        }
+        if (memo[mask] != 0) {
+            return memo[mask] - 1;
+        }
+        int bit = mask & -mask;
+        int rest = mask ^ bit;
+        int best = maxPureCovered(rest, sum, type, memo);
+        for (int s = rest; ; s = (s - 1) & rest) {
+            int meld = s | bit;
+            if (type[meld] == PURE) {
+                best = Math.max(best, sum[meld] + maxPureCovered(mask ^ meld, sum, type, memo));
+            }
+            if (s == 0) {
+                break;
+            }
+        }
+        memo[mask] = best + 1;
+        return best;
+    }
+
+    /**
+     * Fewest points left ungrouped within {@code mask}, given whether a pure sequence is already melded
+     * ({@code pure}) and how many sequences are (capped at 2); infeasible unless both requirements are met.
+     */
+    private static int minUngrouped(int mask, int pure, int sequences, int[] sum, byte[] type, int[] memo) {
+        if (mask == 0) {
+            return pure == 1 && sequences >= 2 ? 0 : INFEASIBLE;
+        }
+        int key = mask * 6 + pure * 3 + sequences;
+        if (memo[key] >= 0) {
+            return memo[key];
+        }
+        int bit = mask & -mask;
+        int rest = mask ^ bit;
+        int best = sum[bit] + minUngrouped(rest, pure, sequences, sum, type, memo);
+        for (int s = rest; ; s = (s - 1) & rest) {
+            int meld = s | bit;
+            byte t = type[meld];
+            if (t != INVALID) {
+                int nextPure = t == PURE ? 1 : pure;
+                int nextSequences = t >= IMPURE ? Math.min(2, sequences + 1) : sequences;
+                best = Math.min(best, minUngrouped(mask ^ meld, nextPure, nextSequences, sum, type, memo));
+            }
+            if (s == 0) {
+                break;
+            }
+        }
+        best = Math.min(best, INFEASIBLE);
+        memo[key] = best;
+        return best;
+    }
 }

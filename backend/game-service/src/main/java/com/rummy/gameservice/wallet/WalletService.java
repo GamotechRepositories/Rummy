@@ -1,6 +1,10 @@
 package com.rummy.gameservice.wallet;
 
 import com.mongodb.MongoException;
+import com.rummy.gameservice.operator.OperatorRegistry;
+import com.rummy.gameservice.operator.OperatorWalletClient;
+import com.rummy.gameservice.operator.OperatorWalletException;
+import com.rummy.gameservice.operator.OperatorWalletOutbox;
 import com.rummy.gameservice.persistence.document.WalletAccountDocument;
 import com.rummy.gameservice.persistence.document.WalletTransactionDocument;
 import com.rummy.gameservice.persistence.repository.WalletAccountRepository;
@@ -19,12 +23,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.Consumer;
 
 /**
  * MongoDB Wallet & Double-Entry Financial Ledger Service.
@@ -47,7 +49,6 @@ public class WalletService {
     private static final int MAX_WRITE_ATTEMPTS = 8;
     private static final int TRANSACTION_HISTORY_LIMIT = 100;
     private static final int SETTLEMENT_CACHE_SIZE = 10_000;
-    private static final BigDecimal DAILY_BONUS_AMOUNT = BigDecimal.valueOf(500);
 
     public static final String PLATFORM_TREASURY = "PLATFORM_TREASURY";
     public static final BigDecimal DEFAULT_RAKE_RATE = new BigDecimal("0.15"); // 15% Platform Commission
@@ -55,6 +56,10 @@ public class WalletService {
     private final WalletAccountRepository accountRepository;
     private final WalletTransactionRepository transactionRepository;
     private final TransactionTemplate transactionTemplate;
+
+    private OperatorRegistry operators;
+    private OperatorWalletClient operatorWallet;
+    private OperatorWalletOutbox outbox;
 
     private final Map<String, WalletAccountDocument> memoryAccounts = new ConcurrentHashMap<>();
     private final Map<String, WalletTransactionDocument> memoryTransactions = new ConcurrentHashMap<>();
@@ -90,12 +95,46 @@ public class WalletService {
         this(null, null, null);
     }
 
+    /** Players launched by an operator are paid through the operator's wallet API. */
+    @Autowired(required = false)
+    public void setOperatorWallet(OperatorRegistry operators, OperatorWalletClient operatorWallet, OperatorWalletOutbox outbox) {
+        this.operators = operators;
+        this.operatorWallet = operatorWallet;
+        this.outbox = outbox;
+        outbox.setBalanceListener(this::recordOperatorBalance);
+    }
+
     private boolean isPersistent() {
         return accountRepository != null && transactionRepository != null;
     }
 
+    private Optional<OperatorRegistry.PlayerRef> operatorPlayer(String playerId) {
+        return operators != null && operatorWallet != null ? operators.player(playerId) : Optional.empty();
+    }
+
     /**
-     * Retrieves or lazily provisions a wallet account for a player with initial complimentary tokens.
+     * The player's spendable INR balance: live from the operator for operator players (falling back to
+     * the last known balance if the operator cannot be reached), else this platform's ledger balance.
+     */
+    public BigDecimal balanceOf(String playerId) {
+        Optional<OperatorRegistry.PlayerRef> player = operatorPlayer(playerId);
+        if (player.isPresent()) {
+            try {
+                OperatorWalletClient.Reply reply = operatorWallet.balance(player.get());
+                if (reply.ok() && reply.balance() != null) {
+                    recordOperatorBalance(playerId, reply.balance());
+                    return reply.balance();
+                }
+                log.warn("[Wallet] Operator {} answered {} to a balance request", player.get().operatorId(), reply.status());
+            } catch (OperatorWalletException e) {
+                log.warn("[Wallet] Balance from operator {} unavailable: {}", player.get().operatorId(), e.getMessage());
+            }
+        }
+        return getOrCreateWallet(playerId).getBalance();
+    }
+
+    /**
+     * Retrieves or lazily provisions a player's wallet account (opening balance zero).
      */
     public WalletAccountDocument getOrCreateWallet(String playerId) {
         Objects.requireNonNull(playerId, "playerId");
@@ -123,7 +162,7 @@ public class WalletService {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Credit amount must be strictly positive");
         }
-        return applyChange(playerId, amount, type, idempotencyKey, gameId, description, meta, null);
+        return applyChange(playerId, amount, type, idempotencyKey, gameId, description, meta);
     }
 
     /**
@@ -135,39 +174,22 @@ public class WalletService {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Debit amount must be strictly positive");
         }
-        return applyChange(playerId, amount.negate(), type, idempotencyKey, gameId, description, meta, null);
-    }
-
-    /**
-     * Daily Free Token Bonus Claim (500 complimentary tokens per 24-hour cycle).
-     * The 24h check and the claim timestamp are written in the same versioned update as the credit.
-     */
-    public WalletTransactionDocument claimDailyFreeTokens(String playerId) {
-        Instant now = Instant.now();
-        String idempotencyKey = "DAILY_BONUS_" + playerId + "_" + now.toEpochMilli();
-        return applyChange(playerId, DAILY_BONUS_AMOUNT, "PROMOTIONAL_CREDIT", idempotencyKey, null,
-                "Daily complimentary login bonus tokens", Map.of("claimedAt", now.toString()),
-                account -> {
-                    if (account.getLastDailyClaimAt() != null) {
-                        long hoursElapsed = Duration.between(account.getLastDailyClaimAt(), now).toHours();
-                        if (hoursElapsed < 24) {
-                            throw new IllegalStateException("Daily bonus already claimed. Next claim available in "
-                                    + (24 - hoursElapsed) + " hours.");
-                        }
-                    }
-                    account.setLastDailyClaimAt(now);
-                });
+        return applyChange(playerId, amount.negate(), type, idempotencyKey, gameId, description, meta);
     }
 
     private WalletTransactionDocument applyChange(String playerId, BigDecimal delta, String type,
                                                   String idempotencyKey, String gameId,
-                                                  String description, Map<String, Object> meta,
-                                                  Consumer<WalletAccountDocument> accountRule) {
+                                                  String description, Map<String, Object> meta) {
         Objects.requireNonNull(playerId, "playerId");
         String key = idempotencyKey != null ? idempotencyKey : type + "_" + UUID.randomUUID();
 
+        Optional<OperatorRegistry.PlayerRef> operatorPlayer = operatorPlayer(playerId);
+        if (operatorPlayer.isPresent()) {
+            return applyOperatorChange(operatorPlayer.get(), delta, type, key, gameId, description, meta);
+        }
+
         if (!isPersistent()) {
-            return applyChangeInMemory(playerId, delta, type, key, gameId, description, meta, accountRule);
+            return applyChangeInMemory(playerId, delta, type, key, gameId, description, meta);
         }
 
         Optional<WalletTransactionDocument> existing = transactionRepository.findByIdempotencyKey(key);
@@ -181,7 +203,7 @@ public class WalletService {
         for (int attempt = 1; attempt <= MAX_WRITE_ATTEMPTS; attempt++) {
             try {
                 WalletTransactionDocument tx = runAtomically(() ->
-                        writeChange(playerId, delta, type, key, gameId, description, meta, accountRule));
+                        writeChange(playerId, delta, type, key, gameId, description, meta));
                 log.info("[Wallet] {} {} for player={} (balance: {} -> {}) [idempotencyKey={}]",
                         delta.signum() >= 0 ? "Credited" : "Debited", delta.abs(), playerId,
                         tx.getBalanceBefore(), tx.getBalanceAfter(), key);
@@ -202,19 +224,15 @@ public class WalletService {
     }
 
     private WalletTransactionDocument writeChange(String playerId, BigDecimal delta, String type, String key,
-                                                  String gameId, String description, Map<String, Object> meta,
-                                                  Consumer<WalletAccountDocument> accountRule) {
+                                                  String gameId, String description, Map<String, Object> meta) {
         WalletAccountDocument account = accountRepository.findByPlayerId(playerId)
                 .orElseThrow(() -> new IllegalStateException("Wallet not found for " + playerId));
-        BigDecimal before = account.getFreePlayBalance();
+        BigDecimal before = account.getBalance();
         BigDecimal after = before.add(delta);
         if (after.signum() < 0) {
             throw insufficientBalance(playerId, before, delta.negate());
         }
-        if (accountRule != null) {
-            accountRule.accept(account);
-        }
-        account.setFreePlayBalance(after);
+        account.setBalance(after);
         account.setUpdatedAt(Instant.now());
         accountRepository.save(account);
 
@@ -235,7 +253,7 @@ public class WalletService {
         for (int attempt = 1; attempt <= MAX_WRITE_ATTEMPTS; attempt++) {
             try {
                 WalletAccountDocument account = accountRepository.findByPlayerId(playerId).orElseThrow();
-                account.setFreePlayBalance(account.getFreePlayBalance().subtract(delta));
+                account.setBalance(account.getBalance().subtract(delta));
                 account.setUpdatedAt(Instant.now());
                 accountRepository.save(account);
                 return;
@@ -254,23 +272,19 @@ public class WalletService {
     }
 
     private WalletTransactionDocument applyChangeInMemory(String playerId, BigDecimal delta, String type, String key,
-                                                          String gameId, String description, Map<String, Object> meta,
-                                                          Consumer<WalletAccountDocument> accountRule) {
+                                                          String gameId, String description, Map<String, Object> meta) {
         synchronized (memoryLock) {
             WalletTransactionDocument existing = memoryTransactions.get(key);
             if (existing != null) {
                 return existing;
             }
             WalletAccountDocument account = memoryAccounts.computeIfAbsent(playerId, WalletAccountDocument::new);
-            BigDecimal before = account.getFreePlayBalance();
+            BigDecimal before = account.getBalance();
             BigDecimal after = before.add(delta);
             if (after.signum() < 0) {
                 throw insufficientBalance(playerId, before, delta.negate());
             }
-            if (accountRule != null) {
-                accountRule.accept(account);
-            }
-            account.setFreePlayBalance(after);
+            account.setBalance(after);
             account.setUpdatedAt(Instant.now());
             WalletTransactionDocument tx = new WalletTransactionDocument(
                     key, playerId, gameId, type, delta.abs(), before, after, account.getCurrency(), description, meta);
@@ -280,8 +294,153 @@ public class WalletService {
     }
 
     private static InsufficientBalanceException insufficientBalance(String playerId, BigDecimal balance, BigDecimal required) {
-        return new InsufficientBalanceException("Insufficient free-play token balance for player " + playerId
-                + ". Balance: " + balance + ", Required: " + required);
+        return new InsufficientBalanceException("Insufficient balance for player " + playerId
+                + ". Balance: ₹" + (balance != null ? balance : "?") + ", Required: ₹" + required);
+    }
+
+    /**
+     * Debits or credits an operator player through the operator's wallet, then mirrors it in our ledger.
+     * A debit is final only once the operator confirms it; one whose outcome is unknown is rolled back
+     * (queued) and refused here. A credit the operator cannot take right now is queued and retried with
+     * the same transaction id until it lands, so winnings and refunds are never lost.
+     */
+    private WalletTransactionDocument applyOperatorChange(OperatorRegistry.PlayerRef player, BigDecimal delta, String type,
+                                                          String key, String gameId, String description,
+                                                          Map<String, Object> meta) {
+        Optional<WalletTransactionDocument> existing = findTransaction(key);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        BigDecimal amount = delta.abs();
+        OperatorWalletClient.Reply reply;
+        if (delta.signum() < 0) {
+            try {
+                reply = operatorWallet.debit(player, key, amount, gameId, type, description);
+            } catch (OperatorWalletException e) {
+                if (e.isUncertain()) {
+                    outbox.enqueue(OperatorWalletOutbox.Kind.ROLLBACK, player, key, amount, gameId, type, description, e.getMessage());
+                }
+                throw new OperatorWalletException("Wallet unavailable, please try again: " + e.getMessage(), false);
+            }
+            if (reply.status() == OperatorWalletClient.Status.INSUFFICIENT_FUNDS) {
+                throw insufficientBalance(player.playerId(), reply.balance(), amount);
+            }
+            if (!reply.ok()) {
+                throw new OperatorWalletException("Operator refused the debit: " + reply.status(), false);
+            }
+        } else {
+            try {
+                reply = operatorWallet.credit(player, key, amount, gameId, type, description);
+            } catch (OperatorWalletException e) {
+                outbox.enqueue(OperatorWalletOutbox.Kind.CREDIT, player, key, amount, gameId, type, description, e.getMessage());
+                return recordOperatorTransaction(player, delta, type, key, gameId, description, meta, null);
+            }
+            if (!reply.ok()) {
+                outbox.enqueue(OperatorWalletOutbox.Kind.CREDIT, player, key, amount, gameId, type, description,
+                        "operator answered " + reply.status());
+                return recordOperatorTransaction(player, delta, type, key, gameId, description, meta, null);
+            }
+        }
+        try {
+            return recordOperatorTransaction(player, delta, type, key, gameId, description, meta, reply);
+        } catch (RuntimeException e) {
+            if (delta.signum() < 0) {
+                // The player was charged but we cannot record it, so the caller will treat the debit as failed.
+                outbox.enqueue(OperatorWalletOutbox.Kind.ROLLBACK, player, key, amount, gameId, type, description,
+                        "ledger write failed: " + e.getMessage());
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Mirrors an operator wallet movement in our ledger. {@code confirmed} null means the credit is queued:
+     * the balance is left as last known and the entry is marked so.
+     */
+    private WalletTransactionDocument recordOperatorTransaction(OperatorRegistry.PlayerRef player, BigDecimal delta, String type,
+                                                                String key, String gameId, String description,
+                                                                Map<String, Object> meta, OperatorWalletClient.Reply confirmed) {
+        Map<String, Object> fullMeta = new HashMap<>(meta != null ? meta : Map.of());
+        fullMeta.put("operatorId", player.operatorId());
+        fullMeta.put("operatorStatus", confirmed != null ? "CONFIRMED" : "QUEUED");
+        BigDecimal reported = confirmed != null ? confirmed.balance() : null;
+        String playerId = player.playerId();
+        if (!isPersistent()) {
+            synchronized (memoryLock) {
+                WalletTransactionDocument existing = memoryTransactions.get(key);
+                if (existing != null) {
+                    return existing;
+                }
+                WalletAccountDocument account = memoryAccounts.computeIfAbsent(playerId, WalletAccountDocument::new);
+                WalletTransactionDocument tx = mirror(account, playerId, delta, type, key, gameId, description, fullMeta, reported, confirmed != null);
+                memoryTransactions.put(key, tx);
+                return tx;
+            }
+        }
+        getOrCreateWallet(playerId);
+        for (int attempt = 1; attempt <= MAX_WRITE_ATTEMPTS; attempt++) {
+            try {
+                return runAtomically(() -> {
+                    WalletAccountDocument account = accountRepository.findByPlayerId(playerId).orElseThrow();
+                    WalletTransactionDocument tx = mirror(account, playerId, delta, type, key, gameId, description, fullMeta, reported, confirmed != null);
+                    accountRepository.save(account);
+                    return transactionRepository.insert(tx);
+                });
+            } catch (TransientDataAccessException e) {
+                backoff(attempt);
+            } catch (UncategorizedMongoDbException e) {
+                if (!isTransientTransactionError(e)) {
+                    throw e;
+                }
+                backoff(attempt);
+            } catch (DuplicateKeyException e) {
+                return transactionRepository.findByIdempotencyKey(key).orElseThrow(() -> e);
+            }
+        }
+        throw new IllegalStateException("Wallet for player " + playerId + " is busy, please retry");
+    }
+
+    private static WalletTransactionDocument mirror(WalletAccountDocument account, String playerId, BigDecimal delta, String type,
+                                                    String key, String gameId, String description, Map<String, Object> meta,
+                                                    BigDecimal reported, boolean confirmed) {
+        BigDecimal after = reported != null ? reported : confirmed ? account.getBalance().add(delta) : account.getBalance();
+        BigDecimal before = confirmed ? after.subtract(delta) : after;
+        account.setBalance(after);
+        account.setUpdatedAt(Instant.now());
+        return new WalletTransactionDocument(key, playerId, gameId, type, delta.abs(), before, after,
+                WalletAccountDocument.CURRENCY, description, meta);
+    }
+
+    /** Updates the last known operator balance of a player (best effort). */
+    private void recordOperatorBalance(String playerId, BigDecimal balance) {
+        if (!isPersistent()) {
+            memoryAccounts.computeIfAbsent(playerId, WalletAccountDocument::new).setBalance(balance);
+            return;
+        }
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                WalletAccountDocument account = getOrCreateWallet(playerId);
+                if (balance.equals(account.getBalance())) {
+                    return;
+                }
+                account.setBalance(balance);
+                account.setUpdatedAt(Instant.now());
+                accountRepository.save(account);
+                return;
+            } catch (OptimisticLockingFailureException e) {
+                backoff(attempt);
+            } catch (RuntimeException e) {
+                log.debug("[Wallet] Could not store operator balance for {}: {}", playerId, e.getMessage());
+                return;
+            }
+        }
+    }
+
+    private Optional<WalletTransactionDocument> findTransaction(String key) {
+        if (!isPersistent()) {
+            return Optional.ofNullable(memoryTransactions.get(key));
+        }
+        return transactionRepository.findByIdempotencyKey(key);
     }
 
     private static boolean isTransientTransactionError(Throwable e) {
@@ -366,6 +525,7 @@ public class WalletService {
         int maxPenaltyCap = isRummy21 ? 120 : 80;
 
         Map<String, GameSettlementResult.PlayerSettlementDetail> details = new LinkedHashMap<>();
+        List<String> failedPayouts = new ArrayList<>();
         BigDecimal totalGrossPot = BigDecimal.ZERO;
 
         if (isPointsBased) {
@@ -392,8 +552,9 @@ public class WalletService {
                                 "Unlost stake refund (" + penalty + " pts) for " + gameId + " (" + rId + ")",
                                 Map.of("gameId", gameId, "penalty", penalty, "refund", refund, "variant", rId));
                     } catch (Exception e) {
-                        log.error("[Wallet] RECONCILE REQUIRED: failed to credit refund {} to {} for gameId={}: {}",
+                        log.error("[Wallet] Failed to credit refund {} to {} for gameId={}: {}",
                                 refund, pId, gameId, e.getMessage());
+                        failedPayouts.add(refundKey);
                     }
                 }
 
@@ -431,7 +592,8 @@ public class WalletService {
                         "Platform commission rake (15%) for " + gameId + " (" + rId + ")",
                         Map.of("gameId", gameId, "tableId", tableId != null ? tableId : "", "grossPot", totalGrossPot, "rake", platformRake, "variant", rId));
             } catch (Exception e) {
-                log.error("[Wallet] RECONCILE REQUIRED: failed to credit platform rake for gameId={}: {}", gameId, e.getMessage());
+                log.error("[Wallet] Failed to credit platform rake for gameId={}: {}", gameId, e.getMessage());
+                failedPayouts.add(rakeKey);
             }
         }
 
@@ -448,8 +610,9 @@ public class WalletService {
                         "Winner prize payout for " + gameId + " (" + rulesetId + ")",
                         Map.of("gameId", gameId, "grossPot", totalGrossPot, "rake", platformRake, "netPrize", netWinnerPrize));
             } catch (Exception e) {
-                log.error("[Wallet] RECONCILE REQUIRED: failed to credit winner {} amount {} for gameId={}: {}",
+                log.error("[Wallet] Failed to credit winner {} amount {} for gameId={}: {}",
                         winnerPlayerId, winnerCreditAmount, gameId, e.getMessage());
+                failedPayouts.add(winKey);
             }
         } else {
             // Bot win goes to house treasury
@@ -459,8 +622,13 @@ public class WalletService {
                         "House Bot win payout for " + gameId,
                         Map.of("gameId", gameId, "botId", winnerPlayerId, "amount", winnerCreditAmount));
             } catch (Exception e) {
-                log.error("[Wallet] RECONCILE REQUIRED: failed to credit house bot win for gameId={}: {}", gameId, e.getMessage());
+                log.error("[Wallet] Failed to credit house bot win for gameId={}: {}", gameId, e.getMessage());
+                failedPayouts.add(botWinKey);
             }
+        }
+
+        if (!failedPayouts.isEmpty()) {
+            throw new IllegalStateException("Settlement of " + gameId + " incomplete, retrying: " + failedPayouts);
         }
 
         details.put(winnerPlayerId, new GameSettlementResult.PlayerSettlementDetail(
@@ -479,62 +647,12 @@ public class WalletService {
         return result;
     }
 
-    /**
-     * Settles a finished table match: debits loser stakes and credits winner with net pot (legacy support).
-     */
-    public void settleGame(String gameId, String winnerPlayerId, List<String> loserPlayerIds, BigDecimal stake) {
-        if (stake.compareTo(BigDecimal.ZERO) <= 0 || winnerPlayerId == null) return;
-
-        BigDecimal totalPot = BigDecimal.ZERO;
-
-        for (String loserId : loserPlayerIds) {
-            if (!loserId.startsWith("BOT_")) {
-                String debitKey = "DEBIT_" + gameId + "_" + loserId;
-                try {
-                    debit(loserId, stake, "GAME_ENTRY", debitKey, gameId, "Game entry stake for " + gameId, null);
-                    totalPot = totalPot.add(stake);
-                } catch (Exception e) {
-                    log.warn("[Wallet] Failed to debit loser {}: {}", loserId, e.getMessage());
-                }
-            } else {
-                totalPot = totalPot.add(stake);
-            }
-        }
-
-        if (!winnerPlayerId.startsWith("BOT_") && totalPot.compareTo(BigDecimal.ZERO) > 0) {
-            String creditKey = "WIN_" + gameId + "_" + winnerPlayerId;
-            credit(winnerPlayerId, totalPot, "GAME_WIN", creditKey, gameId, "Winner prize payout for " + gameId,
-                    Map.of("gameId", gameId, "pot", totalPot));
-        }
-    }
-
     public GameSettlementResult getSettlement(String gameId) {
         return settlementCache.get(gameId);
     }
 
     public BigDecimal getPlatformTreasuryBalance() {
-        return getOrCreateWallet(PLATFORM_TREASURY).getFreePlayBalance();
-    }
-
-    /**
-     * Real-Money Deposit into player wallet. Must only be called after a payment gateway
-     * has confirmed the payment; the controller gates this behind a configuration flag.
-     */
-    public WalletTransactionDocument depositCash(String playerId, BigDecimal amount, String method) {
-        String key = "DEP_" + playerId + "_" + UUID.randomUUID();
-        return credit(playerId, amount, "CASH_DEPOSIT", key, null,
-                "Real Cash Deposit via " + (method != null ? method : "UPI"),
-                Map.of("method", method != null ? method : "UPI", "timestamp", Instant.now().toString()));
-    }
-
-    /**
-     * Real-Money Withdrawal to player's verified Bank / UPI ID.
-     */
-    public WalletTransactionDocument withdrawCash(String playerId, BigDecimal amount, String method, String destination) {
-        String key = "WTH_" + playerId + "_" + UUID.randomUUID();
-        return debit(playerId, amount, "CASH_WITHDRAWAL", key, null,
-                "Real Cash Withdrawal to " + (destination != null ? destination : "Bank Account"),
-                Map.of("method", method != null ? method : "UPI_PAYOUT", "destination", destination != null ? destination : ""));
+        return getOrCreateWallet(PLATFORM_TREASURY).getBalance();
     }
 
     public boolean hasTransaction(String idempotencyKey) {

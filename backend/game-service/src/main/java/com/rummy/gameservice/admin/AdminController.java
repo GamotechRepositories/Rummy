@@ -52,11 +52,11 @@ public class AdminController {
     @GetMapping("/compliance/status")
     public ResponseEntity<Map<String, Object>> getComplianceStatus() {
         return ResponseEntity.ok(Map.of(
-                "jurisdiction", "Global / Skill Gaming",
-                "applicableAct", "Fair Play & Skill Gaming Standards",
-                "operationalMode", "Free-Play Points Simulator",
-                "realMoneyWageringEnabled", false,
-                "virtualCurrencyOnly", true,
+                "jurisdiction", "Operator-licensed markets only",
+                "applicableAct", "Skill gaming; each operator holds the licence for its market",
+                "operationalMode", "B2B real money (operator seamless wallet)",
+                "realMoneyWageringEnabled", true,
+                "currency", "INR",
                 "status", "OPERATIONAL",
                 "timestamp", java.time.Instant.now().toString()
         ));

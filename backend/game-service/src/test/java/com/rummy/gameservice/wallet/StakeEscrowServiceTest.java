@@ -20,6 +20,7 @@ class StakeEscrowServiceTest {
     @BeforeEach
     void setUp() {
         wallet = new WalletService();
+        TestFunding.fund(wallet, "P1", "P2", "P3", "P9");
         escrows = new StakeEscrowService(null, wallet,
                 new ClusterNodeService(new TableRoutingRegistry(null, "node-a"), null, 45));
     }
@@ -104,6 +105,6 @@ class StakeEscrowServiceTest {
     }
 
     private BigDecimal balance(String playerId) {
-        return wallet.getOrCreateWallet(playerId).getFreePlayBalance();
+        return wallet.getOrCreateWallet(playerId).getBalance();
     }
 }

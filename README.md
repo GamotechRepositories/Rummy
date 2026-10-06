@@ -3,7 +3,7 @@
 A production-grade, distributed, real-time Rummy platform designed for 300,000–400,000 concurrent players.
 
 > [!NOTE]
-> **Platform Architecture:** This repository implements a production-grade, distributed, real-time multiplayer card gaming engine. The system operates server-authoritative TableActor clusters with zero-knowledge hand security. Development and testing are conducted in **Free-Play (Virtual Points) Mode**.
+> **Platform Architecture:** This repository implements a production-grade, distributed, real-time multiplayer card gaming engine. The system operates server-authoritative TableActor clusters with zero-knowledge hand security. It runs as a **B2B real-money (INR) game**: licensed operators launch their players into the game and hold their money (seamless wallet). See `OPERATOR_INTEGRATION.md`.
 
 ---
 

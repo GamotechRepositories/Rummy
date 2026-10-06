@@ -12,6 +12,7 @@ import com.rummy.gameservice.actor.TableManager;
 import com.rummy.gameservice.handler.GameWebSocketHandler;
 import com.rummy.gameservice.matchmaking.MatchmakingService;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
+import com.rummy.gameservice.wallet.TestFunding;
 import com.rummy.gameservice.wallet.WalletService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +49,7 @@ class GracefulDrainLifecycleTest {
     @BeforeEach
     void setUp() {
         wallet = new WalletService();
+        TestFunding.fund(wallet, "P1", "P2");
         manager = new TableManager(new ObjectMapper().registerModule(new JavaTimeModule()),
                 null, null, null, wallet, new TableRoutingRegistry(null, "node-a"), 100, 180, 600);
         socketHandler = mock(GameWebSocketHandler.class);
@@ -104,7 +106,7 @@ class GracefulDrainLifecycleTest {
         TableActor done = seatedPointsTable("TBL_DONE", 0);
         String gameId = done.getState().getGameId();
         done.processCommand(new StartGameCommand("s", gameId, "P1", Instant.now()), "start");
-        done.processCommand(new DropCommand("d", gameId, "P2", Instant.now()), "drop");
+        com.rummy.gameservice.actor.TurnTestSupport.dropOnTurn(done, "d", "P2");
         assertThat(done.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
         manager.getOrCreateTable("TBL_WAITING", null);
 
@@ -143,6 +145,6 @@ class GracefulDrainLifecycleTest {
     }
 
     private BigDecimal balance(String playerId) {
-        return wallet.getOrCreateWallet(playerId).getFreePlayBalance();
+        return wallet.getOrCreateWallet(playerId).getBalance();
     }
 }

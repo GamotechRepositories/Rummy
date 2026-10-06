@@ -366,6 +366,13 @@ sudo cp -r dist/* /var/www/rummy/
 | `RUMMY_SHUTDOWN_PHASE_TIMEOUT` | No | `285s`; a little above the drain timeout |
 | `RUMMY_ADVERTISE_ADDRESS` | Multi-node | private `ip:port` other nodes use to reach this one (default: machine IP + port) |
 | `RUMMY_SETTLEMENT_MAX_CONCURRENT` | No | `32`; payouts in flight per node |
+| `RUMMY_GAME_URL` | Yes (prod) | `https://play.yourdomain.com`; players land here after an operator launch |
+| `RUMMY_SESSION_TTL_HOURS` | No | `12`; player session length after launch |
+| `RUMMY_LAUNCH_CODE_TTL_SECONDS` | No | `120`; launch links are single use and expire after this |
+| `RUMMY_OPERATOR_WALLET_TIMEOUT_MS` | No | `5000`; per call to an operator wallet |
+| `RUMMY_MOCK_OPERATOR_ENABLED` | Never in prod | `true` only on a local machine; the `prod` profile forces it off |
+
+Operators (partners) are added with the admin API (`POST /api/admin/operators`); see `OPERATOR_INTEGRATION.md`.
 
 ### Frontend (build-time only)
 

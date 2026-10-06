@@ -22,6 +22,7 @@ import com.rummy.gameservice.persistence.document.StakeEscrowDocument;
 import com.rummy.gameservice.persistence.document.TableSnapshotDocument;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
 import com.rummy.gameservice.wallet.StakeEscrowService;
+import com.rummy.gameservice.wallet.TestFunding;
 import com.rummy.gameservice.wallet.WalletService;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
@@ -90,6 +91,7 @@ class CrashRestoreMongoTest {
         dbName = "rummy_restore_test_" + UUID.randomUUID().toString().substring(0, 8);
         mongo = new MongoTemplate(client, dbName);
         wallet = new WalletService();
+        TestFunding.fund(wallet, "P1", "P2");
         a = new Node("node-a");
         b = new Node("node-b");
     }
@@ -281,6 +283,6 @@ class CrashRestoreMongoTest {
     }
 
     private BigDecimal balance(String playerId) {
-        return wallet.getOrCreateWallet(playerId).getFreePlayBalance();
+        return wallet.getOrCreateWallet(playerId).getBalance();
     }
 }

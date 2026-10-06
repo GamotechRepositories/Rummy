@@ -1,6 +1,8 @@
 package com.rummy.gameservice.matchmaking;
 
-import com.rummy.gameservice.persistence.document.WalletAccountDocument;
+import com.rummy.gameservice.operator.MockOperatorController;
+import com.rummy.gameservice.operator.OperatorRegistry;
+import com.rummy.gameservice.operator.OperatorWalletException;
 import com.rummy.gameservice.security.AuthenticatedPlayer;
 import com.rummy.gameservice.wallet.InsufficientBalanceException;
 import com.rummy.gameservice.wallet.WalletService;
@@ -25,19 +27,25 @@ public class MatchmakingController {
 
     private static final int MAX_STAKE_TIER = 100_000;
 
+    static final String TEST_POOL = "test";
+
     private final MatchmakingService matchmakingService;
     private final WalletService walletService;
+    private final OperatorRegistry operators;
 
     public MatchmakingController(
             MatchmakingService matchmakingService,
-            @Autowired(required = false) WalletService walletService) {
+            @Autowired(required = false) WalletService walletService,
+            @Autowired(required = false) OperatorRegistry operators) {
         this.matchmakingService = Objects.requireNonNull(matchmakingService);
         this.walletService = walletService;
+        this.operators = operators;
     }
 
     @PostMapping("/join")
     public ResponseEntity<?> joinQueue(HttpServletRequest httpRequest, @RequestBody MatchmakingRequest request) {
         request.setPlayerId(AuthenticatedPlayer.resolve(httpRequest, request.getPlayerId()));
+        request.setPool(isTestPlayer(request.getPlayerId()) ? TEST_POOL : null);
 
         if (request.getStakeTier() < 0 || request.getStakeTier() > MAX_STAKE_TIER
                 || request.getMaxPlayers() < 2 || request.getMaxPlayers() > 6) {
@@ -53,6 +61,14 @@ public class MatchmakingController {
             return ResponseEntity.ok(MatchmakingResponse.fromTicket(ticket));
         } catch (InsufficientBalanceException e) {
             return insufficientBalance(request);
+        } catch (OperatorWalletException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .header(HttpHeaders.RETRY_AFTER, "5")
+                    .body(Map.of(
+                            "success", false,
+                            "error", "WALLET_UNAVAILABLE",
+                            "message", "Your wallet could not be charged right now. Please try again in a moment."
+                    ));
         } catch (NodeDrainingException e) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .header(HttpHeaders.RETRY_AFTER, "2")
@@ -89,6 +105,12 @@ public class MatchmakingController {
         ));
     }
 
+    private boolean isTestPlayer(String playerId) {
+        return operators != null && operators.player(playerId)
+                .map(ref -> MockOperatorController.OPERATOR_ID.equals(ref.operatorId()))
+                .orElse(false);
+    }
+
     private Optional<MatchmakingTicket> ownedTicket(String ticketId, String playerId) {
         return matchmakingService.getTicket(ticketId)
                 .filter(ticket -> playerId.equals(ticket.getPlayerId()));
@@ -96,15 +118,11 @@ public class MatchmakingController {
 
     private ResponseEntity<?> insufficientBalance(MatchmakingRequest request) {
         BigDecimal required = BigDecimal.valueOf(request.getStakeTier());
-        BigDecimal balance = BigDecimal.ZERO;
-        if (walletService != null) {
-            WalletAccountDocument wallet = walletService.getOrCreateWallet(request.getPlayerId());
-            balance = wallet.getFreePlayBalance();
-        }
+        BigDecimal balance = walletService != null ? walletService.balanceOf(request.getPlayerId()) : BigDecimal.ZERO;
         return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
                 "error", "INSUFFICIENT_BALANCE",
-                "message", "Insufficient token balance! You have " + balance + " tokens, but need " + required + " tokens to enter this table.",
+                "message", "Insufficient balance. You have ₹" + balance + " but this table needs ₹" + required + ". Add cash from your account.",
                 "currentBalance", balance,
                 "requiredStake", required
         ));

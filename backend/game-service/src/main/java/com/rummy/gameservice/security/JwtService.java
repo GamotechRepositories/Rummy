@@ -25,6 +25,7 @@ public class JwtService {
 
     private static final Logger log = LoggerFactory.getLogger(JwtService.class);
     private static final int MIN_SECRET_BYTES = 32;
+    public static final String OPERATOR_CLAIM = "op";
 
     private final SecretKey signingKey;
     private final Duration tokenTtl;
@@ -64,15 +65,22 @@ public class JwtService {
      * Generates a signed JWT session token for a player.
      */
     public String generateToken(String playerId, String displayName) {
-        Instant now = Instant.now();
-        Instant expiry = now.plus(tokenTtl);
+        return generateToken(playerId, displayName, null, tokenTtl);
+    }
 
-        return Jwts.builder()
+    /** A player session token; {@code operatorId} is the operator that launched the player (may be null). */
+    public String generateToken(String playerId, String displayName, String operatorId, Duration ttl) {
+        Instant now = Instant.now();
+        var builder = Jwts.builder()
                 .subject(playerId)
                 .claim("name", displayName)
-                .claim("role", "PLAYER")
+                .claim("role", "PLAYER");
+        if (operatorId != null) {
+            builder.claim(OPERATOR_CLAIM, operatorId);
+        }
+        return builder
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(expiry))
+                .expiration(Date.from(now.plus(ttl)))
                 .signWith(signingKey)
                 .compact();
     }

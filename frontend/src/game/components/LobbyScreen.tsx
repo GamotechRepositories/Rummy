@@ -142,7 +142,7 @@ export const LobbyScreen: React.FC = () => {
   const [localName, setLocalName] = useState(displayName);
   const [isEditingName, setIsEditingName] = useState(false);
   const [characterOpen, setCharacterOpen] = useState(false);
-  const [walletBalance, setWalletBalance] = useState<number>(1000);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [rematchNotice, setRematchNotice] = useState(false);
 
@@ -215,7 +215,7 @@ export const LobbyScreen: React.FC = () => {
       const res = await authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${playerId}`);
       if (res.ok) {
         const data = await res.json();
-        setWalletBalance(data.freePlayBalance ?? 1000);
+        setWalletBalance(Number(data.balance ?? 0));
       }
     } catch {
       // Backend offline fallback
@@ -291,7 +291,7 @@ export const LobbyScreen: React.FC = () => {
 
     if (walletBalance < eFee) {
       setErrorMsg(
-        `Insufficient Balance: You need ₹ ${eFee} to join this table. Click '+ Add Cash' to deposit.`
+        `Insufficient Balance: You need ₹ ${eFee} to join this table. Use 'Add Cash' to top up your account.`
       );
       setIsWalletOpen(true);
       isEnqueuingRef.current = false;

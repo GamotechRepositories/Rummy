@@ -118,9 +118,23 @@ rummy:
       secret: ${RUMMY_JWT_SECRET:}
       ttl-hours: ${RUMMY_JWT_TTL_HOURS:720}
       require-secret: false
-  wallet:
-    # Credits deposits with no payment confirmation. Demo/local only; never enable with real money.
-    simulated-payments-enabled: ${RUMMY_SIMULATED_PAYMENTS:false}
+  operator:
+    # Where players land after an operator launch (the game frontend), e.g. https://play.example.com
+    game-url: ${RUMMY_GAME_URL:http://localhost:5173}
+    # Launch links are single use and expire after this long.
+    launch-code-ttl-seconds: ${RUMMY_LAUNCH_CODE_TTL_SECONDS:120}
+    # Player session length after launch (refreshable while valid).
+    session-ttl-hours: ${RUMMY_SESSION_TTL_HOURS:12}
+    # Per-call timeout for the operator wallet API.
+    wallet-timeout-ms: ${RUMMY_OPERATOR_WALLET_TIMEOUT_MS:5000}
+    # How often queued credits and rollbacks are retried against operator wallets.
+    outbox-interval-ms: ${RUMMY_OPERATOR_OUTBOX_INTERVAL_MS:5000}
+    mock:
+      # Test operator with test money at /mock-operator/ (test players only meet each other).
+      enabled: ${RUMMY_MOCK_OPERATOR_ENABLED:false}
+      # When set, the test login pages need ?key=<this>.
+      access-key: ${RUMMY_MOCK_OPERATOR_KEY:}
+      require-key: false
   mongo:
     transactions:
       # Atomic balance+ledger writes. Needs a replica set (Atlas is one); standalone mongod rejects it.

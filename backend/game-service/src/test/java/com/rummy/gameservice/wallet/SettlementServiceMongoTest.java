@@ -90,6 +90,7 @@ class SettlementServiceMongoTest {
         dbName = "rummy_settle_test_" + UUID.randomUUID().toString().substring(0, 8);
         mongo = new MongoTemplate(client, dbName);
         wallet = new FlakyWallet();
+        TestFunding.fund(wallet, "P1", "P2");
         a = new Node("node-a");
         b = new Node("node-b");
         for (String p : new String[]{"P1", "P2"}) {
@@ -245,6 +246,6 @@ class SettlementServiceMongoTest {
     }
 
     private BigDecimal balance(String playerId) {
-        return wallet.getOrCreateWallet(playerId).getFreePlayBalance();
+        return wallet.getOrCreateWallet(playerId).getBalance();
     }
 }

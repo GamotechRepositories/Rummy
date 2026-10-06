@@ -1,10 +1,8 @@
 package com.rummy.engine;
 
-import com.rummy.engine.bot.HandEvaluator;
 import com.rummy.engine.command.*;
 import com.rummy.engine.event.*;
 import com.rummy.engine.model.*;
-import com.rummy.engine.rules.CardGroup;
 import com.rummy.engine.rules.DeclarationResult;
 import com.rummy.engine.rules.RummyRules;
 
@@ -312,6 +310,10 @@ public final class GameEngine {
         if (!player.hasCard(cmd.finishCardInstanceId())) {
             return EngineResult.failure(state, "Finish card " + cmd.finishCardInstanceId() + " not found in hand");
         }
+        if (!groupsMatchHandWithoutFinish(cmd, player)) {
+            return EngineResult.failure(state, "Declared groups must contain each of your other "
+                    + rules.getCardsPerPlayer() + " cards exactly once, without the finish card");
+        }
 
         // Temporarily take finish card out of hand
         CardInstance finishCard = player.removeCard(cmd.finishCardInstanceId());
@@ -336,13 +338,7 @@ public final class GameEngine {
             for (PlayerState opponent : state.getPlayers()) {
                 if (!opponent.getPlayerId().equals(cmd.playerId()) && opponent.getStatus() == PlayerStatus.ACTIVE) {
                     Card cutCard = state.getCutJoker() != null ? state.getCutJoker().getCard() : null;
-                    HandEvaluator.EvaluationResult eval = HandEvaluator.evaluateDeadwood(
-                            opponent.getHandSnapshot(), cutCard);
-                    List<CardGroup> opponentGroups = new ArrayList<>(eval.meldedGroups());
-                    if (!eval.deadwoodCards().isEmpty()) {
-                        opponentGroups.add(CardGroup.of(eval.deadwoodCards()));
-                    }
-                    int penalty = rules.calculateLosingScore(opponentGroups, cutCard);
+                    int penalty = rules.scoreLosingHand(opponent.getHandSnapshot(), cutCard);
                     opponent.setScore(penalty);
                     opponent.addCumulativeScore(penalty);
                     scoreMap.put(opponent.getPlayerId(), penalty);
@@ -408,14 +404,23 @@ public final class GameEngine {
         }
 
         TurnState turn = state.getTurnState();
-        if (turn != null && turn.getCurrentPlayerId().equals(cmd.playerId()) && turn.getPhase() == TurnPhase.AWAITING_DISCARD) {
+        boolean afterDraw = turn != null && turn.getCurrentPlayerId().equals(cmd.playerId())
+                && turn.getPhase() == TurnPhase.AWAITING_DISCARD;
+        if (afterDraw && !cmd.isForfeit()) {
             return EngineResult.failure(state, "Cannot drop after drawing a card. You must discard.");
         }
+        if (!cmd.isForfeit() && (turn == null || !turn.getCurrentPlayerId().equals(cmd.playerId()))) {
+            return EngineResult.failure(state, "You can only drop on your own turn, before drawing.");
+        }
 
-        boolean isFirstDrop = !player.hasTakenFirstTurn() && player.getConsecutiveMissedTurns() == 0;
-        int penalty = cmd.isForfeit()
-                ? rules.getMaximumPenalty()
-                : (isFirstDrop ? rules.getFirstDropPenalty() : rules.getMiddleDropPenalty());
+        boolean isFirstDrop = !afterDraw && !player.hasTakenFirstTurn() && player.getConsecutiveMissedTurns() == 0;
+        int penalty;
+        if (cmd.isForfeit() && (afterDraw || rules.isEliminationGame() || rules.isDealsGame())) {
+            penalty = rules.getMaximumPenalty();
+        } else {
+            // Leaving a points table before drawing costs the same as dropping.
+            penalty = isFirstDrop ? rules.getFirstDropPenalty() : rules.getMiddleDropPenalty();
+        }
         player.markDropped(penalty);
 
         List<GameEvent> events = new ArrayList<>();
@@ -511,6 +516,26 @@ public final class GameEngine {
         }
 
         return EngineResult.success(state, events);
+    }
+
+    private static boolean groupsMatchHandWithoutFinish(DeclareCommand cmd, PlayerState player) {
+        if (cmd.groups() == null) {
+            return false;
+        }
+        Set<String> expected = new HashSet<>();
+        for (CardInstance c : player.getHandSnapshot()) {
+            expected.add(c.getInstanceId());
+        }
+        expected.remove(cmd.finishCardInstanceId());
+        Set<String> declared = new HashSet<>();
+        for (var group : cmd.groups()) {
+            for (CardInstance c : group.getCards()) {
+                if (!expected.contains(c.getInstanceId()) || !declared.add(c.getInstanceId())) {
+                    return false;
+                }
+            }
+        }
+        return declared.size() == expected.size();
     }
 
     private EngineResult finishGameWithSingleRemainingPlayer(GameState state, PlayerState winner,

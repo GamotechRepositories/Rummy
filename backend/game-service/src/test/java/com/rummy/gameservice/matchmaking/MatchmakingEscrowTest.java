@@ -8,6 +8,7 @@ import com.rummy.gameservice.routing.PlayerPresenceService;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
 import com.rummy.gameservice.wallet.InsufficientBalanceException;
 import com.rummy.gameservice.wallet.StakeEscrowService;
+import com.rummy.gameservice.wallet.TestFunding;
 import com.rummy.gameservice.wallet.WalletService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +35,8 @@ class MatchmakingEscrowTest {
     void setUp() {
         tableManager = new TableManager(new ObjectMapper(), null);
         walletService = new WalletService();
+        TestFunding.fund(walletService, "USR_E1", "USR_E2", "USR_E3", "USR_E4", "USR_E5", "USR_E6", "USR_E7",
+                "USR_E8", "USR_E9", "USR_POOR");
         store = new InMemoryMatchmakingStore();
         TableRoutingRegistry routing = new TableRoutingRegistry(null, "srv-escrow");
         matchmakingService = new MatchmakingService(tableManager, routing, new PlayerPresenceService(null), store,
@@ -156,6 +159,6 @@ class MatchmakingEscrowTest {
     }
 
     private BigDecimal balance(String playerId) {
-        return walletService.getOrCreateWallet(playerId).getFreePlayBalance();
+        return walletService.getOrCreateWallet(playerId).getBalance();
     }
 }

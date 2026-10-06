@@ -12,7 +12,48 @@ import {
   readPersistedActiveTable,
   readPersistedDisplayName,
 } from './game/utils/sessionResume';
-import { ensureAuthToken, getAuthenticatedPlayerId } from './game/utils/authClient';
+import {
+  ensureAuthToken,
+  getAuthenticatedPlayerId,
+  redeemLaunchCode,
+  takeLaunchCodeFromUrl,
+} from './game/utils/authClient';
+import { getApiBaseUrl } from './game/utils/apiConfig';
+
+type SessionProblem = 'none' | 'expired-link';
+
+function hasLaunchCodeInUrl(): boolean {
+  try {
+    return new URLSearchParams(window.location.search).has('launch');
+  } catch {
+    return false;
+  }
+}
+
+let launchRedemption: Promise<'none' | 'ok' | 'failed'> | null = null;
+
+/** Opens the session from an operator launch link, if the page was opened with one (once per page load). */
+function redeemLaunchFromUrl(): Promise<'none' | 'ok' | 'failed'> {
+  if (!launchRedemption) launchRedemption = redeemLaunchCodeInUrl();
+  return launchRedemption;
+}
+
+async function redeemLaunchCodeInUrl(): Promise<'none' | 'ok' | 'failed'> {
+  const code = takeLaunchCodeFromUrl();
+  if (!code) return 'none';
+  const previousPlayer = getAuthenticatedPlayerId();
+  const session = await redeemLaunchCode(code);
+  if (!session) return 'failed';
+  if (previousPlayer && previousPlayer !== session.playerId) {
+    // A different account was launched in this browser; the old player's table is not ours.
+    clearActiveSessionLocal();
+  }
+  useGameStore.setState({ playerId: session.playerId });
+  if (session.displayName) {
+    useGameStore.getState().setDisplayName(session.displayName);
+  }
+  return 'ok';
+}
 
 function restoreLocalSessionIfAny(): boolean {
   const localTable = readPersistedActiveTable();
@@ -33,18 +74,28 @@ export function App() {
   const { gameState, hasJoinedTable, resumePending } = useGameStore();
   // Restore local table synchronously so first paint can show GameBoard (not blank)
   const [bootDone, setBootDone] = useState(() => {
-    restoreLocalSessionIfAny();
+    if (!hasLaunchCodeInUrl()) {
+      restoreLocalSessionIfAny();
+    }
     return false;
   });
+  const [noSession, setNoSession] = useState<SessionProblem | null>(null);
 
   useEffect(() => {
     installSoundUnlock();
     let cancelled = false;
+    let hasSession = false;
 
     (async () => {
       try {
+        const launch = await redeemLaunchFromUrl();
         // Backend only trusts the player id inside the JWT, so obtain it before any API/WS call
-        await ensureAuthToken(readPersistedDisplayName() || useGameStore.getState().displayName);
+        const token = await ensureAuthToken(readPersistedDisplayName() || useGameStore.getState().displayName);
+        if (!token) {
+          setNoSession(launch === 'failed' ? 'expired-link' : 'none');
+          return;
+        }
+        hasSession = true;
         const serverPlayerId = getAuthenticatedPlayerId();
         if (serverPlayerId && serverPlayerId !== useGameStore.getState().playerId) {
           useGameStore.setState({ playerId: serverPlayerId });
@@ -98,8 +149,10 @@ export function App() {
         }
       } finally {
         // Always connect + finish boot — even if effect was cancelled (Strict Mode)
-        socketClient.connect();
-        socketClient.ensureTableJoined();
+        if (hasSession) {
+          socketClient.connect();
+          socketClient.ensureTableJoined();
+        }
         setBootDone(true);
       }
     })();
@@ -111,6 +164,36 @@ export function App() {
 
   // Soft-reconnect: stay on GameBoard while reclaiming table
   const inGame = hasJoinedTable && (gameState !== null || resumePending);
+
+  if (bootDone && noSession) {
+    return (
+      <div className="app-frame" style={{ display: 'grid', placeItems: 'center', color: '#f8fafc', padding: 24 }}>
+        <div style={{ textAlign: 'center', maxWidth: 420 }}>
+          <img
+            src="/image.png"
+            alt="Royal Rummy"
+            style={{ height: 64, maxWidth: '80vw', objectFit: 'contain', marginBottom: 16 }}
+          />
+          <h2 style={{ margin: '0 0 10px', fontSize: 20 }}>
+            {noSession === 'expired-link' ? 'This game link has expired' : 'Open Royal Rummy from your gaming account'}
+          </h2>
+          <p style={{ margin: 0, fontSize: 14, color: '#94a3b8', lineHeight: 1.5 }}>
+            {noSession === 'expired-link'
+              ? 'Game links work once and only for a short time. Go back to your gaming account and open the game again.'
+              : 'Royal Rummy is played through your gaming account. Sign in there and choose Rummy to start playing.'}
+          </p>
+          {import.meta.env.DEV && (
+            <a
+              href={`${getApiBaseUrl()}/mock-operator/`}
+              style={{ display: 'inline-block', marginTop: 18, color: '#facc15', fontSize: 14 }}
+            >
+              Test login (test money)
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (!bootDone) {
     return (

@@ -140,6 +140,7 @@ public class MatchmakingService {
                 request.getMaxPlayers(),
                 request.isAllowAiFallback()
         );
+        ticket.setPool(request.getPool());
 
         escrowStake(ticket);
         try {

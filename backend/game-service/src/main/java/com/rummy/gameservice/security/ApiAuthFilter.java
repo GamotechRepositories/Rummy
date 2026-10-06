@@ -29,10 +29,12 @@ public class ApiAuthFilter extends OncePerRequestFilter {
 
     static final String ADMIN_KEY_HEADER = "X-Admin-Key";
 
+    /** {@code /api/operator/launch} authenticates the operator by request signature instead. */
     private static final List<String> PUBLIC_PATHS = List.of(
-            "/api/auth/guest",
             "/api/auth/refresh",
-            "/api/auth/verify"
+            "/api/auth/verify",
+            "/api/operator/launch",
+            "/api/operator/session"
     );
 
     private static final List<String> ADMIN_PREFIXES = List.of(
