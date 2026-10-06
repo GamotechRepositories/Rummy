@@ -864,19 +864,8 @@ public final class TableActor {
 
         refreshBotsOnlyWindDown();
 
-        // Adaptive human-like think time: faster for draw (1.2-2.6s), more thoughtful for discard/declare (2.0-4.2s).
-        long thinkMillis;
-        if (turn.getPhase() == TurnPhase.AWAITING_DRAW) {
-            thinkMillis = ThreadLocalRandom.current().nextLong(1200, 2600);
-        } else {
-            thinkMillis = ThreadLocalRandom.current().nextLong(2000, 4200);
-        }
-
-        if (turn.getTurnNumber() == 1) {
-            int totalCards = state.getPlayers().size() * rules.getCardsPerPlayer();
-            long dealDurationMs = Math.max(0, totalCards - 1) * 120L + 460L + 280L;
-            thinkMillis += dealDurationMs;
-        }
+        PlayerGameView botViewForThink = PlayerGameView.from(state, activePlayerId);
+        long thinkMillis = bot.getThinkTimeMillis(botViewForThink, rules, state.getPlayers().size());
         log.info("[TableActor:{}] Bot {} thinking for {}ms before acting ({})", tableId, activePlayerId, thinkMillis, turn.getPhase());
 
         if (botTurnFuture != null && !botTurnFuture.isDone()) {

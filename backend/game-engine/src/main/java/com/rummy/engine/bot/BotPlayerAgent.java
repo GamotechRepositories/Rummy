@@ -9,6 +9,7 @@ import com.rummy.engine.rules.RummyRules;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Production AI Bot Player implementing zero-knowledge fair play.
@@ -115,6 +116,16 @@ public final class BotPlayerAgent implements PlayerAgent {
         if (view.turnPhase() == TurnPhase.AWAITING_DRAW) {
             botTurnCountInDeal++;
 
+            // EMOTIONAL PLAY / TILT: If close to elimination, bot might just drop out of fear if no pure sequence
+            if (!view.hasTakenFirstTurn() && difficulty != BotDifficulty.EASY && view.eliminationThreshold() > 0) {
+                if (view.viewerCumulativeScore() >= view.eliminationThreshold() * 0.8) {
+                    // Very close to elimination. If no pure seq, high chance to just drop immediately (Tilt)
+                    if (!HandEvaluator.hasPureSequence(view.hand(), cutCard) && random.nextDouble() < 0.6) {
+                        return new DropCommand(cmdId, view.gameId(), playerId, now);
+                    }
+                }
+            }
+
             // 1. Strategic First Drop check on turn 1 before drawing
             if (!view.hasTakenFirstTurn() && difficulty != BotDifficulty.EASY) {
                 if (HandEvaluator.shouldTakeFirstDrop(view.hand(), cutCard, rules)) {
@@ -143,23 +154,28 @@ public final class BotPlayerAgent implements PlayerAgent {
         if (topDiscard != null) {
             boolean isTopJoker = topDiscard.isPrintedJoker() || (cutCard != null && topDiscard.getCard().isWildJoker(cutCard));
             if (!isTopJoker) {
-                // 1. Instant win declaration check
-                List<CardInstance> potentialHand = new ArrayList<>(view.hand());
-                potentialHand.add(topDiscard);
-                if (HandEvaluator.findWinningDeclaration(potentialHand, cutCard, rules).isPresent()) {
-                    return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.DISCARD_PILE, now);
-                }
+                // INTENTIONAL BLUNDER: Medium bot has 8% chance to ignore a good open card
+                boolean blunder = (difficulty == BotDifficulty.MEDIUM && random.nextDouble() < 0.08);
 
-                // 2. Pure Sequence priority: If card creates a natural Pure Sequence, always pick it!
-                boolean formsPure = HandEvaluator.doesCardFormPureSequence(topDiscard, view.hand());
-                if (formsPure) {
-                    return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.DISCARD_PILE, now);
-                }
+                if (!blunder) {
+                    // 1. Instant win declaration check
+                    List<CardInstance> potentialHand = new ArrayList<>(view.hand());
+                    potentialHand.add(topDiscard);
+                    if (HandEvaluator.findWinningDeclaration(potentialHand, cutCard, rules).isPresent()) {
+                        return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.DISCARD_PILE, now);
+                    }
 
-                // 3. If bot already has a pure sequence, it is safe to pick cards that form impure sequences or sets
-                boolean hasPure = HandEvaluator.hasPureSequence(view.hand(), cutCard);
-                if (hasPure && HandEvaluator.doesCardImproveHand(topDiscard, view.hand(), cutCard)) {
-                    return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.DISCARD_PILE, now);
+                    // 2. Pure Sequence priority: If card creates a natural Pure Sequence, always pick it!
+                    boolean formsPure = HandEvaluator.doesCardFormPureSequence(topDiscard, view.hand());
+                    if (formsPure) {
+                        return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.DISCARD_PILE, now);
+                    }
+
+                    // 3. If bot already has a pure sequence, it is safe to pick cards that form impure sequences or sets
+                    boolean hasPure = HandEvaluator.hasPureSequence(view.hand(), cutCard);
+                    if (hasPure && HandEvaluator.doesCardImproveHand(topDiscard, view.hand(), cutCard)) {
+                        return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.DISCARD_PILE, now);
+                    }
                 }
             }
         }
@@ -316,5 +332,49 @@ public final class BotPlayerAgent implements PlayerAgent {
             cachedDeadwood = HandEvaluator.evaluateDeadwood(view.hand(), cutCard);
         }
         return cachedDeadwood;
+    }
+    /**
+     * Computes a human-like delay for the bot's turn action.
+     */
+    public long getThinkTimeMillis(PlayerGameView view, RummyRules rules, int totalPlayers) {
+        long thinkMillis;
+        TurnPhase phase = view.turnPhase();
+
+        // Base think time based on phase
+        if (phase == TurnPhase.AWAITING_DRAW) {
+            thinkMillis = ThreadLocalRandom.current().nextLong(2000, 4000);
+        } else {
+            thinkMillis = ThreadLocalRandom.current().nextLong(3000, 6000);
+        }
+
+        // Difficulty modifiers
+        if (difficulty == BotDifficulty.HARD) {
+            // Hard bot thinks slightly faster because it is a "pro"
+            thinkMillis = (long) (thinkMillis * 0.85);
+        } else if (difficulty == BotDifficulty.EASY) {
+            // Easy bot is a beginner, takes longer
+            thinkMillis = (long) (thinkMillis * 1.3);
+        }
+
+        // Initial Sorting Delay on Turn 1
+        if (!view.hasTakenFirstTurn() && phase == TurnPhase.AWAITING_DRAW) {
+            int cardsPerPlayer = rules != null ? rules.getCardsPerPlayer() : 13;
+            int totalCards = totalPlayers * cardsPerPlayer;
+            // Deal animation duration roughly
+            long dealDurationMs = Math.max(0, totalCards - 1) * 120L + 460L + 280L;
+            // Human needs extra 3-5 seconds to arrange cards after deal
+            long initialArrangementTime = ThreadLocalRandom.current().nextLong(3000, 5000);
+            thinkMillis += dealDurationMs + initialArrangementTime;
+        }
+
+        // Emotional Tilt / High Pressure check (takes longer to decide if critical)
+        int score = view.viewerCumulativeScore();
+        int limit = view.eliminationThreshold();
+        if (limit > 0 && score >= limit * 0.75) {
+            // High pressure, takes extra time to think
+            thinkMillis += ThreadLocalRandom.current().nextLong(1500, 3000);
+        }
+
+        return thinkMillis;
     }
 }
