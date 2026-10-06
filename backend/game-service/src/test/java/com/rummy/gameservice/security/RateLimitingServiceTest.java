@@ -34,6 +34,17 @@ class RateLimitingServiceTest {
     }
 
     @Test
+    void testIdleBucketsAreEvicted() throws InterruptedException {
+        RateLimitingService limiter = new RateLimitingService(2, 1.0);
+        limiter.tryAcquire("old-session");
+        Thread.sleep(30);
+        limiter.tryAcquire("fresh-session");
+
+        assertEquals(1, limiter.evictIdleBuckets(java.time.Duration.ofMillis(20)));
+        assertEquals(1, limiter.getTrackedKeyCount());
+    }
+
+    @Test
     void testNullOrBlankKeyPassesThrough() {
         RateLimitingService limiter = new RateLimitingService(2, 1.0);
         assertTrue(limiter.tryAcquire(null));

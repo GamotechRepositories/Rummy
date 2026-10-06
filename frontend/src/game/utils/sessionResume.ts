@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from './apiConfig';
+import { authFetch, getAuthenticatedPlayerId } from './authClient';
 import type { VisualCardGroup } from '../types/game';
 
 const KEYS = {
@@ -45,6 +46,8 @@ function storageRemove(key: string): void {
 }
 
 export function getOrCreatePlayerId(): string {
+  const fromToken = getAuthenticatedPlayerId();
+  if (fromToken) return fromToken;
   const existing = storageGet(KEYS.playerId);
   if (existing) return existing;
   const newId = 'PLAYER_' + Math.floor(1000 + Math.random() * 9000);
@@ -168,7 +171,7 @@ export async function fetchActiveSession(
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 2500);
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${getApiBaseUrl()}/api/session/active?playerId=${encodeURIComponent(playerId)}`,
       { signal: controller.signal }
     );
@@ -183,7 +186,7 @@ export async function fetchActiveSession(
 
 export async function clearActiveSessionRemote(playerId: string): Promise<void> {
   try {
-    await fetch(`${getApiBaseUrl()}/api/session/clear`, {
+    await authFetch(`${getApiBaseUrl()}/api/session/clear`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ playerId }),

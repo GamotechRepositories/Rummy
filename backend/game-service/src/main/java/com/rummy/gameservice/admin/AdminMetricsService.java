@@ -1,6 +1,7 @@
 package com.rummy.gameservice.admin;
 
 import com.rummy.gameservice.actor.TableManager;
+import com.rummy.gameservice.lifecycle.NodeDrainState;
 import com.rummy.gameservice.matchmaking.MatchmakingService;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
 import io.micrometer.core.instrument.Counter;
@@ -67,14 +68,11 @@ public class AdminMetricsService {
         commandProcessedCounter.increment();
     }
 
-    private volatile boolean draining = false;
+    private NodeDrainState drainState;
 
-    public boolean isDraining() {
-        return draining;
-    }
-
-    public void setDraining(boolean draining) {
-        this.draining = draining;
+    @Autowired(required = false)
+    public void setDrainState(NodeDrainState drainState) {
+        this.drainState = drainState;
     }
 
     public Map<String, Object> getSystemDiagnostics() {
@@ -89,8 +87,9 @@ public class AdminMetricsService {
         diag.put("uptimeSeconds", (Instant.now().toEpochMilli() - serverStartTime.toEpochMilli()) / 1000);
         diag.put("jvmUptimeMillis", ManagementFactory.getRuntimeMXBean().getUptime());
         diag.put("activeTables", tableManager.activeTableCount());
+        diag.put("liveTables", tableManager.liveTableCount());
         diag.put("matchmakingQueueSize", matchmakingService.getQueuedPlayerCount());
-        diag.put("isDraining", draining);
+        diag.put("isDraining", drainState != null && drainState.isDraining());
         diag.put("usedMemoryMb", usedMemory / (1024 * 1024));
         diag.put("totalMemoryMb", totalMemory / (1024 * 1024));
         diag.put("maxMemoryMb", maxMemory / (1024 * 1024));

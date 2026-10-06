@@ -1,6 +1,14 @@
 server:
   port: ${PORT:8081}
   instance-id: ${SERVER_INSTANCE_ID:}
+  shutdown: graceful
+  tomcat:
+    # Each WebSocket holds one connection; Tomcat's default (8192) caps a node far below its real capacity.
+    # Raise the OS file-descriptor limit (ulimit -n) above this value too.
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:50000}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:2000}
+    threads:
+      max: ${TOMCAT_MAX_THREADS:400}
 
 spring:
   application:
@@ -13,6 +21,9 @@ spring:
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
   main:
     banner-mode: off
+  lifecycle:
+    # Must exceed rummy.drain.timeout-seconds, or Spring stops waiting for live games.
+    timeout-per-shutdown-phase: ${RUMMY_SHUTDOWN_PHASE_TIMEOUT:21m}
   data:
     mongodb:
       uri: ${SPRING_DATA_MONGODB_URI:${MONGODB_URI:mongodb://localhost:27017/rummy_db}}
@@ -31,7 +42,11 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: always
+      # Health is public (load balancer probes); don't expose Mongo/Redis internals to the internet.
+      show-details: never
+      # /actuator/health/readiness goes DOWN while draining so the load balancer stops sending players here.
+      probes:
+        enabled: true
   health:
     redis:
       enabled: false
@@ -50,7 +65,66 @@ rummy:
     enabled: ${RUMMY_REDIS_ENABLED:false}
   websocket:
     endpoint: /ws/game
-    allowed-origins: "*"
+    # Close sockets that stop pinging (client pings every 15s).
+    idle-timeout-ms: ${RUMMY_WS_IDLE_TIMEOUT_MS:120000}
+    # Longest a single blocked write to a slow client may take before the socket is dropped.
+    send-timeout-ms: ${RUMMY_WS_SEND_TIMEOUT_MS:10000}
+  tables:
+    # Refuse new private tables beyond this; matchmaking should place players on another node.
+    max-per-node: ${RUMMY_MAX_TABLES_PER_NODE:20000}
+    # Finished matches stay in memory this long so players can see results and settlement.
+    finished-grace-seconds: 180
+    # Waiting rooms with nobody connected are dropped after this long.
+    abandoned-after-seconds: 600
+    reclaim-interval-ms: 30000
+  cluster:
+    # A node whose heartbeat is older than this is treated as crashed; its escrowed stakes are refunded.
+    dead-after-seconds: ${RUMMY_NODE_DEAD_AFTER_SECONDS:45}
+    heartbeat-interval-ms: 10000
+    # host:port other nodes use to reach this one on the private network. Players connected to a node
+    # that does not host their table are relayed through it to the host. Empty = this machine's IP + server.port.
+    advertise-address: ${RUMMY_ADVERTISE_ADDRESS:}
+    relay-enabled: ${RUMMY_RELAY_ENABLED:true}
+    relay-connect-timeout-ms: 3000
+  recovery:
+    # Running matches are snapshotted to MongoDB so a surviving node can resume them after a crash.
+    enabled: ${RUMMY_RECOVERY_ENABLED:true}
+    # How often changed matches are written (one coalesced write per changed table per interval).
+    snapshot-interval-ms: ${RUMMY_SNAPSHOT_INTERVAL_MS:1000}
+    # A crashed match can be resumed for this long; after that its stakes are refunded instead.
+    restore-window-seconds: ${RUMMY_RESTORE_WINDOW_SECONDS:300}
+    # A restored pool/deals match waits at least this long before dealing, so players can reconnect.
+    min-next-deal-delay-seconds: 10
+  settlement:
+    # Payouts run off the game threads; at most this many hit the wallet database at once per node.
+    max-concurrent: ${RUMMY_SETTLEMENT_MAX_CONCURRENT:32}
+    # How often failed payouts (and payouts left behind by crashed nodes) are retried.
+    retry-interval-ms: ${RUMMY_SETTLEMENT_RETRY_INTERVAL_MS:10000}
+    retry-initial-delay-ms: 30000
+  drain:
+    # On shutdown, wait this long for live matches to finish; any still running are then handed to another
+    # node (players reconnect and continue), or cancelled with refunds if crash recovery is disabled.
+    # Keep below the pod's terminationGracePeriodSeconds.
+    timeout-seconds: ${RUMMY_DRAIN_TIMEOUT_SECONDS:1200}
+  security:
+    # Every /api/** call and the WebSocket handshake need a JWT. Set false only for local debugging.
+    enforce-jwt: ${RUMMY_ENFORCE_JWT:true}
+    # Comma-separated origin patterns, e.g. https://play.example.com,https://*.example.com
+    allowed-origins: ${RUMMY_ALLOWED_ORIGINS:*}
+    # Required for /api/admin/**, /api/fraud/**, /api/wallet/platform-revenue (header X-Admin-Key). Empty = disabled.
+    admin-api-key: ${RUMMY_ADMIN_API_KEY:}
+    jwt:
+      # At least 32 bytes. Empty = random per-process key (tokens die on restart, breaks multi-node).
+      secret: ${RUMMY_JWT_SECRET:}
+      ttl-hours: ${RUMMY_JWT_TTL_HOURS:720}
+      require-secret: false
+  wallet:
+    # Credits deposits with no payment confirmation. Demo/local only; never enable with real money.
+    simulated-payments-enabled: ${RUMMY_SIMULATED_PAYMENTS:false}
+  mongo:
+    transactions:
+      # Atomic balance+ledger writes. Needs a replica set (Atlas is one); standalone mongod rejects it.
+      enabled: ${RUMMY_MONGO_TRANSACTIONS:false}
   game:
     turn-duration-seconds: 30
     auto-drop-missed-turns: 3

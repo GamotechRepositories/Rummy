@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Persisted Game Document conforming to Section 22 (Phase 15) of master README.
+ * Persisted Game Document.
  */
 @Document(collection = "games")
 public class GameDocument {

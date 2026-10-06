@@ -8,7 +8,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 
 /**
- * Persisted Game Result Document conforming to Section 22 and 23 of master README.
+ * Persisted Game Result Document.
  * Stores individual player outcomes for fast history queries.
  */
 @Document(collection = "game_results")

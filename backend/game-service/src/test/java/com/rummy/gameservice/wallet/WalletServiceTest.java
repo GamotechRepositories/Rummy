@@ -239,6 +239,51 @@ class WalletServiceTest {
     }
 
     @Test
+    @DisplayName("Concurrent debits never overdraw the wallet")
+    void testConcurrentDebitsDoNotOverdraw() throws Exception {
+        String playerId = "USR_RACE";
+        walletService.getOrCreateWallet(playerId); // 1000
+
+        int threads = 50;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(16);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger succeeded = new java.util.concurrent.atomic.AtomicInteger();
+        List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            String key = "RACE_" + i;
+            futures.add(pool.submit(() -> {
+                start.await();
+                try {
+                    walletService.debit(playerId, BigDecimal.valueOf(100), "GAME_ENTRY", key, null, "race", null);
+                    succeeded.incrementAndGet();
+                } catch (InsufficientBalanceException ignored) {
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (java.util.concurrent.Future<?> f : futures) {
+            f.get();
+        }
+        pool.shutdown();
+
+        assertThat(succeeded.get()).isEqualTo(10);
+        assertThat(walletService.getOrCreateWallet(playerId).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    @DisplayName("Daily bonus can only be claimed once per 24h")
+    void testDailyBonusOnlyOnce() {
+        String playerId = "USR_DAILY";
+        walletService.claimDailyFreeTokens(playerId);
+
+        assertThatThrownBy(() -> walletService.claimDailyFreeTokens(playerId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("already claimed");
+        assertThat(walletService.getOrCreateWallet(playerId).getFreePlayBalance()).isEqualByComparingTo(BigDecimal.valueOf(1500));
+    }
+
+    @Test
     @DisplayName("Deals Rummy: Fixed entry fee tournament, 15% platform rake, winner takes net pool")
     void testDealsRummySettlement() {
         String winner = "USR_DEALS_W";

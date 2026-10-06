@@ -10,18 +10,24 @@ import com.rummy.engine.model.PlayerStatus;
 import com.rummy.engine.rules.CardGroup;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
+import com.rummy.gameservice.cluster.ClusterNodeService;
+import com.rummy.gameservice.lifecycle.NodeDrainState;
 import com.rummy.gameservice.matchmaking.MatchmakingService;
 import com.rummy.gameservice.protocol.WsClientMessage;
 import com.rummy.gameservice.protocol.WsErrorMessage;
 import com.rummy.gameservice.protocol.WsServerMessage;
+import com.rummy.gameservice.recovery.TableRecoveryService;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
 import com.rummy.gameservice.security.RateLimitingService;
 import com.rummy.gameservice.session.PlayerSessionService;
+import com.rummy.gameservice.websocket.SessionOutbox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
+import org.springframework.web.socket.adapter.NativeWebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
@@ -35,6 +41,15 @@ import java.util.*;
 public class GameWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GameWebSocketHandler.class);
+    private static final String MATCHMADE_TABLE_PREFIX = "TBL_MM_";
+    private static final int MAX_INBOUND_FRAME_BYTES = 64 * 1024;
+    private static final String TOMCAT_BLOCKING_SEND_TIMEOUT = "org.apache.tomcat.websocket.BLOCKING_SEND_TIMEOUT";
+
+    @Value("${rummy.websocket.idle-timeout-ms:120000}")
+    private long idleTimeoutMs = 120_000;
+
+    @Value("${rummy.websocket.send-timeout-ms:10000}")
+    private long sendTimeoutMs = 10_000;
 
     private final TableManager tableManager;
     private final ObjectMapper objectMapper;
@@ -42,18 +57,39 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     private final TableRoutingRegistry routingRegistry;
     private final PlayerSessionService sessionService;
 
+    /** When true, identity comes only from the handshake JWT; client-sent playerIds are ignored. */
+    private final boolean enforceJwt;
+
     private MatchmakingService matchmakingService;
+    private NodeDrainState drainState;
+    private ClusterNodeService clusterNodes;
+    private TableRecoveryService recovery;
+    private TableRelay relay;
+    private final Map<String, WebSocketSession> openSessions = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @Autowired
+    public GameWebSocketHandler(
+            TableManager tableManager,
+            ObjectMapper objectMapper,
+            RateLimitingService rateLimitingService,
+            TableRoutingRegistry routingRegistry,
+            PlayerSessionService sessionService,
+            @Value("${rummy.security.enforce-jwt:true}") boolean enforceJwt) {
+        this.tableManager = Objects.requireNonNull(tableManager);
+        this.objectMapper = Objects.requireNonNull(objectMapper);
+        this.rateLimitingService = Objects.requireNonNull(rateLimitingService);
+        this.routingRegistry = Objects.requireNonNull(routingRegistry);
+        this.sessionService = Objects.requireNonNull(sessionService);
+        this.enforceJwt = enforceJwt;
+    }
+
     public GameWebSocketHandler(
             TableManager tableManager,
             ObjectMapper objectMapper,
             RateLimitingService rateLimitingService,
             TableRoutingRegistry routingRegistry,
             PlayerSessionService sessionService) {
-        this.tableManager = Objects.requireNonNull(tableManager);
-        this.objectMapper = Objects.requireNonNull(objectMapper);
-        this.rateLimitingService = Objects.requireNonNull(rateLimitingService);
-        this.routingRegistry = Objects.requireNonNull(routingRegistry);
-        this.sessionService = Objects.requireNonNull(sessionService);
+        this(tableManager, objectMapper, rateLimitingService, routingRegistry, sessionService, false);
     }
 
     @Autowired(required = false)
@@ -61,9 +97,88 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         this.matchmakingService = matchmakingService;
     }
 
+    @Autowired(required = false)
+    public void setDrainState(NodeDrainState drainState) {
+        this.drainState = drainState;
+    }
+
+    /**
+     * While draining, disconnects sockets that are not attached to a table still hosted here,
+     * so those clients reconnect through the load balancer to a node that is accepting players.
+     */
+    public int closeSessionsWithoutTable() {
+        int closed = 0;
+        for (WebSocketSession session : openSessions.values()) {
+            String tableId = (String) session.getAttributes().get("tableId");
+            if (tableId != null && tableManager.getTable(tableId).isPresent()) {
+                continue;
+            }
+            try {
+                session.close(CloseStatus.SERVICE_RESTARTED);
+                closed++;
+            } catch (IOException | RuntimeException e) {
+                log.debug("[WS:{}] Close during drain failed: {}", session.getId(), e.getMessage());
+            }
+        }
+        return closed;
+    }
+
+    public int openSessionCount() {
+        return openSessions.size();
+    }
+
+    @Autowired(required = false)
+    public void setClusterNodes(ClusterNodeService clusterNodes) {
+        this.clusterNodes = clusterNodes;
+    }
+
+    @Autowired(required = false)
+    public void setRecovery(TableRecoveryService recovery) {
+        this.recovery = recovery;
+    }
+
+    @Autowired(required = false)
+    public void setRelay(TableRelay relay) {
+        this.relay = relay;
+    }
+
+    /**
+     * Connects the player through this node to the node hosting their table. True when the frame was
+     * handled: relayed, or the owner was unreachable and the client was told to retry.
+     */
+    private boolean relayToOwner(WebSocketSession session, String tableId, String owner, String playerId,
+                                 String frame, String reqId) {
+        if (relay == null || owner == null) {
+            return false;
+        }
+        return switch (relay.open(session, tableId, owner, playerId, frame)) {
+            case CONNECTED -> true;
+            case UNREACHABLE -> {
+                sendError(session, "TABLE_RECOVERING", "Reconnecting you to your game…", reqId);
+                yield true;
+            }
+            case UNAVAILABLE -> false;
+        };
+    }
+
+    /** The table no longer exists anywhere (finished and cleaned up, or its server crashed). */
+    private void sendTableGone(WebSocketSession session, String playerId, String tableId, String reqId) {
+        if (routingRegistry.getTableForPlayer(playerId).map(tableId::equals).orElse(false)) {
+            sessionService.clearPlayerBinding(playerId);
+        }
+        send(session, WsServerMessage.of("TABLE_CLOSED", reqId, tableId, Map.of(
+                "reason", "table no longer available",
+                "message", "This game has ended. If it was cut short by a server restart, your entry fee is refunded automatically within a few minutes."
+        )));
+    }
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        log.info("[WS] New connection established: {}", session.getId());
+        log.debug("[WS] New connection established: {}", session.getId());
+        applyTransportLimits(session);
+        SessionOutbox.attach(session);
+        TableRelay.markIfRelayed(session);
+        openSessions.put(session.getId(), session);
         String authPlayerId = (String) session.getAttributes().get("authenticatedPlayerId");
         if (authPlayerId != null) {
             session.getAttributes().put("playerId", authPlayerId);
@@ -74,7 +189,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                         "serverTime", Instant.now().toString(),
                         "serverInstanceId", routingRegistry.getServerInstanceId()
                 ));
-        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(connectedMsg)));
+        send(session, connectedMsg);
     }
 
     @Override
@@ -100,24 +215,38 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         String reqId = clientMsg.requestId() != null ? clientMsg.requestId() : UUID.randomUUID().toString();
         String tableId = clientMsg.tableId();
 
-        if ("PING".equalsIgnoreCase(type)) {
-            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(
-                    WsServerMessage.of("PONG", reqId, tableId, Map.of("timestamp", Instant.now().toEpochMilli())))));
+        if (relay != null && relay.forward(session, tableId, payload)) {
             return;
         }
+
+        if ("PING".equalsIgnoreCase(type)) {
+            send(session, WsServerMessage.of("PONG", reqId, tableId, Map.of("timestamp", Instant.now().toEpochMilli())));
+            return;
+        }
+
+        String authenticatedPlayerId = (String) session.getAttributes().get("authenticatedPlayerId");
 
         if ("AUTH".equalsIgnoreCase(type)) {
-            String playerId = clientMsg.payload() != null && clientMsg.payload().has("playerId")
-                    ? clientMsg.payload().get("playerId").asText()
-                    : "P_" + session.getId().substring(0, 6);
+            String playerId;
+            if (authenticatedPlayerId != null) {
+                playerId = authenticatedPlayerId;
+            } else if (enforceJwt) {
+                sendError(session, "UNAUTHORIZED", "A valid token is required", reqId);
+                return;
+            } else {
+                playerId = clientMsg.payload() != null && clientMsg.payload().has("playerId")
+                        ? clientMsg.payload().get("playerId").asText()
+                        : "P_" + session.getId().substring(0, 6);
+            }
             session.getAttributes().put("playerId", playerId);
-            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(
-                    WsServerMessage.of("AUTH_SUCCESS", reqId, null, Map.of("playerId", playerId)))));
+            send(session, WsServerMessage.of("AUTH_SUCCESS", reqId, null, Map.of("playerId", playerId)));
             return;
         }
 
-        String playerId = (String) session.getAttributes().get("playerId");
-        if (playerId == null && clientMsg.payload() != null && clientMsg.payload().has("playerId")) {
+        String playerId = authenticatedPlayerId != null
+                ? authenticatedPlayerId
+                : (String) session.getAttributes().get("playerId");
+        if (playerId == null && !enforceJwt && clientMsg.payload() != null && clientMsg.payload().has("playerId")) {
             playerId = clientMsg.payload().get("playerId").asText();
             session.getAttributes().put("playerId", playerId);
         }
@@ -132,14 +261,51 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         }
 
         // Multi-node: refuse to create a ghost table when Redis says another server owns it
+        boolean ownerDied = false;
         if (routingRegistry.isOwnedByRemoteServer(tableId)) {
             String owner = routingRegistry.getServerForTable(tableId).orElse("unknown");
-            log.warn("[WS] Table {} owned by remote server {} — redirecting client from {}", tableId, owner, routingRegistry.getServerInstanceId());
-            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(
-                    WsServerMessage.of("REDIRECT", reqId, tableId, Map.of(
-                            "targetServerId", owner,
-                            "reason", "Table is hosted on another node. Please reconnect using this targetServerId."
-                    )))));
+            if (clusterNodes == null || clusterNodes.isAlive(owner)) {
+                if (relayToOwner(session, tableId, owner, playerId, payload, reqId)) {
+                    return;
+                }
+                log.warn("[WS] Table {} owned by remote server {} — redirecting client from {}", tableId, owner, routingRegistry.getServerInstanceId());
+                send(session, WsServerMessage.of("REDIRECT", reqId, tableId, Map.of(
+                        "targetServerId", owner,
+                        "reason", "Table is hosted on another node. Please reconnect using this targetServerId."
+                )));
+                return;
+            }
+            log.warn("[WS] Table {} died with node {}", tableId, owner);
+            routingRegistry.unregisterTableIfOwnedBy(tableId, owner);
+            ownerDied = true;
+        }
+
+        if (tableManager.getTable(tableId).isEmpty()) {
+            if (drainState != null && drainState.isDraining()) {
+                sendError(session, "SERVER_DRAINING", "This server is restarting. Please reconnect.", reqId);
+                return;
+            }
+            if (!tableManager.hasCapacityForNewTable()) {
+                sendError(session, "SERVER_BUSY", "This server is full. Please try again shortly.", reqId);
+                return;
+            }
+            TableRecoveryService.RestoreResult restore = recovery != null ? recovery.tryRestore(tableId) : null;
+            if (restore != null && restore.outcome() == TableRecoveryService.Outcome.OWNER_ALIVE) {
+                // Its host is alive (this node just had no routing entry), or stopped answering moments ago
+                // and is declared dead after a few missed heartbeats.
+                if (!relayToOwner(session, tableId, restore.owner(), playerId, payload, reqId)) {
+                    sendError(session, "TABLE_RECOVERING", "Reconnecting you to your game…", reqId);
+                }
+                return;
+            }
+            if (tableManager.getTable(tableId).isEmpty() && (ownerDied || tableId.startsWith(MATCHMADE_TABLE_PREFIX))) {
+                sendTableGone(session, playerId, tableId, reqId);
+                return;
+            }
+        }
+
+        if (tableId.startsWith(MATCHMADE_TABLE_PREFIX) && !isAllowedAtMatchmadeTable(playerId, tableId)) {
+            sendError(session, "FORBIDDEN", "You are not seated at this table", reqId);
             return;
         }
 
@@ -195,7 +361,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 }
 
                 if (isBot) {
-                    tableActor.registerBot(targetPlayerId, name, com.rummy.engine.bot.BotDifficulty.MEDIUM);
+                    tableActor.registerBot(targetPlayerId, name, com.rummy.engine.bot.BotDifficulty.HARD);
                 }
 
                 JoinCommand cmd = new JoinCommand(reqId, gameId, targetPlayerId, name, finalSeat, isBot, now, avatarId);
@@ -225,11 +391,10 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 }
                 sessionService.clearPlayerBinding(playerId);
                 tableActor.unregisterSession(playerId);
-                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(
-                        WsServerMessage.of("LEFT_TABLE", reqId, tableId, Map.of(
-                                "playerId", playerId,
-                                "tableId", tableId
-                        )))));
+                send(session, WsServerMessage.of("LEFT_TABLE", reqId, tableId, Map.of(
+                        "playerId", playerId,
+                        "tableId", tableId
+                )));
                 log.info("[WS] Player {} voluntarily left table {}", playerId, tableId);
             }
             case "READY" -> {
@@ -285,22 +450,63 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
         String playerId = (String) session.getAttributes().get("playerId");
         String tableId = (String) session.getAttributes().get("tableId");
-        log.info("[WS] Connection closed: {} (player: {}, table: {})", session.getId(), playerId, tableId);
+        log.debug("[WS] Connection closed: {} (player: {}, table: {})", session.getId(), playerId, tableId);
+        rateLimitingService.reset(session.getId());
+        if (session.getId() != null) {
+            openSessions.remove(session.getId());
+        }
+        if (relay != null) {
+            relay.close(session);
+        }
 
         if (tableId != null && playerId != null) {
-            tableManager.getTable(tableId).ifPresent(actor -> actor.unregisterSession(playerId));
+            tableManager.getTable(tableId).ifPresent(actor -> actor.unregisterSession(playerId, session));
         }
     }
 
+    /**
+     * Paid tables are created only by matchmaking. A player may act there only if matchmaking
+     * routed them to it or they already hold a seat (reconnect after the binding was cleared).
+     */
+    private boolean isAllowedAtMatchmadeTable(String playerId, String tableId) {
+        Optional<TableActor> actor = tableManager.getTable(tableId);
+        if (actor.isEmpty()) {
+            return false;
+        }
+        if (actor.get().getState().getPlayer(playerId).isPresent()) {
+            return true;
+        }
+        return routingRegistry.getTableForPlayer(playerId).map(tableId::equals).orElse(false);
+    }
+
     private void sendError(WebSocketSession session, String code, String message, String reqId) {
+        if (session.isOpen()) {
+            send(session, WsServerMessage.of("ERROR", reqId, null, new WsErrorMessage(code, message, reqId)));
+        }
+    }
+
+    /**
+     * Closes sockets that stop pinging (client pings every 15s; background tabs are throttled to ~1/min),
+     * bounds inbound frame size, and caps how long one blocked write can hold the session's sender.
+     */
+    private void applyTransportLimits(WebSocketSession session) {
+        if (!(session instanceof NativeWebSocketSession nativeSession)) {
+            return;
+        }
+        jakarta.websocket.Session container = nativeSession.getNativeSession(jakarta.websocket.Session.class);
+        if (container == null) {
+            return;
+        }
+        container.setMaxIdleTimeout(idleTimeoutMs);
+        container.setMaxTextMessageBufferSize(MAX_INBOUND_FRAME_BYTES);
+        container.getUserProperties().put(TOMCAT_BLOCKING_SEND_TIMEOUT, sendTimeoutMs);
+    }
+
+    private void send(WebSocketSession session, WsServerMessage message) {
         try {
-            if (session.isOpen()) {
-                WsErrorMessage err = new WsErrorMessage(code, message, reqId);
-                WsServerMessage msg = WsServerMessage.of("ERROR", reqId, null, err);
-                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(msg)));
-            }
+            SessionOutbox.send(session, objectMapper.writeValueAsString(message));
         } catch (IOException e) {
-            log.error("[WS] Failed to send error frame: {}", e.getMessage());
+            log.error("[WS] Failed to serialize {} frame: {}", message.type(), e.getMessage());
         }
     }
 

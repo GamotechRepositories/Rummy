@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
+import com.rummy.gameservice.security.AuthenticatedPlayer;
 
 import java.time.Instant;
 import java.util.List;
@@ -102,7 +104,9 @@ class GamePersistenceIntegrationTest {
         });
 
         // 5. Query REST history controller
-        ResponseEntity<Map<String, Object>> response = historyController.getPlayerHistory(testPlayerId);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setAttribute(AuthenticatedPlayer.REQUEST_ATTRIBUTE, testPlayerId);
+        ResponseEntity<Map<String, Object>> response = historyController.getPlayerHistory(request, testPlayerId);
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         Map<String, Object> body = response.getBody();
         assertThat(body).isNotNull();

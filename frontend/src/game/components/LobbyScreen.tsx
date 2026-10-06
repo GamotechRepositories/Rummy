@@ -21,6 +21,7 @@ import { FullscreenToggle } from './FullscreenToggle';
 import { LandscapeGate, useLandscapeGate } from './LandscapeGate';
 import { soundEngine } from '../audio/soundEngine';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { authFetch } from '../utils/authClient';
 import { tryLockLandscape } from '../hooks/useRequiresLandscape';
 import { preloadTableShell } from '../utils/preloadTableShell';
 import { PLAYER_CHARACTERS, photoForCharacter } from '../utils/avatarUtils';
@@ -211,7 +212,7 @@ export const LobbyScreen: React.FC = () => {
 
   const fetchBalance = useCallback(async () => {
     try {
-      const res = await fetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${playerId}`);
+      const res = await authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${playerId}`);
       if (res.ok) {
         const data = await res.json();
         setWalletBalance(data.freePlayBalance ?? 1000);
@@ -330,19 +331,27 @@ export const LobbyScreen: React.FC = () => {
     };
 
     try {
-      const res = await fetch(`${getApiBaseUrl()}/api/matchmaking/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          playerId,
-          playerName: name,
-          avatarId,
-          rulesetId: rId,
-          stakeTier: eFee,
-          maxPlayers: mPlayers,
-          allowAiFallback: true,
-        }),
+      const joinBody = JSON.stringify({
+        playerId,
+        playerName: name,
+        avatarId,
+        rulesetId: rId,
+        stakeTier: eFee,
+        maxPlayers: mPlayers,
+        allowAiFallback: true,
       });
+      // 503 = the node that answered is restarting; the load balancer routes the retry to a healthy one.
+      let res: Response | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        res = await authFetch(`${getApiBaseUrl()}/api/matchmaking/join`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: joinBody,
+        });
+        if (res.status !== 503) break;
+        await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+      }
+      if (!res) throw new Error('Could not start matchmaking');
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -361,7 +370,7 @@ export const LobbyScreen: React.FC = () => {
 
       pollIntervalRef.current = window.setInterval(async () => {
         try {
-          const pollRes = await fetch(`${getApiBaseUrl()}/api/matchmaking/ticket/${data.ticketId}`);
+          const pollRes = await authFetch(`${getApiBaseUrl()}/api/matchmaking/ticket/${data.ticketId}`);
           if (!pollRes.ok) return;
           const ticketData = await pollRes.json();
           if (ticketData.status === 'MATCHED' && ticketData.matchedTableId) {
@@ -408,7 +417,7 @@ export const LobbyScreen: React.FC = () => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     if (mmTicketId) {
       try {
-        await fetch(`${getApiBaseUrl()}/api/matchmaking/cancel/${mmTicketId}`, { method: 'POST' });
+        await authFetch(`${getApiBaseUrl()}/api/matchmaking/cancel/${mmTicketId}`, { method: 'POST' });
       } catch {
         // ignore
       }

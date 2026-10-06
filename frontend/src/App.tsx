@@ -12,6 +12,7 @@ import {
   readPersistedActiveTable,
   readPersistedDisplayName,
 } from './game/utils/sessionResume';
+import { ensureAuthToken, getAuthenticatedPlayerId } from './game/utils/authClient';
 
 function restoreLocalSessionIfAny(): boolean {
   const localTable = readPersistedActiveTable();
@@ -42,6 +43,13 @@ export function App() {
 
     (async () => {
       try {
+        // Backend only trusts the player id inside the JWT, so obtain it before any API/WS call
+        await ensureAuthToken(readPersistedDisplayName() || useGameStore.getState().displayName);
+        const serverPlayerId = getAuthenticatedPlayerId();
+        if (serverPlayerId && serverPlayerId !== useGameStore.getState().playerId) {
+          useGameStore.setState({ playerId: serverPlayerId });
+        }
+
         // Ensure local resume flags even if useState init was skipped by Fast Refresh quirks
         const hadLocal = restoreLocalSessionIfAny();
 

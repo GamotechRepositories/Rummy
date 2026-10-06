@@ -9,10 +9,10 @@ import java.util.Objects;
 
 /**
  * Phase 25: Admin REST API for Security & Anti-Fraud Monitoring.
+ * Requires the X-Admin-Key header (enforced by ApiAuthFilter).
  */
 @RestController
 @RequestMapping("/api/fraud")
-@CrossOrigin(origins = "*")
 public class FraudController {
 
     private final FraudDetectionService fraudDetectionService;

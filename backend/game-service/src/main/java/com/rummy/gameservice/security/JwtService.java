@@ -5,15 +5,16 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -23,21 +24,40 @@ import java.util.Optional;
 public class JwtService {
 
     private static final Logger log = LoggerFactory.getLogger(JwtService.class);
+    private static final int MIN_SECRET_BYTES = 32;
 
     private final SecretKey signingKey;
     private final Duration tokenTtl;
 
+    @Autowired
     public JwtService(
-            @Value("${rummy.security.jwt.secret:royal-rummy-master-secret-key-production-grade-32-chars!}") String secret,
-            @Value("${rummy.security.jwt.ttl-hours:24}") long ttlHours) {
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        if (keyBytes.length < 32) {
-            byte[] padded = new byte[32];
-            System.arraycopy(keyBytes, 0, padded, 0, Math.min(keyBytes.length, 32));
-            keyBytes = padded;
-        }
-        this.signingKey = Keys.hmacShaKeyFor(keyBytes);
+            @Value("${rummy.security.jwt.secret:}") String secret,
+            @Value("${rummy.security.jwt.ttl-hours:720}") long ttlHours,
+            @Value("${rummy.security.jwt.require-secret:false}") boolean requireSecret) {
+        this.signingKey = Keys.hmacShaKeyFor(resolveKeyBytes(secret, requireSecret));
         this.tokenTtl = Duration.ofHours(ttlHours);
+    }
+
+    public JwtService(String secret, long ttlHours) {
+        this(secret, ttlHours, true);
+    }
+
+    private static byte[] resolveKeyBytes(String secret, boolean requireSecret) {
+        if (secret == null || secret.isBlank()) {
+            if (requireSecret) {
+                throw new IllegalStateException("RUMMY_JWT_SECRET must be set (at least " + MIN_SECRET_BYTES + " bytes)");
+            }
+            log.warn("[JWT] RUMMY_JWT_SECRET not set — using a random per-process key. "
+                    + "Tokens will be invalid after restart and across nodes. Never run production like this.");
+            byte[] random = new byte[MIN_SECRET_BYTES];
+            new SecureRandom().nextBytes(random);
+            return random;
+        }
+        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length < MIN_SECRET_BYTES) {
+            throw new IllegalStateException("RUMMY_JWT_SECRET must be at least " + MIN_SECRET_BYTES + " bytes");
+        }
+        return keyBytes;
     }
 
     /**
@@ -78,7 +98,7 @@ public class JwtService {
 
             return Optional.of(claims);
         } catch (Exception e) {
-            log.warn("[JWT] Invalid token validation attempt: {}", e.getMessage());
+            log.debug("[JWT] Invalid token validation attempt: {}", e.getMessage());
             return Optional.empty();
         }
     }
@@ -93,5 +113,9 @@ public class JwtService {
 
     public Optional<String> extractPlayerId(String token) {
         return validateAndGetClaims(token).map(Claims::getSubject);
+    }
+
+    public Duration getTokenTtl() {
+        return tokenTtl;
     }
 }

@@ -1,9 +1,20 @@
 # Activate with: SPRING_PROFILES_ACTIVE=prod
 # Requires REDIS_URL (or REDIS_HOST) for shared matchmaking + table routing.
+# Required env: RUMMY_JWT_SECRET, RUMMY_ALLOWED_ORIGINS, RUMMY_ADMIN_API_KEY.
 
 rummy:
   redis:
     enabled: true
+  security:
+    enforce-jwt: true
+    allowed-origins: ${RUMMY_ALLOWED_ORIGINS}
+    jwt:
+      require-secret: true
+  wallet:
+    simulated-payments-enabled: false
+  mongo:
+    transactions:
+      enabled: ${RUMMY_MONGO_TRANSACTIONS:true}
 
 management:
   health:

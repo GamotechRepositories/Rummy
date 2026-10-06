@@ -1,6 +1,7 @@
 package com.rummy.gameservice.persistence.repository;
 
 import com.rummy.gameservice.persistence.document.WalletTransactionDocument;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
@@ -14,7 +15,7 @@ public interface WalletTransactionRepository extends MongoRepository<WalletTrans
 
     boolean existsByIdempotencyKey(String idempotencyKey);
 
-    List<WalletTransactionDocument> findByPlayerIdOrderByCreatedAtDesc(String playerId);
+    List<WalletTransactionDocument> findByPlayerIdOrderByCreatedAtDesc(String playerId, Pageable pageable);
 
     List<WalletTransactionDocument> findByGameId(String gameId);
 }

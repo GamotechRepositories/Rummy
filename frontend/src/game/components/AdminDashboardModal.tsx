@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, Server, Cpu, ShieldCheck, X, RefreshCw, Layers, ShieldAlert } from 'lucide-react';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { adminFetch, setAdminKey } from '../utils/authClient';
 
 interface DiagnosticsData {
   serverInstanceId: string;
@@ -35,17 +36,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({ isOpen
   const [data, setData] = useState<DiagnosticsData | null>(null);
   const [fraudAlerts, setFraudAlerts] = useState<FraudAlertItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [needsAdminKey, setNeedsAdminKey] = useState(false);
+  const [adminKeyInput, setAdminKeyInput] = useState('');
 
   const fetchDiagnostics = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${getApiBaseUrl()}/api/admin/diagnostics`);
+      const res = await adminFetch(`${getApiBaseUrl()}/api/admin/diagnostics`);
+      setNeedsAdminKey(res.status === 401 || res.status === 403);
       if (res.ok) {
         const json = await res.json();
         setData(json);
       }
 
-      const fraudRes = await fetch(`${getApiBaseUrl()}/api/fraud/alerts`);
+      const fraudRes = await adminFetch(`${getApiBaseUrl()}/api/fraud/alerts`);
       if (fraudRes.ok) {
         const fraudJson = await fraudRes.json();
         setFraudAlerts(fraudJson);
@@ -156,6 +160,46 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({ isOpen
 
         {/* Content */}
         <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {needsAdminKey && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setAdminKey(adminKeyInput.trim() || null);
+                setAdminKeyInput('');
+                void fetchDiagnostics();
+              }}
+              style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}
+            >
+              <input
+                type="password"
+                value={adminKeyInput}
+                onChange={(e) => setAdminKeyInput(e.target.value)}
+                placeholder="Admin API key required"
+                autoComplete="off"
+                style={{
+                  flex: 1,
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(239, 68, 68, 0.5)',
+                  background: 'rgba(0,0,0,0.3)',
+                  color: '#fff',
+                }}
+              />
+              <button
+                type="submit"
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#3b82f6',
+                  color: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                Unlock
+              </button>
+            </form>
+          )}
           {/* Status Metrics Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
             <div style={{

@@ -1,6 +1,7 @@
 package com.rummy.gameservice.persistence.document;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -14,6 +15,7 @@ import java.util.Map;
  * Stores auditable financial events: DEPOSIT, WITHDRAWAL, GAME_ENTRY, GAME_WIN, GAME_REFUND, PROMOTIONAL_CREDIT.
  */
 @Document(collection = "wallet_transactions")
+@CompoundIndex(name = "player_created_idx", def = "{'playerId': 1, 'createdAt': -1}")
 public class WalletTransactionDocument implements Serializable {
 
     @Id

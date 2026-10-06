@@ -57,6 +57,32 @@ public final class GameState implements Serializable {
         this.finishedAt = null;
     }
 
+    /** Restores a captured state verbatim. See {@link GameStateSnapshots}. */
+    GameState(String gameId, String tableId, String rulesetId, String rulesetVersion,
+              List<PlayerState> players, Deck deck, List<CardInstance> discardPile,
+              CardInstance cutJoker, CardInstance finishCard, TurnState turnState,
+              long sequence, GameStatus status, String winnerPlayerId, List<CardGroup> winningGroups,
+              int dealNumber, int dealerSeatIndex, Instant createdAt, Instant finishedAt) {
+        this.gameId = Objects.requireNonNull(gameId);
+        this.tableId = Objects.requireNonNull(tableId);
+        this.rulesetId = Objects.requireNonNull(rulesetId);
+        this.rulesetVersion = Objects.requireNonNull(rulesetVersion);
+        this.players = new ArrayList<>(players);
+        this.deck = Objects.requireNonNull(deck);
+        this.discardPile = new ArrayList<>(discardPile);
+        this.cutJoker = cutJoker;
+        this.finishCard = finishCard;
+        this.turnState = turnState;
+        this.sequence = sequence;
+        this.status = Objects.requireNonNull(status);
+        this.winnerPlayerId = winnerPlayerId;
+        this.winningGroups = winningGroups != null ? new ArrayList<>(winningGroups) : null;
+        this.dealNumber = dealNumber;
+        this.dealerSeatIndex = dealerSeatIndex;
+        this.createdAt = Objects.requireNonNull(createdAt);
+        this.finishedAt = finishedAt;
+    }
+
     public Optional<PlayerState> getPlayer(String playerId) {
         return players.stream().filter(p -> p.getPlayerId().equals(playerId)).findFirst();
     }

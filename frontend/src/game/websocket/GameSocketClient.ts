@@ -2,6 +2,7 @@ import { useGameStore } from '../store/useGameStore';
 import type { CardInstance, PlayerGameView, WsClientMessage, WsServerMessage } from '../types/game';
 import { soundEngine } from '../audio/soundEngine';
 import { getWsBaseUrl } from '../utils/apiConfig';
+import { ensureAuthToken, getAuthToken } from '../utils/authClient';
 
 class GameSocketClient {
   private ws: WebSocket | null = null;
@@ -9,11 +10,18 @@ class GameSocketClient {
   private pingInterval: number | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
+  /** Seated players keep trying for several minutes: a crashed server's match is resumed elsewhere. */
+  private maxReconnectAttemptsAtTable = 40;
   private isExplicitDisconnect = false;
   private socketGeneration = 0;
   private resumeJoinTimer: number | null = null;
+  private recoveryTimer: number | null = null;
+  private recoveryAttempts = 0;
 
   private url: string;
+  /** Node that owns the current table, from a REDIRECT; cleared when the player leaves the table. */
+  private targetServerId: string | null = null;
+  private recentRedirects: number[] = [];
 
   constructor() {
     this.url = getWsBaseUrl();
@@ -29,7 +37,10 @@ class GameSocketClient {
       return;
     }
 
-    this.url = getWsBaseUrl();
+    const base = getWsBaseUrl();
+    this.url = this.targetServerId
+      ? `${base}${base.includes('?') ? '&' : '?'}serverId=${encodeURIComponent(this.targetServerId)}`
+      : base;
     this.isExplicitDisconnect = false;
     useGameStore.getState().setConnectionStatus(
       this.reconnectAttempts > 0 ? 'RECONNECTING' : 'CONNECTING'
@@ -38,9 +49,10 @@ class GameSocketClient {
     const generation = ++this.socketGeneration;
 
     try {
-      // Check for stored or query token
-      const token = localStorage.getItem('rummy_auth_token');
-      const wsUrlWithToken = token ? `${this.url}?token=${encodeURIComponent(token)}` : this.url;
+      const token = getAuthToken();
+      const wsUrlWithToken = token
+        ? `${this.url}${this.url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+        : this.url;
       this.ws = new WebSocket(wsUrlWithToken);
     } catch (e) {
       console.error('[WS] Connection creation failed:', e);
@@ -106,6 +118,7 @@ class GameSocketClient {
     this.socketGeneration++;
     this.stopHeartbeat();
     this.clearResumeJoinTimer();
+    this.clearRecoveryTimer();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -136,14 +149,23 @@ class GameSocketClient {
         console.log('[WS] Handshake established:', msg.payload);
         break;
 
-      case 'AUTH_SUCCESS':
+      case 'AUTH_SUCCESS': {
         console.log('[WS] Authenticated successfully');
+        const serverPlayerId = (msg.payload as { playerId?: string } | undefined)?.playerId;
+        if (serverPlayerId && serverPlayerId !== useGameStore.getState().playerId) {
+          useGameStore.setState({ playerId: serverPlayerId });
+        }
         // Rejoin after lobby match or soft-reconnect / page resume
         this.ensureTableJoined();
         break;
+      }
 
       case 'GAME_VIEW':
         this.clearResumeJoinTimer();
+        if (this.recoveryTimer || this.recoveryAttempts > 0) {
+          this.clearRecoveryTimer();
+          useGameStore.getState().setErrorMessage(null);
+        }
         if (msg.payload) {
           const prev = useGameStore.getState().gameState;
           const next = msg.payload as PlayerGameView;
@@ -212,18 +234,54 @@ class GameSocketClient {
             this.ws.close();
             this.ws = null;
           }
-          
-          // Append serverId to URL for Load Balancer sticky routing
-          const base = getWsBaseUrl();
-          const separator = base.includes('?') ? '&' : '?';
-          this.url = `${base}${separator}serverId=${encodeURIComponent(targetServerId)}`;
-          
-          // Reconnect immediately to the target node
-          setTimeout(() => this.connect(), 100);
+
+          // The load balancer may keep sending us to the same node; don't spin on redirects forever
+          const now = Date.now();
+          this.recentRedirects = this.recentRedirects.filter((t) => now - t < 60_000);
+          this.recentRedirects.push(now);
+          if (this.recentRedirects.length > 3) {
+            this.recentRedirects = [];
+            useGameStore.getState().setErrorMessage(
+              'Could not reach the server hosting your game. Please refresh the page.'
+            );
+            break;
+          }
+
+          // Reconnect with serverId so the load balancer can route to the owning node
+          this.targetServerId = targetServerId;
+          setTimeout(() => this.connect(), 100 * this.recentRedirects.length);
         }
         break;
 
+      case 'TABLE_CLOSED': {
+        // The table is gone (maintenance, crash, or already finished); refunds happen server-side
+        const closed = (msg.payload ?? {}) as { message?: string };
+        this.targetServerId = null;
+        this.clearResumeJoinTimer();
+        this.clearRecoveryTimer();
+        useGameStore.getState().leaveTable();
+        useGameStore.getState().setErrorMessage(closed.message ?? 'This game has ended.');
+        break;
+      }
+
       case 'ERROR':
+        if (
+          msg.payload &&
+          typeof msg.payload === 'object' &&
+          (msg.payload as { errorCode?: string }).errorCode === 'SERVER_DRAINING'
+        ) {
+          // This node is restarting; reconnecting lands on a healthy node
+          this.ws?.close();
+          break;
+        }
+        if (
+          msg.payload &&
+          typeof msg.payload === 'object' &&
+          (msg.payload as { errorCode?: string }).errorCode === 'TABLE_RECOVERING'
+        ) {
+          this.scheduleRecoveryJoin();
+          break;
+        }
         if (msg.payload && typeof msg.payload === 'object' && 'message' in msg.payload) {
           const err = msg.payload as { message: string };
           useGameStore.getState().setErrorMessage(err.message);
@@ -250,6 +308,33 @@ class GameSocketClient {
       clearTimeout(this.resumeJoinTimer);
       this.resumeJoinTimer = null;
     }
+  }
+
+  private clearRecoveryTimer(): void {
+    if (this.recoveryTimer) {
+      clearTimeout(this.recoveryTimer);
+      this.recoveryTimer = null;
+    }
+    this.recoveryAttempts = 0;
+  }
+
+  /**
+   * The server hosting our game stopped responding; the backend resumes the match once that server
+   * is declared dead (~1 minute). Keep re-joining until then.
+   */
+  private scheduleRecoveryJoin(): void {
+    if (this.recoveryTimer) return;
+    if (this.recoveryAttempts >= 30) {
+      this.recoveryAttempts = 0;
+      useGameStore.getState().setErrorMessage('Could not restore your game. Please refresh the page.');
+      return;
+    }
+    this.recoveryAttempts += 1;
+    useGameStore.getState().setErrorMessage('Server restarted — restoring your game…');
+    this.recoveryTimer = window.setTimeout(() => {
+      this.recoveryTimer = null;
+      this.joinTable();
+    }, 5000);
   }
 
   /** If GAME_VIEW never arrives after refresh, retry JOIN a couple of times. */
@@ -289,7 +374,10 @@ class GameSocketClient {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+    const limit = useGameStore.getState().hasJoinedTable
+      ? this.maxReconnectAttemptsAtTable
+      : this.maxReconnectAttempts;
+    if (this.reconnectAttempts >= limit) {
       console.error('[WS] Max reconnect attempts reached');
       return;
     }
@@ -297,7 +385,8 @@ class GameSocketClient {
     this.reconnectAttempts++;
     console.log(`[WS] Scheduling reconnect #${this.reconnectAttempts} in ${Math.round(delay)}ms`);
     this.reconnectTimer = window.setTimeout(() => {
-      this.connect();
+      // Handshake is rejected without a valid JWT, so renew it before retrying
+      void ensureAuthToken().finally(() => this.connect());
     }, delay);
   }
 
@@ -378,6 +467,8 @@ class GameSocketClient {
 
   public leaveTable(): void {
     const { tableId, playerId } = useGameStore.getState();
+    this.targetServerId = null;
+    this.clearRecoveryTimer();
     this.sendMessage({
       type: 'LEAVE_TABLE',
       tableId,

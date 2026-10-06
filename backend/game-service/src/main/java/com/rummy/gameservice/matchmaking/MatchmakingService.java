@@ -9,8 +9,10 @@ import com.rummy.engine.rules.RummyRules;
 import com.rummy.engine.rules.RulesetRegistry;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
+import com.rummy.gameservice.lifecycle.NodeDrainState;
 import com.rummy.gameservice.routing.PlayerPresenceService;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
+import com.rummy.gameservice.wallet.StakeEscrowService;
 import com.rummy.gameservice.wallet.WalletService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -54,6 +56,8 @@ public class MatchmakingService {
     private final Object lobbyLock = new Object();
     private final Map<String, OpenTable> openByQueue = new HashMap<>();
     private final Map<String, OpenTable> openByTable = new HashMap<>();
+    private NodeDrainState drainState;
+    private StakeEscrowService escrows;
 
     @Autowired
     public MatchmakingService(
@@ -111,10 +115,21 @@ public class MatchmakingService {
                 store.getClass().getSimpleName(), aiFallbackTimeoutMs);
     }
 
+    /**
+     * Escrows the entry stake, then queues or seats the player.
+     *
+     * @throws IllegalStateException when the stake cannot be debited (e.g. insufficient balance);
+     *                               the player is not queued in that case.
+     */
     public MatchmakingTicket enqueue(MatchmakingRequest request) {
-        store.cancelActiveTicketsForPlayer(request.getPlayerId());
+        if (isDraining()) {
+            throw new NodeDrainingException();
+        }
+        for (MatchmakingTicket superseded : store.cancelActiveTicketsForPlayer(request.getPlayerId())) {
+            refundStake(superseded, "superseded by a new search");
+        }
 
-        String ticketId = "TKT_" + UUID.randomUUID().toString().substring(0, 8);
+        String ticketId = "TKT_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         MatchmakingTicket ticket = new MatchmakingTicket(
                 ticketId,
                 request.getPlayerId(),
@@ -126,15 +141,21 @@ public class MatchmakingService {
                 request.isAllowAiFallback()
         );
 
-        presenceService.updatePresence(request.getPlayerId());
+        escrowStake(ticket);
+        try {
+            presenceService.updatePresence(request.getPlayerId());
 
-        if (request.isAllowAiFallback()) {
-            openOrJoinLobby(ticket, request);
-            return ticket;
+            if (request.isAllowAiFallback()) {
+                openOrJoinLobby(ticket, request);
+                return ticket;
+            }
+
+            store.saveTicket(ticket);
+            store.enqueue(nodeQueueKey(ticket), ticket.getTicketId());
+        } catch (RuntimeException e) {
+            refundStake(ticket, "matchmaking error");
+            throw e;
         }
-
-        store.saveTicket(ticket);
-        store.enqueue(ticket.getQueueKey(), ticket.getTicketId());
 
         log.info("[Matchmaking] Enqueued player {} for queueKey={} ticket={}",
                 request.getPlayerId(), ticket.getQueueKey(), ticketId);
@@ -152,6 +173,7 @@ public class MatchmakingService {
         if (ticket.getStatus() == MatchmakingTicket.Status.QUEUED) {
             ticket.setStatus(MatchmakingTicket.Status.CANCELLED);
             store.saveTicket(ticket);
+            refundStake(ticket, "search cancelled");
             log.info("[Matchmaking] Cancelled ticket {}", ticketId);
             return true;
         }
@@ -170,9 +192,12 @@ public class MatchmakingService {
         synchronized (lobbyLock) {
             OpenTable open = openByTable.get(tableId);
             if (open == null || open.seatingClosed) return;
-            open.humanIds.remove(playerId);
+            String ticketId = open.humanTickets.remove(playerId);
             routingRegistry.unregisterPlayer(playerId);
-            if (open.humanIds.isEmpty()) {
+            if (ticketId != null) {
+                store.findTicket(ticketId).ifPresent(t -> refundStake(t, "left lobby before the deal"));
+            }
+            if (open.humanTickets.isEmpty()) {
                 discardOpenTable(open, true);
             }
             log.info("[Matchmaking] Waiting human {} left lobby {}", playerId, tableId);
@@ -200,7 +225,14 @@ public class MatchmakingService {
     }
 
     private void processQueuesUnsafe() {
+        if (isDraining()) {
+            // Tables formed here would be killed by the shutdown; other nodes claim the shared queue.
+            return;
+        }
         for (String queueKey : store.listQueueKeys()) {
+            if (!isLocalQueue(queueKey)) {
+                continue;
+            }
             Optional<MatchmakingStore.QueueSnapshot> claimed = store.claimQueue(queueKey, 2000);
             if (claimed.isEmpty()) {
                 continue;
@@ -214,6 +246,7 @@ public class MatchmakingService {
                 if (presenceService != null && !presenceService.isPlayerOnline(candidate.getPlayerId())) {
                     candidate.setStatus(MatchmakingTicket.Status.CANCELLED);
                     store.saveTicket(candidate);
+                    refundStake(candidate, "player went offline");
                     log.info("[Matchmaking] Skipped offline player ticket {}", candidate.getTicketId());
                     continue;
                 }
@@ -234,6 +267,7 @@ public class MatchmakingService {
                 if (groupedPlayerIds.contains(ticket.getPlayerId())) {
                     ticket.setStatus(MatchmakingTicket.Status.CANCELLED);
                     store.saveTicket(ticket);
+                    refundStake(ticket, "duplicate ticket");
                     continue;
                 }
                 matchedGroup.add(ticket);
@@ -259,6 +293,7 @@ public class MatchmakingService {
                         if (elapsed >= maxQueueTimeoutMs) {
                             leftover.setStatus(MatchmakingTicket.Status.EXPIRED);
                             store.saveTicket(leftover);
+                            refundStake(leftover, "no match found in time");
                             log.info("[Matchmaking] Ticket {} expired after {}ms", leftover.getTicketId(), elapsed);
                         } else {
                             leftovers.add(leftover.getTicketId());
@@ -283,23 +318,6 @@ public class MatchmakingService {
 
         for (MatchmakingTicket ticket : humanTickets) {
             routingRegistry.registerPlayerTable(ticket.getPlayerId(), tableId);
-
-            if (walletService != null && ticket.getStakeTier() > 0) {
-                try {
-                    String txKey = "STAKE_" + tableId + "_" + ticket.getPlayerId();
-                    walletService.debit(
-                            ticket.getPlayerId(),
-                            BigDecimal.valueOf(ticket.getStakeTier()),
-                            "GAME_ENTRY_STAKE",
-                            txKey,
-                            tableId,
-                            "Table entry stake for " + ticket.getRulesetId(),
-                            Map.of("tableId", tableId, "stakeTier", ticket.getStakeTier())
-                    );
-                } catch (Exception e) {
-                    log.warn("[Matchmaking] Could not debit stake for {}: {}", ticket.getPlayerId(), e.getMessage());
-                }
-            }
         }
 
         if (fillWithAi) {
@@ -317,7 +335,7 @@ public class MatchmakingService {
                     String botName = IndianBotNames.nextUnique(usedNames);
                     int seatIndex = humanTickets.size() + (i - 1);
 
-                    actor.registerBot(botId, botName, BotDifficulty.MEDIUM);
+                    actor.registerBot(botId, botName, BotDifficulty.HARD);
                     actor.processCommand(new JoinCommand(
                             UUID.randomUUID().toString(),
                             actor.getState().getGameId(),
@@ -342,6 +360,7 @@ public class MatchmakingService {
 
         // Publish MATCHED only after bots are seated, so clients join a full table.
         for (MatchmakingTicket ticket : humanTickets) {
+            assignStake(ticket, actor);
             ticket.setMatchedTableId(tableId);
             ticket.setMatchedServerId(routingRegistry.getServerInstanceId());
             ticket.setStatus(MatchmakingTicket.Status.MATCHED);
@@ -364,8 +383,9 @@ public class MatchmakingService {
             } else if (!hasRoomWithoutEvict(open)) {
                 tableManager.getTable(open.tableId).ifPresent(TableActor::evictLatestBot);
             }
-            open.humanIds.add(ticket.getPlayerId());
+            open.humanTickets.put(ticket.getPlayerId(), ticket.getTicketId());
             assignHuman(ticket, open.tableId);
+            tableManager.getTable(open.tableId).ifPresent(actor -> assignStake(ticket, actor));
         }
     }
 
@@ -380,7 +400,7 @@ public class MatchmakingService {
     private boolean hasRoomWithoutEvict(OpenTable open) {
         TableActor actor = tableManager.getTable(open.tableId).orElse(null);
         if (actor == null) return false;
-        int pending = Math.max(0, open.humanIds.size() - actor.countHumans());
+        int pending = Math.max(0, open.humanTickets.size() - actor.countHumans());
         return actor.getState().getPlayers().size() + pending < open.maxPlayers;
     }
 
@@ -420,7 +440,7 @@ public class MatchmakingService {
             if (open == null || open.seatingClosed) return;
             TableActor actor = tableManager.getTable(tableId).orElse(null);
             if (actor == null || !actor.isSeatingOpen()) return;
-            int pending = Math.max(0, open.humanIds.size() - actor.countHumans());
+            int pending = Math.max(0, open.humanTickets.size() - actor.countHumans());
             actor.seatOneWaitingBot(pending);
         }
     }
@@ -443,28 +463,19 @@ public class MatchmakingService {
             openByQueue.remove(open.queueKey, open);
             openByTable.remove(tableId);
             cancelTasks(open);
+            // Matched humans who never connected are not dealt in; give their stake back.
+            open.humanTickets.forEach((playerId, ticketId) -> {
+                if (actor.getState().getPlayer(playerId).isEmpty()) {
+                    routingRegistry.unregisterPlayer(playerId);
+                    store.findTicket(ticketId).ifPresent(t -> refundStake(t, "did not join before the deal"));
+                }
+            });
             actor.closeSeatingAndDeal();
         }
     }
 
     private void assignHuman(MatchmakingTicket ticket, String tableId) {
         routingRegistry.registerPlayerTable(ticket.getPlayerId(), tableId);
-        if (walletService != null && ticket.getStakeTier() > 0) {
-            try {
-                String txKey = "STAKE_" + tableId + "_" + ticket.getPlayerId();
-                walletService.debit(
-                        ticket.getPlayerId(),
-                        BigDecimal.valueOf(ticket.getStakeTier()),
-                        "GAME_ENTRY_STAKE",
-                        txKey,
-                        tableId,
-                        "Table entry stake for " + ticket.getRulesetId(),
-                        Map.of("tableId", tableId, "stakeTier", ticket.getStakeTier())
-                );
-            } catch (Exception e) {
-                log.warn("[Matchmaking] Could not debit stake for {}: {}", ticket.getPlayerId(), e.getMessage());
-            }
-        }
         ticket.setMatchedTableId(tableId);
         ticket.setMatchedServerId(routingRegistry.getServerInstanceId());
         ticket.setStatus(MatchmakingTicket.Status.MATCHED);
@@ -479,12 +490,13 @@ public class MatchmakingService {
             if (open == null || open.seatingClosed) {
                 return false;
             }
-            open.humanIds.remove(ticket.getPlayerId());
+            open.humanTickets.remove(ticket.getPlayerId());
             ticket.setStatus(MatchmakingTicket.Status.CANCELLED);
             store.saveTicket(ticket);
             tableManager.getTable(tableId).ifPresent(actor -> actor.removeWaitingHuman(ticket.getPlayerId()));
             routingRegistry.unregisterPlayer(ticket.getPlayerId());
-            if (open.humanIds.isEmpty()) {
+            refundStake(ticket, "left lobby before the deal");
+            if (open.humanTickets.isEmpty()) {
                 discardOpenTable(open, true);
             }
             log.info("[Matchmaking] Released {} from lobby {}", ticket.getPlayerId(), tableId);
@@ -497,9 +509,95 @@ public class MatchmakingService {
         openByQueue.remove(open.queueKey, open);
         openByTable.remove(open.tableId);
         cancelTasks(open);
+        open.humanTickets.forEach((playerId, ticketId) -> {
+            routingRegistry.unregisterPlayer(playerId);
+            store.findTicket(ticketId).ifPresent(t -> refundStake(t, "lobby closed without a deal"));
+        });
+        open.humanTickets.clear();
         if (removeActor) {
             tableManager.removeTable(open.tableId);
+            routingRegistry.unregisterTable(open.tableId);
         }
+    }
+
+    private void escrowStake(MatchmakingTicket ticket) {
+        if (walletService == null || ticket.getStakeTier() <= 0) {
+            return;
+        }
+        String key = escrowKey(ticket);
+        if (escrows != null) {
+            escrows.open(key, ticket.getPlayerId(), ticket.getStakeTier(), null, null);
+        }
+        try {
+            walletService.debit(
+                    ticket.getPlayerId(),
+                    BigDecimal.valueOf(ticket.getStakeTier()),
+                    "GAME_ENTRY_STAKE",
+                    key,
+                    null,
+                    "Table entry stake for " + ticket.getRulesetId(),
+                    Map.of("ticketId", ticket.getTicketId(), "stakeTier", ticket.getStakeTier())
+            );
+        } catch (RuntimeException e) {
+            if (escrows != null) {
+                escrows.discard(key);
+            }
+            throw e;
+        }
+    }
+
+    /** Idempotent: safe to call from every exit path; pays back only a stake that was actually escrowed. */
+    private void refundStake(MatchmakingTicket ticket, String reason) {
+        if (walletService == null || ticket.getStakeTier() <= 0) {
+            return;
+        }
+        String key = escrowKey(ticket);
+        try {
+            if (!walletService.hasTransaction(key)) {
+                return;
+            }
+            if (escrows != null && !escrows.claimRefund(key)) {
+                return;
+            }
+            walletService.credit(
+                    ticket.getPlayerId(),
+                    BigDecimal.valueOf(ticket.getStakeTier()),
+                    "GAME_ENTRY_REFUND",
+                    "STAKE_REFUND_" + ticket.getTicketId(),
+                    null,
+                    "Entry stake refunded: " + reason,
+                    Map.of("ticketId", ticket.getTicketId(), "reason", reason)
+            );
+        } catch (Exception e) {
+            if (escrows != null) {
+                escrows.reopen(key);
+            }
+            log.error("[Matchmaking] RECONCILE REQUIRED: stake refund failed for ticket {} player {}: {}",
+                    ticket.getTicketId(), ticket.getPlayerId(), e.getMessage());
+        }
+    }
+
+    private void assignStake(MatchmakingTicket ticket, TableActor actor) {
+        if (escrows != null && ticket.getStakeTier() > 0) {
+            escrows.assignToTable(escrowKey(ticket), actor.getTableId(), actor.getState().getGameId());
+        }
+    }
+
+    private static String escrowKey(MatchmakingTicket ticket) {
+        return "STAKE_" + ticket.getTicketId();
+    }
+
+    /**
+     * Queues are per node: players reach a node through sticky load-balancer affinity, so the table
+     * must be created on the node that holds their connection. The shared store still lets any node
+     * look up or cancel a ticket.
+     */
+    private String nodeQueueKey(MatchmakingTicket ticket) {
+        return routingRegistry.getServerInstanceId() + "|" + ticket.getQueueKey();
+    }
+
+    private boolean isLocalQueue(String queueKey) {
+        return queueKey.startsWith(routingRegistry.getServerInstanceId() + "|");
     }
 
     private static void cancelTasks(OpenTable open) {
@@ -514,7 +612,8 @@ public class MatchmakingService {
         final String queueKey;
         final int maxPlayers;
         final Instant openedAt;
-        final Set<String> humanIds = new HashSet<>();
+        /** Reserved human seats: playerId → ticketId (needed to refund the escrowed stake). */
+        final Map<String, String> humanTickets = new HashMap<>();
         final List<ScheduledFuture<?>> tasks = new ArrayList<>();
         boolean seatingClosed;
 
@@ -523,6 +622,49 @@ public class MatchmakingService {
             this.queueKey = queueKey;
             this.maxPlayers = maxPlayers;
             this.openedAt = openedAt;
+        }
+    }
+
+    @Autowired(required = false)
+    public void setDrainState(NodeDrainState drainState) {
+        this.drainState = drainState;
+    }
+
+    @Autowired(required = false)
+    public void setEscrows(StakeEscrowService escrows) {
+        this.escrows = escrows;
+    }
+
+    private boolean isDraining() {
+        return drainState != null && drainState.isDraining();
+    }
+
+    /**
+     * Called once the node has finished draining. This node's open lobbies and queued tickets would
+     * be stranded once it stops, so they are cancelled and their stakes returned now.
+     */
+    public void releaseLocalWorkOnShutdown() {
+        synchronized (lobbyLock) {
+            for (OpenTable open : new ArrayList<>(openByTable.values())) {
+                discardOpenTable(open, true);
+            }
+        }
+        for (String queueKey : store.listQueueKeys()) {
+            if (!isLocalQueue(queueKey)) {
+                continue;
+            }
+            Optional<MatchmakingStore.QueueSnapshot> claimed = store.claimQueue(queueKey, 5000);
+            if (claimed.isEmpty()) {
+                continue;
+            }
+            for (MatchmakingTicket ticket : claimed.get().tickets()) {
+                if (ticket.getStatus() == MatchmakingTicket.Status.QUEUED) {
+                    ticket.setStatus(MatchmakingTicket.Status.CANCELLED);
+                    store.saveTicket(ticket);
+                    refundStake(ticket, "server restarting");
+                }
+            }
+            store.releaseQueue(queueKey, List.of());
         }
     }
 

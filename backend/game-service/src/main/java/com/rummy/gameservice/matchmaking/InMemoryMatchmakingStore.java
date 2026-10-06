@@ -1,7 +1,10 @@
 package com.rummy.gameservice.matchmaking;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -11,6 +14,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 @Component
 public class InMemoryMatchmakingStore implements MatchmakingStore {
+
+    /** Long enough for clients polling a ticket to see its final status. */
+    private static final Duration FINISHED_TICKET_RETENTION = Duration.ofMinutes(30);
 
     private final Map<String, MatchmakingTicket> tickets = new ConcurrentHashMap<>();
     private final Map<String, ConcurrentLinkedQueue<String>> queues = new ConcurrentHashMap<>();
@@ -73,13 +79,16 @@ public class InMemoryMatchmakingStore implements MatchmakingStore {
     }
 
     @Override
-    public void cancelActiveTicketsForPlayer(String playerId) {
+    public List<MatchmakingTicket> cancelActiveTicketsForPlayer(String playerId) {
+        List<MatchmakingTicket> cancelled = new ArrayList<>();
         for (MatchmakingTicket existing : tickets.values()) {
             if (existing.getPlayerId().equals(playerId) && existing.getStatus() == MatchmakingTicket.Status.QUEUED) {
                 existing.setStatus(MatchmakingTicket.Status.CANCELLED);
                 saveTicket(existing);
+                cancelled.add(existing);
             }
         }
+        return cancelled;
     }
 
     @Override
@@ -87,6 +96,19 @@ public class InMemoryMatchmakingStore implements MatchmakingStore {
         return (int) tickets.values().stream()
                 .filter(t -> t.getStatus() == MatchmakingTicket.Status.QUEUED)
                 .count();
+    }
+
+    @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
+    public void pruneFinishedTickets() {
+        pruneFinishedTickets(Instant.now().minus(FINISHED_TICKET_RETENTION));
+    }
+
+    /** Drops matched/cancelled/expired tickets created before {@code cutoff}; queued ones stay. */
+    public int pruneFinishedTickets(Instant cutoff) {
+        int before = tickets.size();
+        tickets.values().removeIf(t -> t.getStatus() != MatchmakingTicket.Status.QUEUED
+                && t.getCreatedAt().isBefore(cutoff));
+        return before - tickets.size();
     }
 
     @Override

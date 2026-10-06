@@ -13,6 +13,7 @@ import {
   Gift,
 } from 'lucide-react';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { authFetch } from '../utils/authClient';
 import { useModalScroll } from '../hooks/useModalScroll';
 
 interface WalletTransaction {
@@ -52,7 +53,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
   const fetchWallet = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${playerId}`);
+      const res = await authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${playerId}`);
       if (res.ok) {
         const data = await res.json();
         const total = data.totalBalance ?? data.freePlayBalance ?? 1000;
@@ -61,7 +62,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
         setWinningsBalance(data.winningsBalance ?? total * 0.4);
       }
 
-      const txRes = await fetch(`${getApiBaseUrl()}/api/wallet/transactions?playerId=${playerId}`);
+      const txRes = await authFetch(`${getApiBaseUrl()}/api/wallet/transactions?playerId=${playerId}`);
       if (txRes.ok) {
         const txData = await txRes.json();
         setTransactions(txData);
@@ -83,7 +84,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
     if (depositAmount <= 0) return;
     try {
       setLoading(true);
-      const res = await fetch(
+      const res = await authFetch(
         `${getApiBaseUrl()}/api/wallet/deposit?playerId=${playerId}&amount=${depositAmount}&method=${payMethod}`,
         { method: 'POST' }
       );
@@ -112,7 +113,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
 
     try {
       setLoading(true);
-      const res = await fetch(
+      const res = await authFetch(
         `${getApiBaseUrl()}/api/wallet/withdraw?playerId=${playerId}&amount=${withdrawAmount}&method=UPI&destination=${encodeURIComponent(
           upiId
         )}`,
@@ -136,7 +137,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
   const handleClaimDaily = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${getApiBaseUrl()}/api/wallet/claim-daily?playerId=${playerId}`, {
+      const res = await authFetch(`${getApiBaseUrl()}/api/wallet/claim-daily?playerId=${playerId}`, {
         method: 'POST',
       });
       const data = await res.json();

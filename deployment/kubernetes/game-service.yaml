@@ -20,9 +20,12 @@ spec:
       labels:
         app: rummy-game-service
     spec:
+      # Live games get up to RUMMY_DRAIN_TIMEOUT_SECONDS (1200) to finish after SIGTERM; keep this larger.
+      terminationGracePeriodSeconds: 1300
       containers:
         - name: game-service
-          image: rummy-platform/game-service:latest
+          # Pin an immutable tag per release; ":latest" makes rollbacks and rolling updates unpredictable.
+          image: rummy-platform/game-service:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8081
@@ -30,15 +33,23 @@ spec:
           envFrom:
             - configMapRef:
                 name: rummy-config
+            # SPRING_DATA_MONGODB_URI, RUMMY_JWT_SECRET, RUMMY_ADMIN_API_KEY — see secrets.example.yaml
+            - secretRef:
+                name: rummy-secrets
           env:
-            - name: SPRING_DATA_MONGODB_URI
-              value: "mongodb://rummy-mongo.rummy-platform.svc.cluster.local:27017/rummy_db"
             - name: SPRING_DATA_REDIS_HOST
               value: "rummy-redis.rummy-platform.svc.cluster.local"
             - name: SERVER_INSTANCE_ID
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            # Players on a pod that does not host their table are relayed to the hosting pod at this address.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: RUMMY_ADVERTISE_ADDRESS
+              value: "$(POD_IP):8081"
           resources:
             requests:
               cpu: "500m"
@@ -65,8 +76,8 @@ spec:
           lifecycle:
             preStop:
               exec:
-                # Phase 43: Graceful Table Draining hook before SIGTERM
-                command: ["sh", "-c", "sleep 15"]
+                # Give the ingress time to drop this pod from rotation; the app then drains live games on SIGTERM.
+                command: ["sh", "-c", "sleep 10"]
 ---
 apiVersion: v1
 kind: Service
@@ -94,6 +105,7 @@ spec:
     name: rummy-game-service
   minReplicas: 3
   maxReplicas: 20
+  # JVM heap never shrinks, so a memory target would block scale-down; scale on CPU only.
   metrics:
     - type: Resource
       resource:
@@ -101,9 +113,28 @@ spec:
         target:
           type: Utilization
           averageUtilization: 70
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    # Every removed pod drains for up to 20 minutes; remove them slowly.
+    scaleDown:
+      stabilizationWindowSeconds: 900
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 300
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rummy-game-service-pdb
+  namespace: rummy-platform
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: rummy-game-service

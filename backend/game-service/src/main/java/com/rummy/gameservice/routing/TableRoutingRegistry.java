@@ -32,16 +32,26 @@ public class TableRoutingRegistry {
     private final ConcurrentHashMap<String, String> localTableServerMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> localPlayerTableMap = new ConcurrentHashMap<>();
 
+    /**
+     * The instance id gets a per-boot suffix: a restarted process (same pod name) must not inherit
+     * ownership of tables that died with its previous JVM.
+     */
     @Autowired
     public TableRoutingRegistry(
             @Autowired(required = false) StringRedisTemplate redisTemplate,
-            @Value("${server.instance-id:server-default}") String serverInstanceId) {
+            @Value("${server.instance-id:}") String configuredInstanceId,
+            @Value("${rummy.cluster.unique-instance-id:true}") boolean uniquePerBoot) {
         this.redisTemplate = redisTemplate;
-        this.serverInstanceId = (serverInstanceId != null && !serverInstanceId.equals("server-default"))
-                ? serverInstanceId
-                : "server-" + UUID.randomUUID().toString().substring(0, 8);
+        String base = (configuredInstanceId == null || configuredInstanceId.isBlank()) ? "server" : configuredInstanceId.trim();
+        boolean needsSuffix = uniquePerBoot || configuredInstanceId == null || configuredInstanceId.isBlank();
+        this.serverInstanceId = needsSuffix ? base + "-" + UUID.randomUUID().toString().substring(0, 8) : base;
         log.info("[Routing] Initialized TableRoutingRegistry with serverInstanceId: {}, Redis: {}",
                 this.serverInstanceId, (redisTemplate != null ? "ENABLED" : "IN-MEMORY"));
+    }
+
+    /** Uses {@code serverInstanceId} verbatim (tests). */
+    public TableRoutingRegistry(StringRedisTemplate redisTemplate, String serverInstanceId) {
+        this(redisTemplate, serverInstanceId, false);
     }
 
     public String getServerInstanceId() {
@@ -127,6 +137,20 @@ public class TableRoutingRegistry {
                 redisTemplate.delete(TABLE_PREFIX + tableId);
             } catch (Exception e) {
                 log.warn("[Routing] Redis delete failed for table {}: {}", tableId, e.getMessage());
+            }
+        }
+    }
+
+    /** Drops a routing entry that still points at {@code deadOwner}; leaves it if another node took over. */
+    public void unregisterTableIfOwnedBy(String tableId, String deadOwner) {
+        localTableServerMap.remove(tableId, deadOwner);
+        if (redisTemplate != null) {
+            try {
+                if (deadOwner.equals(redisTemplate.opsForValue().get(TABLE_PREFIX + tableId))) {
+                    redisTemplate.delete(TABLE_PREFIX + tableId);
+                }
+            } catch (Exception e) {
+                log.warn("[Routing] Redis cleanup failed for table {}: {}", tableId, e.getMessage());
             }
         }
     }

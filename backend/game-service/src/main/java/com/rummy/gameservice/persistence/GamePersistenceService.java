@@ -18,6 +18,7 @@ import com.rummy.gameservice.persistence.repository.UserProfileRepository;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -40,6 +41,7 @@ import java.util.concurrent.TimeUnit;
 public class GamePersistenceService {
 
     private static final Logger log = LoggerFactory.getLogger(GamePersistenceService.class);
+    private static final int PLAYER_HISTORY_LIMIT = 50;
 
     private final GameRepository gameRepository;
     private final GameResultRepository gameResultRepository;
@@ -244,8 +246,9 @@ public class GamePersistenceService {
         });
     }
 
+    /** Most recent results for a player (capped so long-time players don't trigger huge reads). */
     public List<GameResultDocument> getPlayerHistory(String playerId) {
-        return gameResultRepository.findByPlayerIdOrderByCreatedAtDesc(playerId);
+        return gameResultRepository.findByPlayerIdOrderByCreatedAtDesc(playerId, PageRequest.of(0, PLAYER_HISTORY_LIMIT));
     }
 
     public Optional<GameDocument> getGame(String gameId) {

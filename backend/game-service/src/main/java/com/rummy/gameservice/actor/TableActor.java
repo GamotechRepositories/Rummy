@@ -13,6 +13,7 @@ import com.rummy.engine.model.*;
 import com.rummy.engine.rules.RummyRules;
 import com.rummy.gameservice.protocol.WsErrorMessage;
 import com.rummy.gameservice.protocol.WsServerMessage;
+import com.rummy.gameservice.websocket.SessionOutbox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.TextMessage;
@@ -70,7 +71,12 @@ public final class TableActor {
     private boolean seatingClosed;
 
     private final com.rummy.gameservice.wallet.WalletService walletService;
-    private int stakeTier = 100;
+    private com.rummy.gameservice.wallet.StakeEscrowService escrows;
+    private com.rummy.gameservice.wallet.SettlementService settlements;
+    /** Rejoin fees debited per player; never decremented, so each fee gets its own idempotency key. */
+    private final Map<String, Integer> rejoinFeesCharged = new HashMap<>();
+    /** Only matchmaking sets a stake, after debiting entry fees. Private tables stay at 0 and never settle. */
+    private int stakeTier = 0;
     private com.rummy.gameservice.wallet.GameSettlementResult lastSettlement;
 
     private final List<PlayerGameView.DealScoreRecord> dealHistory = new CopyOnWriteArrayList<>();
@@ -81,6 +87,15 @@ public final class TableActor {
     private String tournamentWinnerId = null;
     private int effectiveTotalDeals;
     private final Set<String> voluntaryAbandoners = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private Instant lastActivityAt = Instant.now();
+    /** Set once the whole match (all deals) is over and settled; drives memory reclamation. */
+    private Instant matchFinishedAt;
+    private boolean destroyed;
+    /** Snapshot handed to another node; no further change may happen here. */
+    private boolean frozen;
+    /** Bumped on every state change, so the snapshot writer only re-saves tables that moved. */
+    private volatile long mutations;
 
     public TableActor(String tableId,
                       GameState initialState,
@@ -104,6 +119,14 @@ public final class TableActor {
         this.eventProducer = eventProducer;
         this.sessionService = sessionService;
         this.walletService = walletService;
+    }
+
+    void setEscrows(com.rummy.gameservice.wallet.StakeEscrowService escrows) {
+        this.escrows = escrows;
+    }
+
+    void setSettlements(com.rummy.gameservice.wallet.SettlementService settlements) {
+        this.settlements = settlements;
     }
 
     public TableActor(String tableId,
@@ -149,8 +172,12 @@ public final class TableActor {
     }
 
     public synchronized void registerSession(String playerId, WebSocketSession session) {
+        if (destroyed) {
+            return;
+        }
         sessions.put(playerId, session);
-        log.info("[TableActor:{}] Registered session for player {}", tableId, playerId);
+        lastActivityAt = Instant.now();
+        log.debug("[TableActor:{}] Registered session for player {}", tableId, playerId);
 
         // Send full initial player view to reconnecting or joining player
         if (state.getPlayer(playerId).isPresent()) {
@@ -160,8 +187,10 @@ public final class TableActor {
         if (lastSettlement != null && session.isOpen()) {
             try {
                 WsServerMessage msg = WsServerMessage.of("GAME_SETTLEMENT", null, tableId, state.getSequence(), lastSettlement);
-                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(msg)));
-            } catch (Exception ignored) {}
+                SessionOutbox.send(session, objectMapper.writeValueAsString(msg));
+            } catch (IOException e) {
+                log.warn("[TableActor:{}] Could not serialize settlement for {}: {}", tableId, playerId, e.getMessage());
+            }
         }
 
         if (state.getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
@@ -170,12 +199,124 @@ public final class TableActor {
     }
 
     public synchronized void unregisterSession(String playerId) {
-        sessions.remove(playerId);
-        log.info("[TableActor:{}] Unregistered session for player {}", tableId, playerId);
-        boolean hasActiveHuman = sessions.values().stream().anyMatch(WebSocketSession::isOpen);
-        if (!hasActiveHuman && state.getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+        removeSession(playerId, sessions.get(playerId));
+    }
+
+    /**
+     * Drops the session only if it is still the player's current one, so a stale socket closing
+     * after a quick reconnect does not detach the new connection.
+     */
+    public synchronized void unregisterSession(String playerId, WebSocketSession closing) {
+        removeSession(playerId, closing);
+    }
+
+    private void removeSession(String playerId, WebSocketSession expected) {
+        if (expected == null || !sessions.remove(playerId, expected)) {
+            return;
+        }
+        lastActivityAt = Instant.now();
+        log.debug("[TableActor:{}] Unregistered session for player {}", tableId, playerId);
+        if (!hasOpenSession() && state.getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
             cancelAutoBotFallback();
         }
+    }
+
+    private boolean hasOpenSession() {
+        return sessions.values().stream().anyMatch(WebSocketSession::isOpen);
+    }
+
+    /**
+     * Why this table can be dropped from memory, or empty while it must stay.
+     * Tables with a live deal, a pending next deal, or an open matchmaking lobby are never reclaimed,
+     * because their escrowed stakes still have to be settled.
+     */
+    public synchronized Optional<String> reclaimReason(Instant now, java.time.Duration finishedGrace, java.time.Duration abandonedAfter) {
+        if (destroyed) {
+            return Optional.of("already destroyed");
+        }
+        if (matchFinishedAt != null) {
+            return now.isAfter(matchFinishedAt.plus(finishedGrace))
+                    ? Optional.of("match finished at " + matchFinishedAt)
+                    : Optional.empty();
+        }
+        if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
+            return Optional.empty();
+        }
+        if (dealNotBefore != null && !seatingClosed) {
+            // Open lobby: matchmaking deals or discards it on its own timer.
+            return Optional.empty();
+        }
+        if (hasOpenSession() || !now.isAfter(lastActivityAt.plus(abandonedAfter))) {
+            return Optional.empty();
+        }
+        return Optional.of("waiting room idle since " + lastActivityAt);
+    }
+
+    /**
+     * True while players have money or a result riding on this table: a deal in progress, the gap
+     * before the next pool/deals round, or a matchmaking lobby about to deal. A draining node waits for these.
+     */
+    public synchronized boolean isLive() {
+        if (destroyed || matchFinishedAt != null) {
+            return false;
+        }
+        return switch (state.getStatus()) {
+            case DEALING, IN_PROGRESS, DECLARING, SETTLING -> true;
+            case COMPLETED -> nextDealFuture != null && !nextDealFuture.isDone();
+            case WAITING_FOR_PLAYERS -> dealNotBefore != null && !seatingClosed && countHumans() > 0;
+            default -> false;
+        };
+    }
+
+    /**
+     * Ends an unfinished started match without a winner and returns every human's entry (plus any
+     * rejoin fees). Used when a node must shut down before the match could finish.
+     * Waiting rooms are skipped: their stakes are still held by matchmaking tickets.
+     */
+    public synchronized void abortMatch(String reason) {
+        if (destroyed || matchFinishedAt != null || state.getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+            return;
+        }
+        matchFinishedAt = Instant.now();
+        mutations++;
+        if (nextDealFuture != null) {
+            nextDealFuture.cancel(false);
+        }
+        if (escrows != null) {
+            escrows.refundGame(state.getGameId(), reason);
+        } else if (walletService != null && stakeTier > 0) {
+            for (PlayerState p : state.getPlayers()) {
+                if (p.isBot()) {
+                    continue;
+                }
+                int paidEntries = 1 + rejoinCounts.getOrDefault(p.getPlayerId(), 0);
+                try {
+                    walletService.credit(
+                            p.getPlayerId(),
+                            java.math.BigDecimal.valueOf((long) stakeTier * paidEntries),
+                            "GAME_ABORT_REFUND",
+                            "ABORT_REFUND_" + state.getGameId() + "_" + p.getPlayerId(),
+                            state.getGameId(),
+                            "Game cancelled: " + reason,
+                            Map.of("tableId", tableId, "entries", paidEntries)
+                    );
+                } catch (Exception e) {
+                    log.error("[TableActor:{}] RECONCILE REQUIRED: abort refund failed for {}: {}", tableId, p.getPlayerId(), e.getMessage());
+                }
+            }
+        }
+        broadcastMessage(WsServerMessage.of("TABLE_CLOSED", null, tableId, state.getSequence(),
+                Map.of("reason", reason, "refunded", stakeTier > 0,
+                        "message", "Game was cancelled for server maintenance."
+                                + (stakeTier > 0 ? " Your entry fee has been refunded." : ""))));
+        log.warn("[TableActor:{}] Match aborted ({}); entries refunded", tableId, reason);
+    }
+
+    public synchronized List<String> humanPlayerIds() {
+        return state.getPlayers().stream()
+                .filter(p -> !p.isBot())
+                .map(PlayerState::getPlayerId)
+                .toList();
     }
 
     public synchronized void registerBot(String botId, String displayName, BotDifficulty difficulty) {
@@ -249,7 +390,7 @@ public final class TableActor {
 
         String botId = "BOT_" + UUID.randomUUID().toString().substring(0, 8);
         String botName = IndianBotNames.nextUnique(usedNames);
-        registerBot(botId, botName, BotDifficulty.MEDIUM);
+        registerBot(botId, botName, BotDifficulty.HARD);
         Instant now = Instant.now();
         processCommand(new JoinCommand(
                 UUID.randomUUID().toString(),
@@ -370,6 +511,13 @@ public final class TableActor {
     public synchronized EngineResult processCommand(GameCommand command, String requestId) {
         log.debug("[TableActor:{}] Processing command: {} (req: {})", tableId, command.getClass().getSimpleName(), requestId);
 
+        if (destroyed) {
+            return EngineResult.failure(this.state, "Table is closed");
+        }
+        if (frozen) {
+            return EngineResult.failure(this.state, "Table is moving to another server");
+        }
+
         if (command instanceof StartGameCommand && holdingForPlayers()) {
             log.info("[TableActor:{}] Holding deal until {} seats are filled ({} seated)",
                     tableId, expectedPlayers, state.getPlayers().size());
@@ -386,6 +534,8 @@ public final class TableActor {
 
         // State successfully mutated
         this.state = result.state();
+        this.lastActivityAt = Instant.now();
+        mutations++;
 
         // 1. Broadcast individual game events, persist, and stream to Kafka
         for (GameEvent event : result.events()) {
@@ -616,7 +766,7 @@ public final class TableActor {
                                     // Leader score exceeded cutoff during missed deal; refund rejoin fee
                                     log.info("[TableActor:{}] Refunding rejoin fee to {} as leader score {} exceeds cutoff {}",
                                             tableId, p.getPlayerId(), newMaxActive, rejoinCutoff);
-                                    if (walletService != null && stakeTier > 0) {
+                                    if (walletService != null && stakeTier > 0 && claimLatestRejoinFee(p.getPlayerId())) {
                                         String refundKey = "REJOIN_REFUND_" + state.getGameId() + "_" + p.getPlayerId() + "_" + state.getDealNumber();
                                         try {
                                             walletService.credit(
@@ -690,7 +840,7 @@ public final class TableActor {
                         for (PlayerState p : state.getPlayers()) {
                             if (p.getStatus() == PlayerStatus.READY && !p.getPlayerId().equals(tournamentWinner.getPlayerId())) {
                                 int rCount = rejoinCounts.getOrDefault(p.getPlayerId(), 0);
-                                if (rCount > 0 && walletService != null && stakeTier > 0) {
+                                if (rCount > 0 && walletService != null && stakeTier > 0 && claimLatestRejoinFee(p.getPlayerId())) {
                                     String refundKey = "REJOIN_REFUND_" + state.getGameId() + "_" + p.getPlayerId() + "_" + state.getDealNumber();
                                     try {
                                         walletService.credit(
@@ -777,49 +927,41 @@ public final class TableActor {
                     new ArrayList<>(lastEliminatedNames),
                     effectiveTotalDeals
             );
-            long seq = state.getSequence();
-            
-            vThreadExecutor.submit(() -> {
-                try {
-                    WsServerMessage msg = WsServerMessage.of("GAME_VIEW", requestId, tableId, seq, view);
-                    String json = objectMapper.writeValueAsString(msg);
-                    session.sendMessage(new TextMessage(json));
-                } catch (IOException e) {
-                    log.error("[TableActor:{}] Failed to send view to player {}: {}", tableId, playerId, e.getMessage());
-                }
-            });
+            // Serialize under the table lock: the view references live state that the next command mutates.
+            try {
+                WsServerMessage msg = WsServerMessage.of("GAME_VIEW", requestId, tableId, state.getSequence(), view);
+                SessionOutbox.send(session, objectMapper.writeValueAsString(msg));
+            } catch (IOException e) {
+                log.error("[TableActor:{}] Failed to serialize view for player {}: {}", tableId, playerId, e.getMessage());
+            }
         }
     }
 
     private void broadcastMessage(WsServerMessage message) {
-        vThreadExecutor.submit(() -> {
-            try {
-                String json = objectMapper.writeValueAsString(message);
-                TextMessage textMessage = new TextMessage(json);
-                for (Map.Entry<String, WebSocketSession> entry : sessions.entrySet()) {
-                    WebSocketSession session = entry.getValue();
-                    if (session != null && session.isOpen()) {
-                        session.sendMessage(textMessage);
-                    }
-                }
-            } catch (IOException e) {
-                log.error("[TableActor:{}] Failed to broadcast message: {}", tableId, e.getMessage());
+        TextMessage textMessage;
+        try {
+            textMessage = new TextMessage(objectMapper.writeValueAsString(message));
+        } catch (IOException e) {
+            log.error("[TableActor:{}] Failed to serialize broadcast {}: {}", tableId, message.type(), e.getMessage());
+            return;
+        }
+        for (WebSocketSession session : sessions.values()) {
+            if (session != null && session.isOpen()) {
+                SessionOutbox.send(session, textMessage);
             }
-        });
+        }
     }
 
     private void sendErrorToPlayer(String playerId, String errorCode, String errorMessage, String requestId) {
         WebSocketSession session = sessions.get(playerId);
         if (session != null && session.isOpen()) {
-            vThreadExecutor.submit(() -> {
-                try {
-                    WsErrorMessage err = new WsErrorMessage(errorCode, errorMessage, requestId);
-                    WsServerMessage msg = WsServerMessage.of("ERROR", requestId, tableId, err);
-                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(msg)));
-                } catch (IOException e) {
-                    log.error("[TableActor:{}] Failed to send error to player {}: {}", tableId, playerId, e.getMessage());
-                }
-            });
+            try {
+                WsErrorMessage err = new WsErrorMessage(errorCode, errorMessage, requestId);
+                WsServerMessage msg = WsServerMessage.of("ERROR", requestId, tableId, err);
+                SessionOutbox.send(session, objectMapper.writeValueAsString(msg));
+            } catch (IOException e) {
+                log.error("[TableActor:{}] Failed to serialize error for player {}: {}", tableId, playerId, e.getMessage());
+            }
         }
     }
 
@@ -1091,7 +1233,7 @@ public final class TableActor {
 
                     String botId = "BOT_" + UUID.randomUUID().toString().substring(0, 4);
                     String botName = IndianBotNames.nextUnique(usedNames);
-                    registerBot(botId, botName, BotDifficulty.MEDIUM);
+                    registerBot(botId, botName, BotDifficulty.HARD);
 
                     processCommand(new JoinCommand(
                             UUID.randomUUID().toString(),
@@ -1152,34 +1294,52 @@ public final class TableActor {
         return tournamentWinnerId;
     }
 
+    /** Ends the match and queues its payout; players get {@code GAME_SETTLEMENT} once it is paid. */
     private void settleMatchWallet(String winnerId, Map<String, Integer> finalScores, String requestId) {
-        if (walletService != null && stakeTier > 0) {
-            try {
-                List<String> playerIds = state.getPlayers().stream()
-                        .map(PlayerState::getPlayerId)
-                        .toList();
-                this.lastSettlement = walletService.settleMatch(
-                        state.getGameId(),
-                        tableId,
-                        rules.getRulesetId(),
-                        java.math.BigDecimal.valueOf(stakeTier),
-                        winnerId,
-                        finalScores,
-                        playerIds,
-                        rejoinCounts
-                );
-                if (this.lastSettlement != null) {
-                    broadcastMessage(WsServerMessage.of("GAME_SETTLEMENT", requestId, tableId, state.getSequence(), this.lastSettlement));
-                    log.info("[TableActor:{}] Settled game: pot={}, rake={}, netWinnerPrize={}",
-                            tableId, lastSettlement.totalGrossPot(), lastSettlement.platformRakeAmount(), lastSettlement.netWinnerPrize());
-                }
-            } catch (Exception e) {
-                log.error("[TableActor:{}] Settlement error for gameId={}: {}", tableId, state.getGameId(), e.getMessage(), e);
-            }
+        matchFinishedAt = Instant.now();
+        mutations++;
+        if (walletService == null || stakeTier <= 0 || settlements == null) {
+            return;
+        }
+        List<String> playerIds = state.getPlayers().stream().map(PlayerState::getPlayerId).toList();
+        settlements.submit(new com.rummy.gameservice.wallet.SettlementService.Job(
+                state.getGameId(), tableId, rules.getRulesetId(), stakeTier, winnerId,
+                finalScores != null ? new HashMap<>(finalScores) : Map.of(), playerIds, new HashMap<>(rejoinCounts)),
+                new com.rummy.gameservice.wallet.SettlementService.Listener() {
+                    @Override
+                    public void settled(com.rummy.gameservice.wallet.GameSettlementResult result) {
+                        onSettled(result, requestId);
+                    }
+
+                    @Override
+                    public void cancelled() {
+                        onSettlementCancelled(requestId);
+                    }
+                });
+    }
+
+    private synchronized void onSettled(com.rummy.gameservice.wallet.GameSettlementResult result, String requestId) {
+        if (result == null) {
+            return;
+        }
+        this.lastSettlement = result;
+        if (!destroyed) {
+            broadcastMessage(WsServerMessage.of("GAME_SETTLEMENT", requestId, tableId, state.getSequence(), result));
+        }
+    }
+
+    private synchronized void onSettlementCancelled(String requestId) {
+        if (!destroyed) {
+            broadcastMessage(WsServerMessage.of("TABLE_CLOSED", requestId, tableId, state.getSequence(),
+                    Map.of("reason", "server connection lost", "refunded", true,
+                            "message", "This game was cancelled after a server connection problem. Your entry fee has been refunded.")));
         }
     }
 
     synchronized void startNextDeal() {
+        if (destroyed || frozen) {
+            return;
+        }
         this.nextDealCountdown = null;
         this.nextDealScheduledAt = null;
         this.lastEliminatedNames.clear();
@@ -1250,7 +1410,21 @@ public final class TableActor {
         }
     }
 
+    private String rejoinFeeKey(String playerId, int feeNumber) {
+        return "REJOIN_FEE_" + state.getGameId() + "_" + playerId + "_" + feeNumber;
+    }
+
+    /** Claims the player's most recent rejoin fee for a refund; false if another path already refunded it. */
+    private boolean claimLatestRejoinFee(String playerId) {
+        int feeNumber = rejoinFeesCharged.getOrDefault(playerId, 0);
+        return escrows == null || feeNumber == 0 || escrows.claimRefund(rejoinFeeKey(playerId, feeNumber));
+    }
+
     public synchronized boolean handleRejoin(String playerId, String requestId) {
+        if (frozen) {
+            sendErrorToPlayer(playerId, "TABLE_RECOVERING", "Reconnecting you to your game…", requestId);
+            return false;
+        }
         if (!rules.isEliminationGame()) {
             sendErrorToPlayer(playerId, "REJOIN_NOT_ALLOWED", "Rejoin is only available in elimination games", requestId);
             return false;
@@ -1288,24 +1462,34 @@ public final class TableActor {
         }
 
         if (walletService != null && stakeTier > 0) {
+            int feeNumber = rejoinFeesCharged.getOrDefault(playerId, 0) + 1;
+            String feeKey = rejoinFeeKey(playerId, feeNumber);
+            if (escrows != null) {
+                escrows.open(feeKey, playerId, stakeTier, tableId, state.getGameId());
+            }
             try {
                 walletService.debit(
                         playerId,
                         java.math.BigDecimal.valueOf(stakeTier),
                         "REJOIN_FEE",
-                        UUID.randomUUID().toString(),
+                        feeKey,
                         state.getGameId(),
                         "Pool Rummy Rejoin Fee",
                         Map.of("tableId", tableId)
                 );
             } catch (Exception e) {
+                if (escrows != null) {
+                    escrows.discard(feeKey);
+                }
                 log.warn("[TableActor:{}] Failed to deduct rejoin fee for {}: {}", tableId, playerId, e.getMessage());
                 sendErrorToPlayer(playerId, "INSUFFICIENT_FUNDS", "Failed to debit rejoin fee: " + e.getMessage(), requestId);
                 return false;
             }
+            rejoinFeesCharged.put(playerId, feeNumber);
         }
 
         rejoinCounts.merge(playerId, 1, Integer::sum);
+        mutations++;
 
         int newScore = maxActiveScore + 1;
         player.setStatus(PlayerStatus.READY);
@@ -1330,7 +1514,12 @@ public final class TableActor {
     }
 
     public synchronized void handleVoluntaryLeave(String playerId, String reqId) {
+        if (frozen) {
+            sendErrorToPlayer(playerId, "TABLE_RECOVERING", "Your game is moving to another server; leave again in a moment.", reqId);
+            return;
+        }
         voluntaryAbandoners.add(playerId);
+        mutations++;
         var playerOpt = state.getPlayer(playerId);
         if (playerOpt.isPresent()) {
             PlayerState p = playerOpt.get();
@@ -1346,7 +1535,142 @@ public final class TableActor {
         return effectiveTotalDeals;
     }
 
+    public long mutationCount() {
+        return mutations;
+    }
+
+    /**
+     * A copy of the match that another process can resume, or empty when there is nothing worth
+     * restoring: not dealt yet (lobby stakes are refunded instead), finished, or closed.
+     */
+    public synchronized Optional<TableSnapshot> captureSnapshot() {
+        if (destroyed || matchFinishedAt != null) {
+            return Optional.empty();
+        }
+        boolean betweenDeals = state.getStatus() == GameStatus.COMPLETED
+                && nextDealFuture != null && !nextDealFuture.isDone();
+        if (state.getStatus() != GameStatus.IN_PROGRESS && !betweenDeals) {
+            return Optional.empty();
+        }
+        List<TableSnapshot.Bot> bots = botAgents.values().stream()
+                .map(b -> new TableSnapshot.Bot(b.getPlayerId(),
+                        state.getPlayer(b.getPlayerId()).map(PlayerState::getDisplayName).orElse(null),
+                        b.getDifficulty().name()))
+                .toList();
+        return Optional.of(new TableSnapshot(
+                TableSnapshot.CURRENT_VERSION,
+                tableId,
+                GameStateSnapshots.capture(state),
+                stakeTier,
+                expectedPlayers,
+                matchmakingOwnsFill,
+                bots,
+                new HashMap<>(rejoinCounts),
+                new HashMap<>(rejoinFeesCharged),
+                new ArrayList<>(voluntaryAbandoners),
+                new ArrayList<>(dealHistory),
+                new ArrayList<>(lastEliminatedNames),
+                betweenDeals && nextDealScheduledAt != null ? nextDealScheduledAt.toString() : null,
+                tournamentWinnerId,
+                effectiveTotalDeals,
+                new TableSnapshot.WindDown(botsOnlyWindDown, turnsSinceLastBotDrop, turnsUntilNextBotDrop, lastWindDownTurnCounted)));
+    }
+
+    /** Loads match bookkeeping from a snapshot into a freshly built actor (before {@link #resumeAfterRestore}). */
+    synchronized void applySnapshot(TableSnapshot snap) {
+        this.stakeTier = snap.stakeTier();
+        this.expectedPlayers = snap.expectedPlayers();
+        this.matchmakingOwnsFill = snap.matchmakingOwnsFill();
+        this.seatingClosed = true;
+        this.dealNotBefore = null;
+        for (TableSnapshot.Bot bot : snap.bots()) {
+            registerBot(bot.playerId(), bot.displayName(), BotDifficulty.valueOf(bot.difficulty()));
+        }
+        rejoinCounts.putAll(snap.rejoinCounts());
+        rejoinFeesCharged.putAll(snap.rejoinFeesCharged());
+        voluntaryAbandoners.addAll(snap.voluntaryAbandoners());
+        dealHistory.addAll(snap.dealHistory());
+        lastEliminatedNames.addAll(snap.lastEliminatedNames());
+        this.nextDealScheduledAt = snap.nextDealScheduledAt() != null ? Instant.parse(snap.nextDealScheduledAt()) : null;
+        this.tournamentWinnerId = snap.tournamentWinnerId();
+        this.effectiveTotalDeals = snap.effectiveTotalDeals();
+        TableSnapshot.WindDown windDown = snap.windDown();
+        if (windDown != null) {
+            this.botsOnlyWindDown = windDown.active();
+            this.turnsSinceLastBotDrop = windDown.turnsSinceLastDrop();
+            this.turnsUntilNextBotDrop = windDown.turnsUntilNextDrop();
+            this.lastWindDownTurnCounted = windDown.lastTurnCounted();
+        }
+    }
+
+    /**
+     * Restarts the clocks of a restored match. The player on turn gets a full turn again: the outage
+     * used up their old deadline and they should not be penalised for it. A pending next deal waits at
+     * least {@code minNextDealDelay} so players have time to reconnect.
+     */
+    synchronized void resumeAfterRestore(java.time.Duration minNextDealDelay) {
+        Instant now = Instant.now();
+        lastActivityAt = now;
+        TurnState turn = state.getTurnState();
+        if (state.getStatus() == GameStatus.IN_PROGRESS && turn != null) {
+            java.time.Duration turnLength = java.time.Duration.between(turn.getTurnStartedAt(), turn.getTurnDeadline());
+            state.setTurnState(new TurnState(turn.getTurnNumber(), turn.getCurrentPlayerId(), turn.getPhase(),
+                    now, now.plus(turnLength), turn.getDrawnCardInstanceId(), turn.isDrawnFromDiscard()));
+            resetTurnTimer();
+            triggerBotTurnIfApplicable();
+        } else if (state.getStatus() == GameStatus.COMPLETED && nextDealScheduledAt != null) {
+            Instant dealAt = nextDealScheduledAt.isAfter(now.plus(minNextDealDelay)) ? nextDealScheduledAt : now.plus(minNextDealDelay);
+            this.nextDealScheduledAt = dealAt;
+            this.nextDealCountdown = (int) Math.max(0, java.time.Duration.between(now, dealAt).toSeconds());
+            nextDealFuture = scheduler.schedule(() -> {
+                synchronized (TableActor.this) {
+                    startNextDeal();
+                }
+            }, java.time.Duration.between(now, dealAt).toMillis(), TimeUnit.MILLISECONDS);
+        }
+        mutations++;
+        log.info("[TableActor:{}] Restored match {} (deal {}, {}) after a server crash",
+                tableId, state.getGameId(), state.getDealNumber(), state.getStatus());
+    }
+
+    /**
+     * Stops the match so another node can take it over (deploy, scale-down): returns its snapshot and
+     * stops every clock; after this no move is accepted here. Empty when there is nothing to hand over.
+     */
+    public synchronized Optional<TableSnapshot> freezeForHandoff() {
+        Optional<TableSnapshot> snapshot = captureSnapshot();
+        if (snapshot.isPresent()) {
+            frozen = true;
+            for (ScheduledFuture<?> f : new ScheduledFuture<?>[]{turnTimeoutFuture, botTurnFuture, nextDealFuture}) {
+                if (f != null) {
+                    f.cancel(false);
+                }
+            }
+        }
+        return snapshot;
+    }
+
+    /** The handoff could not be saved: cancel the frozen match with refunds instead. */
+    public synchronized void abortFrozenMatch(String reason) {
+        frozen = false;
+        abortMatch(reason);
+    }
+
+    /** Disconnects the players of a handed-off match so they reconnect to the node that resumes it. */
+    public synchronized void closeSessionsForHandoff() {
+        for (WebSocketSession session : sessions.values()) {
+            try {
+                if (session.isOpen()) {
+                    session.close(org.springframework.web.socket.CloseStatus.SERVICE_RESTARTED);
+                }
+            } catch (IOException e) {
+                log.debug("[TableActor:{}] Closing session after handoff failed: {}", tableId, e.getMessage());
+            }
+        }
+    }
+
     public synchronized void destroy() {
+        destroyed = true;
         if (turnTimeoutFuture != null) {
             turnTimeoutFuture.cancel(true);
         }

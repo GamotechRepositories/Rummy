@@ -1,9 +1,10 @@
 package com.rummy.gameservice.security;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
+import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -33,11 +34,26 @@ public class RateLimitingService {
     }
 
     public void reset(String key) {
-        buckets.remove(key);
+        if (key != null) {
+            buckets.remove(key);
+        }
     }
 
     public int getTrackedKeyCount() {
         return buckets.size();
+    }
+
+    @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
+    public void evictIdleBuckets() {
+        evictIdleBuckets(Duration.ofMinutes(5));
+    }
+
+    /** Forgets keys untouched for {@code idle}; a returning key simply starts with a full bucket. */
+    public int evictIdleBuckets(Duration idle) {
+        long cutoff = System.nanoTime() - idle.toNanos();
+        int before = buckets.size();
+        buckets.entrySet().removeIf(entry -> entry.getValue().lastUsedBefore(cutoff));
+        return before - buckets.size();
     }
 
     private static final class TokenBucket {
@@ -51,6 +67,10 @@ public class RateLimitingService {
             this.refillRate = refillRate;
             this.availableTokens = maxTokens;
             this.lastRefillTimestampNanos = System.nanoTime();
+        }
+
+        synchronized boolean lastUsedBefore(long nanoTime) {
+            return lastRefillTimestampNanos - nanoTime < 0;
         }
 
         synchronized boolean tryConsume(int tokensToConsume) {

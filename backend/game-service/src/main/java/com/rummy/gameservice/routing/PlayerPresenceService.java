@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -72,8 +73,13 @@ public class PlayerPresenceService {
     }
 
     public int getLocalOnlineCount() {
+        pruneExpired();
+        return localPresenceMap.size();
+    }
+
+    @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
+    public void pruneExpired() {
         Instant cutoff = Instant.now().minus(PRESENCE_TTL);
         localPresenceMap.entrySet().removeIf(entry -> entry.getValue().isBefore(cutoff));
-        return localPresenceMap.size();
     }
 }

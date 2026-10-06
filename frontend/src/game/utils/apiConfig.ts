@@ -1,9 +1,7 @@
 /**
- * API / WebSocket base URLs for local + Render.
- *
- * Render Static Site env (exact — no extra https/wss mix):
- *   VITE_API_BASE_URL=https://rummy-backend-bj5l.onrender.com
- *   VITE_WS_URL=wss://rummy-backend-bj5l.onrender.com/ws/game
+ * API / WebSocket base URLs, set at build time. Production example (exact — no extra https/wss mix):
+ *   VITE_API_BASE_URL=https://api.example.com
+ *   VITE_WS_URL=wss://api.example.com/ws/game
  */
 
 function trimSlash(url: string): string {

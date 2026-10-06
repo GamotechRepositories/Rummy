@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { PlayerHistoryResponse } from '../types/game';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { authFetch } from '../utils/authClient';
 
 interface HistoryModalProps {
   playerId: string;
@@ -18,7 +19,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ playerId, isOpen, on
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${getApiBaseUrl()}/api/history/player/${encodeURIComponent(playerId)}`);
+      const res = await authFetch(`${getApiBaseUrl()}/api/history/player/${encodeURIComponent(playerId)}`);
       if (!res.ok) {
         throw new Error(`Failed to load history (HTTP ${res.status})`);
       }

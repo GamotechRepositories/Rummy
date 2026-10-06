@@ -26,6 +26,8 @@ import static org.mockito.Mockito.*;
 @DisplayName("GameWebSocketHandler Integration Tests")
 class GameWebSocketHandlerTest {
 
+    private static final long SEND_WAIT_MS = 2000;
+
     private ObjectMapper objectMapper;
     private TableManager tableManager;
     private GameWebSocketHandler handler;
@@ -56,7 +58,7 @@ class GameWebSocketHandlerTest {
         handler.afterConnectionEstablished(session);
 
         ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
-        verify(session, times(1)).sendMessage(captor.capture());
+        verify(session, timeout(SEND_WAIT_MS).times(1)).sendMessage(captor.capture());
 
         String payload = captor.getValue().getPayload();
         JsonNode root = objectMapper.readTree(payload);
@@ -78,7 +80,7 @@ class GameWebSocketHandlerTest {
         handler.handleTextMessage(session, new TextMessage(pingJson));
 
         ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
-        verify(session, times(1)).sendMessage(captor.capture());
+        verify(session, timeout(SEND_WAIT_MS).times(1)).sendMessage(captor.capture());
 
         JsonNode root = objectMapper.readTree(captor.getValue().getPayload());
         assertThat(root.get("type").asText()).isEqualTo("PONG");
@@ -104,7 +106,7 @@ class GameWebSocketHandlerTest {
         assertThat(sessionAttributes.get("playerId")).isEqualTo("USR_AUS_007");
 
         ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
-        verify(session, times(1)).sendMessage(captor.capture());
+        verify(session, timeout(SEND_WAIT_MS).times(1)).sendMessage(captor.capture());
 
         JsonNode root = objectMapper.readTree(captor.getValue().getPayload());
         assertThat(root.get("type").asText()).isEqualTo("AUTH_SUCCESS");
@@ -125,7 +127,7 @@ class GameWebSocketHandlerTest {
         handler.handleTextMessage(session, new TextMessage(joinJson));
 
         ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
-        verify(session, times(1)).sendMessage(captor.capture());
+        verify(session, timeout(SEND_WAIT_MS).times(1)).sendMessage(captor.capture());
 
         JsonNode root = objectMapper.readTree(captor.getValue().getPayload());
         assertThat(root.get("type").asText()).isEqualTo("ERROR");
@@ -157,17 +159,68 @@ class GameWebSocketHandlerTest {
         assertThat(table.getState().getPlayers()).hasSize(1);
         assertThat(table.getState().getPlayers().get(0).getPlayerId()).isEqualTo("USR_MATT");
 
-        // The session should have received messages: TABLE_SNAPSHOT broadcast + COMMAND_RESULT ack
+        // Frames are delivered asynchronously but in order: the join event, then the player's view
         ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
-        verify(session, atLeastOnce()).sendMessage(captor.capture());
+        verify(session, timeout(SEND_WAIT_MS).atLeast(2)).sendMessage(captor.capture());
 
-        boolean hasGameEvent = captor.getAllValues().stream()
-                .anyMatch(msg -> msg.getPayload().contains("GAME_EVENT"));
-        boolean hasGameView = captor.getAllValues().stream()
-                .anyMatch(msg -> msg.getPayload().contains("GAME_VIEW"));
+        java.util.List<String> types = new java.util.ArrayList<>();
+        for (TextMessage msg : captor.getAllValues()) {
+            types.add(objectMapper.readTree(msg.getPayload()).get("type").asText());
+        }
+        assertThat(types.subList(0, 2)).containsExactly("GAME_EVENT", "GAME_VIEW");
+    }
 
-        assertThat(hasGameEvent).isTrue();
-        assertThat(hasGameView).isTrue();
+    @Test
+    @DisplayName("With JWT enforced, AUTH cannot override the token identity")
+    void testAuthCannotImpersonateWhenJwtEnforced() throws Exception {
+        GameWebSocketHandler secured = securedHandler();
+        sessionAttributes.put("authenticatedPlayerId", "USR_REAL");
+
+        secured.handleTextMessage(session, new TextMessage("""
+                {"type": "AUTH", "requestId": "r1", "payload": {"playerId": "USR_VICTIM"}}
+                """));
+
+        assertThat(sessionAttributes.get("playerId")).isEqualTo("USR_REAL");
+    }
+
+    @Test
+    @DisplayName("With JWT enforced, an unauthenticated AUTH is rejected")
+    void testUnauthenticatedAuthRejectedWhenJwtEnforced() throws Exception {
+        GameWebSocketHandler secured = securedHandler();
+
+        secured.handleTextMessage(session, new TextMessage("""
+                {"type": "AUTH", "requestId": "r1", "payload": {"playerId": "USR_VICTIM"}}
+                """));
+
+        assertThat(sessionAttributes.get("playerId")).isNull();
+        ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, timeout(SEND_WAIT_MS)).sendMessage(captor.capture());
+        assertThat(objectMapper.readTree(captor.getValue().getPayload()).get("payload").get("errorCode").asText())
+                .isEqualTo("UNAUTHORIZED");
+    }
+
+    @Test
+    @DisplayName("A player cannot join a matchmade table they were not routed to")
+    void testCannotJoinForeignMatchmadeTable() throws Exception {
+        tableManager.getOrCreateTable("TBL_MM_paid0001", null);
+        sessionAttributes.put("playerId", "USR_INTRUDER");
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type": "JOIN_TABLE", "tableId": "TBL_MM_paid0001", "requestId": "r1",
+                 "payload": {"displayName": "Intruder", "seatIndex": 0}}
+                """));
+
+        assertThat(tableManager.getTable("TBL_MM_paid0001").orElseThrow().getState().getPlayers()).isEmpty();
+        ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, timeout(SEND_WAIT_MS)).sendMessage(captor.capture());
+        assertThat(objectMapper.readTree(captor.getValue().getPayload()).get("payload").get("errorCode").asText())
+                .isEqualTo("FORBIDDEN");
+    }
+
+    private GameWebSocketHandler securedHandler() {
+        TableRoutingRegistry routingRegistry = new TableRoutingRegistry(null, "test-server");
+        return new GameWebSocketHandler(tableManager, objectMapper, new RateLimitingService(100, 100.0),
+                routingRegistry, new PlayerSessionService(routingRegistry, tableManager), true);
     }
 
     @Test
@@ -185,6 +238,6 @@ class GameWebSocketHandlerTest {
 
         // Process a dummy command on the table, session should not receive messages anymore
         table.processCommand(new ReadyCommand("req_dummy", table.getState().getGameId(), "USR_DISC", java.time.Instant.now()), "req_dummy");
-        verify(session, never()).sendMessage(any());
+        verify(session, after(300).never()).sendMessage(any());
     }
 }

@@ -1,158 +1,306 @@
 package com.rummy.gameservice.wallet;
 
+import com.mongodb.MongoException;
 import com.rummy.gameservice.persistence.document.WalletAccountDocument;
 import com.rummy.gameservice.persistence.document.WalletTransactionDocument;
 import com.rummy.gameservice.persistence.repository.WalletAccountRepository;
 import com.rummy.gameservice.persistence.repository.WalletTransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.TransientDataAccessException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.mongodb.MongoTransactionManager;
+import org.springframework.data.mongodb.UncategorizedMongoDbException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 
 /**
- * MongoDB Wallet Edition & Double-Entry Financial Ledger Service.
- * Provides strict idempotency, optimistic locking, free-play token pools, and transaction audit trails.
+ * MongoDB Wallet & Double-Entry Financial Ledger Service.
+ *
+ * <p>Concurrency: every balance change is a read-modify-write guarded by the account's
+ * {@code @Version} field and retried on conflict, so concurrent updates from any number of
+ * nodes cannot lose money. When a {@link MongoTransactionManager} is configured the balance
+ * update and the ledger insert commit atomically.</p>
+ *
+ * <p>Idempotency: the unique index on {@code idempotencyKey} is the source of truth.</p>
+ *
+ * <p>The in-memory store exists only for unit tests (no repositories). With MongoDB
+ * configured, a database failure surfaces as an exception — money is never kept in memory.</p>
  */
 @Service
 public class WalletService {
 
     private static final Logger log = LoggerFactory.getLogger(WalletService.class);
 
+    private static final int MAX_WRITE_ATTEMPTS = 8;
+    private static final int TRANSACTION_HISTORY_LIMIT = 100;
+    private static final int SETTLEMENT_CACHE_SIZE = 10_000;
+    private static final BigDecimal DAILY_BONUS_AMOUNT = BigDecimal.valueOf(500);
+
+    public static final String PLATFORM_TREASURY = "PLATFORM_TREASURY";
+    public static final BigDecimal DEFAULT_RAKE_RATE = new BigDecimal("0.15"); // 15% Platform Commission
+
     private final WalletAccountRepository accountRepository;
     private final WalletTransactionRepository transactionRepository;
+    private final TransactionTemplate transactionTemplate;
 
-    // Resilient in-memory caches for fallback during testing or disconnected states
     private final Map<String, WalletAccountDocument> memoryAccounts = new ConcurrentHashMap<>();
     private final Map<String, WalletTransactionDocument> memoryTransactions = new ConcurrentHashMap<>();
+    private final Object memoryLock = new Object();
 
-    @Autowired(required = false)
-    public WalletService(WalletAccountRepository accountRepository,
-                         WalletTransactionRepository transactionRepository) {
+    private final Map<String, GameSettlementResult> settlementCache = Collections.synchronizedMap(
+            new LinkedHashMap<>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, GameSettlementResult> eldest) {
+                    return size() > SETTLEMENT_CACHE_SIZE;
+                }
+            });
+
+    @Autowired
+    public WalletService(@Autowired(required = false) WalletAccountRepository accountRepository,
+                         @Autowired(required = false) WalletTransactionRepository transactionRepository,
+                         ObjectProvider<MongoTransactionManager> transactionManager) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
+        MongoTransactionManager txManager = transactionManager != null ? transactionManager.getIfAvailable() : null;
+        this.transactionTemplate = txManager != null ? new TransactionTemplate(txManager) : null;
+        if (isPersistent() && transactionTemplate == null) {
+            log.warn("[Wallet] MongoDB transactions are disabled. Balance and ledger writes are not atomic; "
+                    + "set rummy.mongo.transactions.enabled=true on a replica set (Atlas) for production.");
+        }
+    }
+
+    public WalletService(WalletAccountRepository accountRepository, WalletTransactionRepository transactionRepository) {
+        this(accountRepository, transactionRepository, null);
     }
 
     public WalletService() {
-        this(null, null);
+        this(null, null, null);
+    }
+
+    private boolean isPersistent() {
+        return accountRepository != null && transactionRepository != null;
     }
 
     /**
      * Retrieves or lazily provisions a wallet account for a player with initial complimentary tokens.
      */
-    public synchronized WalletAccountDocument getOrCreateWallet(String playerId) {
-        if (accountRepository != null) {
-            try {
-                return accountRepository.findByPlayerId(playerId).orElseGet(() -> {
-                    WalletAccountDocument newAcc = new WalletAccountDocument(playerId);
-                    return accountRepository.save(newAcc);
-                });
-            } catch (Exception e) {
-                log.warn("[Wallet] MongoDB unavailable for getOrCreateWallet({}), falling back to in-memory: {}", playerId, e.getMessage());
-            }
+    public WalletAccountDocument getOrCreateWallet(String playerId) {
+        Objects.requireNonNull(playerId, "playerId");
+        if (!isPersistent()) {
+            return memoryAccounts.computeIfAbsent(playerId, WalletAccountDocument::new);
         }
-        return memoryAccounts.computeIfAbsent(playerId, WalletAccountDocument::new);
+        Optional<WalletAccountDocument> existing = accountRepository.findByPlayerId(playerId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        try {
+            return accountRepository.insert(new WalletAccountDocument(playerId));
+        } catch (DuplicateKeyException raced) {
+            return accountRepository.findByPlayerId(playerId)
+                    .orElseThrow(() -> new IllegalStateException("Wallet for " + playerId + " vanished after duplicate insert"));
+        }
     }
 
     /**
      * Atomically credits a player's wallet with idempotency guarantee.
      */
-    public synchronized WalletTransactionDocument credit(String playerId, BigDecimal amount, String type,
-                                                         String idempotencyKey, String gameId,
-                                                         String description, Map<String, Object> meta) {
+    public WalletTransactionDocument credit(String playerId, BigDecimal amount, String type,
+                                            String idempotencyKey, String gameId,
+                                            String description, Map<String, Object> meta) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Credit amount must be strictly positive");
         }
-
-        // Check idempotency
-        if (isAlreadyProcessed(idempotencyKey)) {
-            log.info("[Wallet] Transaction with idempotencyKey={} already processed, returning existing record", idempotencyKey);
-            return getExistingTransaction(idempotencyKey);
-        }
-
-        WalletAccountDocument account = getOrCreateWallet(playerId);
-        BigDecimal before = account.getFreePlayBalance();
-        BigDecimal after = before.add(amount);
-
-        account.setFreePlayBalance(after);
-        account.setUpdatedAt(Instant.now());
-        saveAccount(account);
-
-        WalletTransactionDocument tx = new WalletTransactionDocument(
-                idempotencyKey, playerId, gameId, type, amount, before, after, account.getCurrency(), description, meta
-        );
-        saveTransaction(tx);
-
-        log.info("[Wallet] Credited {} to player={} (balance: {} -> {}) [idempotencyKey={}]",
-                amount, playerId, before, after, idempotencyKey);
-        return tx;
+        return applyChange(playerId, amount, type, idempotencyKey, gameId, description, meta, null);
     }
 
     /**
      * Atomically debits a player's wallet with balance check and idempotency guarantee.
      */
-    public synchronized WalletTransactionDocument debit(String playerId, BigDecimal amount, String type,
-                                                        String idempotencyKey, String gameId,
-                                                        String description, Map<String, Object> meta) {
+    public WalletTransactionDocument debit(String playerId, BigDecimal amount, String type,
+                                           String idempotencyKey, String gameId,
+                                           String description, Map<String, Object> meta) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Debit amount must be strictly positive");
         }
-
-        if (isAlreadyProcessed(idempotencyKey)) {
-            log.info("[Wallet] Transaction with idempotencyKey={} already processed, returning existing record", idempotencyKey);
-            return getExistingTransaction(idempotencyKey);
-        }
-
-        WalletAccountDocument account = getOrCreateWallet(playerId);
-        BigDecimal before = account.getFreePlayBalance();
-        if (before.compareTo(amount) < 0) {
-            throw new IllegalStateException("Insufficient free-play token balance for player " + playerId + ". Balance: " + before + ", Required: " + amount);
-        }
-
-        BigDecimal after = before.subtract(amount);
-        account.setFreePlayBalance(after);
-        account.setUpdatedAt(Instant.now());
-        saveAccount(account);
-
-        WalletTransactionDocument tx = new WalletTransactionDocument(
-                idempotencyKey, playerId, gameId, type, amount, before, after, account.getCurrency(), description, meta
-        );
-        saveTransaction(tx);
-
-        log.info("[Wallet] Debited {} from player={} (balance: {} -> {}) [idempotencyKey={}]",
-                amount, playerId, before, after, idempotencyKey);
-        return tx;
+        return applyChange(playerId, amount.negate(), type, idempotencyKey, gameId, description, meta, null);
     }
 
     /**
-     * Daily Free Token Bonus Claim (e.g. 500 complimentary tokens per 24-hour cycle).
+     * Daily Free Token Bonus Claim (500 complimentary tokens per 24-hour cycle).
+     * The 24h check and the claim timestamp are written in the same versioned update as the credit.
      */
-    public synchronized WalletTransactionDocument claimDailyFreeTokens(String playerId) {
-        WalletAccountDocument account = getOrCreateWallet(playerId);
+    public WalletTransactionDocument claimDailyFreeTokens(String playerId) {
         Instant now = Instant.now();
-
-        if (account.getLastDailyClaimAt() != null) {
-            long hoursElapsed = Duration.between(account.getLastDailyClaimAt(), now).toHours();
-            if (hoursElapsed < 24) {
-                throw new IllegalStateException("Daily bonus already claimed. Next claim available in " + (24 - hoursElapsed) + " hours.");
-            }
-        }
-
-        account.setLastDailyClaimAt(now);
         String idempotencyKey = "DAILY_BONUS_" + playerId + "_" + now.toEpochMilli();
-        return credit(playerId, BigDecimal.valueOf(500), "PROMOTIONAL_CREDIT", idempotencyKey, null,
-                "Daily complimentary login bonus tokens", Map.of("claimedAt", now.toString()));
+        return applyChange(playerId, DAILY_BONUS_AMOUNT, "PROMOTIONAL_CREDIT", idempotencyKey, null,
+                "Daily complimentary login bonus tokens", Map.of("claimedAt", now.toString()),
+                account -> {
+                    if (account.getLastDailyClaimAt() != null) {
+                        long hoursElapsed = Duration.between(account.getLastDailyClaimAt(), now).toHours();
+                        if (hoursElapsed < 24) {
+                            throw new IllegalStateException("Daily bonus already claimed. Next claim available in "
+                                    + (24 - hoursElapsed) + " hours.");
+                        }
+                    }
+                    account.setLastDailyClaimAt(now);
+                });
     }
 
-    public static final String PLATFORM_TREASURY = "PLATFORM_TREASURY";
-    public static final BigDecimal DEFAULT_RAKE_RATE = new BigDecimal("0.15"); // 15% Platform Commission
+    private WalletTransactionDocument applyChange(String playerId, BigDecimal delta, String type,
+                                                  String idempotencyKey, String gameId,
+                                                  String description, Map<String, Object> meta,
+                                                  Consumer<WalletAccountDocument> accountRule) {
+        Objects.requireNonNull(playerId, "playerId");
+        String key = idempotencyKey != null ? idempotencyKey : type + "_" + UUID.randomUUID();
 
-    private final Map<String, GameSettlementResult> settlementCache = new ConcurrentHashMap<>();
+        if (!isPersistent()) {
+            return applyChangeInMemory(playerId, delta, type, key, gameId, description, meta, accountRule);
+        }
+
+        Optional<WalletTransactionDocument> existing = transactionRepository.findByIdempotencyKey(key);
+        if (existing.isPresent()) {
+            log.info("[Wallet] Transaction with idempotencyKey={} already processed, returning existing record", key);
+            return existing.get();
+        }
+
+        getOrCreateWallet(playerId);
+
+        for (int attempt = 1; attempt <= MAX_WRITE_ATTEMPTS; attempt++) {
+            try {
+                WalletTransactionDocument tx = runAtomically(() ->
+                        writeChange(playerId, delta, type, key, gameId, description, meta, accountRule));
+                log.info("[Wallet] {} {} for player={} (balance: {} -> {}) [idempotencyKey={}]",
+                        delta.signum() >= 0 ? "Credited" : "Debited", delta.abs(), playerId,
+                        tx.getBalanceBefore(), tx.getBalanceAfter(), key);
+                return tx;
+            } catch (TransientDataAccessException e) {
+                // Includes OptimisticLockingFailureException (version conflict).
+                backoff(attempt);
+            } catch (UncategorizedMongoDbException e) {
+                if (!isTransientTransactionError(e)) {
+                    throw e;
+                }
+                backoff(attempt);
+            } catch (DuplicateKeyException e) {
+                return transactionRepository.findByIdempotencyKey(key).orElseThrow(() -> e);
+            }
+        }
+        throw new IllegalStateException("Wallet for player " + playerId + " is busy, please retry");
+    }
+
+    private WalletTransactionDocument writeChange(String playerId, BigDecimal delta, String type, String key,
+                                                  String gameId, String description, Map<String, Object> meta,
+                                                  Consumer<WalletAccountDocument> accountRule) {
+        WalletAccountDocument account = accountRepository.findByPlayerId(playerId)
+                .orElseThrow(() -> new IllegalStateException("Wallet not found for " + playerId));
+        BigDecimal before = account.getFreePlayBalance();
+        BigDecimal after = before.add(delta);
+        if (after.signum() < 0) {
+            throw insufficientBalance(playerId, before, delta.negate());
+        }
+        if (accountRule != null) {
+            accountRule.accept(account);
+        }
+        account.setFreePlayBalance(after);
+        account.setUpdatedAt(Instant.now());
+        accountRepository.save(account);
+
+        WalletTransactionDocument tx = new WalletTransactionDocument(
+                key, playerId, gameId, type, delta.abs(), before, after, account.getCurrency(), description, meta);
+        try {
+            return transactionRepository.insert(tx);
+        } catch (DuplicateKeyException e) {
+            if (transactionTemplate == null) {
+                revertBalance(playerId, delta);
+            }
+            throw e;
+        }
+    }
+
+    /** Non-transactional fallback: undo a balance change whose ledger insert lost an idempotency race. */
+    private void revertBalance(String playerId, BigDecimal delta) {
+        for (int attempt = 1; attempt <= MAX_WRITE_ATTEMPTS; attempt++) {
+            try {
+                WalletAccountDocument account = accountRepository.findByPlayerId(playerId).orElseThrow();
+                account.setFreePlayBalance(account.getFreePlayBalance().subtract(delta));
+                account.setUpdatedAt(Instant.now());
+                accountRepository.save(account);
+                return;
+            } catch (OptimisticLockingFailureException e) {
+                backoff(attempt);
+            }
+        }
+        log.error("[Wallet] RECONCILE REQUIRED: could not revert duplicate change of {} for player {}", delta, playerId);
+    }
+
+    private <T> T runAtomically(java.util.function.Supplier<T> work) {
+        if (transactionTemplate == null) {
+            return work.get();
+        }
+        return transactionTemplate.execute(status -> work.get());
+    }
+
+    private WalletTransactionDocument applyChangeInMemory(String playerId, BigDecimal delta, String type, String key,
+                                                          String gameId, String description, Map<String, Object> meta,
+                                                          Consumer<WalletAccountDocument> accountRule) {
+        synchronized (memoryLock) {
+            WalletTransactionDocument existing = memoryTransactions.get(key);
+            if (existing != null) {
+                return existing;
+            }
+            WalletAccountDocument account = memoryAccounts.computeIfAbsent(playerId, WalletAccountDocument::new);
+            BigDecimal before = account.getFreePlayBalance();
+            BigDecimal after = before.add(delta);
+            if (after.signum() < 0) {
+                throw insufficientBalance(playerId, before, delta.negate());
+            }
+            if (accountRule != null) {
+                accountRule.accept(account);
+            }
+            account.setFreePlayBalance(after);
+            account.setUpdatedAt(Instant.now());
+            WalletTransactionDocument tx = new WalletTransactionDocument(
+                    key, playerId, gameId, type, delta.abs(), before, after, account.getCurrency(), description, meta);
+            memoryTransactions.put(key, tx);
+            return tx;
+        }
+    }
+
+    private static InsufficientBalanceException insufficientBalance(String playerId, BigDecimal balance, BigDecimal required) {
+        return new InsufficientBalanceException("Insufficient free-play token balance for player " + playerId
+                + ". Balance: " + balance + ", Required: " + required);
+    }
+
+    private static boolean isTransientTransactionError(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof MongoException me && me.hasErrorLabel(MongoException.TRANSIENT_TRANSACTION_ERROR_LABEL)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void backoff(int attempt) {
+        try {
+            Thread.sleep(ThreadLocalRandom.current().nextLong(2, 10L * attempt));
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while retrying wallet write", ie);
+        }
+    }
 
     /**
      * Production-ready P2P Settlement Engine with Variant-aware Rake Calculation (Supreme Court & Legal Skill Gaming compliant):
@@ -167,39 +315,42 @@ public class WalletService {
      *    - Total Gross Pot = stakeTier * totalPlayers.
      *    - Platform charges 15% Rake on total pot -> PLATFORM_TREASURY.
      *    - Winner receives Net Prize (85% of gross pot) -> GAME_WIN.
+     *
+     * Every payout uses a deterministic idempotency key derived from gameId, so re-running a
+     * settlement (retry, another node) never pays twice.
      */
-    public synchronized GameSettlementResult settleMatch(String gameId,
-                                                         String tableId,
-                                                         String rulesetId,
-                                                         BigDecimal stakeTier,
-                                                         String winnerPlayerId,
-                                                         Map<String, Integer> finalScores,
-                                                         List<String> allPlayerIds) {
+    public GameSettlementResult settleMatch(String gameId,
+                                            String tableId,
+                                            String rulesetId,
+                                            BigDecimal stakeTier,
+                                            String winnerPlayerId,
+                                            Map<String, Integer> finalScores,
+                                            List<String> allPlayerIds) {
         return settleMatch(gameId, tableId, rulesetId, stakeTier, winnerPlayerId, finalScores, allPlayerIds, Collections.emptyMap());
     }
 
-    public synchronized GameSettlementResult settleMatch(String gameId,
-                                                         String tableId,
-                                                         String rulesetId,
-                                                         BigDecimal stakeTier,
-                                                         String winnerPlayerId,
-                                                         Map<String, Integer> finalScores,
-                                                         List<String> allPlayerIds,
-                                                         Map<String, Integer> rejoinCounts) {
+    public GameSettlementResult settleMatch(String gameId,
+                                            String tableId,
+                                            String rulesetId,
+                                            BigDecimal stakeTier,
+                                            String winnerPlayerId,
+                                            Map<String, Integer> finalScores,
+                                            List<String> allPlayerIds,
+                                            Map<String, Integer> rejoinCounts) {
         if (stakeTier == null || stakeTier.compareTo(BigDecimal.ZERO) <= 0 || winnerPlayerId == null) {
             log.warn("[Wallet] Skipping settlement: invalid stakeTier ({}) or null winner", stakeTier);
             return null;
         }
 
-        // Idempotency: avoid double-settling the same match
-        if (settlementCache.containsKey(gameId)) {
+        GameSettlementResult cached = settlementCache.get(gameId);
+        if (cached != null) {
             log.info("[Wallet] Match gameId={} already settled, returning cached result", gameId);
-            return settlementCache.get(gameId);
+            return cached;
         }
 
         List<String> players = (allPlayerIds != null && !allPlayerIds.isEmpty())
                 ? new ArrayList<>(allPlayerIds)
-                : (finalScores != null ? new ArrayList<>(finalScores.keySet()) : List.of(winnerPlayerId));
+                : (finalScores != null ? new ArrayList<>(finalScores.keySet()) : new ArrayList<>(List.of(winnerPlayerId)));
 
         if (!players.contains(winnerPlayerId)) {
             players.add(winnerPlayerId);
@@ -241,7 +392,8 @@ public class WalletService {
                                 "Unlost stake refund (" + penalty + " pts) for " + gameId + " (" + rId + ")",
                                 Map.of("gameId", gameId, "penalty", penalty, "refund", refund, "variant", rId));
                     } catch (Exception e) {
-                        log.warn("[Wallet] Failed to credit refund to {}: {}", pId, e.getMessage());
+                        log.error("[Wallet] RECONCILE REQUIRED: failed to credit refund {} to {} for gameId={}: {}",
+                                refund, pId, gameId, e.getMessage());
                     }
                 }
 
@@ -279,7 +431,7 @@ public class WalletService {
                         "Platform commission rake (15%) for " + gameId + " (" + rId + ")",
                         Map.of("gameId", gameId, "tableId", tableId != null ? tableId : "", "grossPot", totalGrossPot, "rake", platformRake, "variant", rId));
             } catch (Exception e) {
-                log.warn("[Wallet] Failed to credit platform treasury rake: {}", e.getMessage());
+                log.error("[Wallet] RECONCILE REQUIRED: failed to credit platform rake for gameId={}: {}", gameId, e.getMessage());
             }
         }
 
@@ -296,7 +448,8 @@ public class WalletService {
                         "Winner prize payout for " + gameId + " (" + rulesetId + ")",
                         Map.of("gameId", gameId, "grossPot", totalGrossPot, "rake", platformRake, "netPrize", netWinnerPrize));
             } catch (Exception e) {
-                log.warn("[Wallet] Failed to credit winner {}: {}", winnerPlayerId, e.getMessage());
+                log.error("[Wallet] RECONCILE REQUIRED: failed to credit winner {} amount {} for gameId={}: {}",
+                        winnerPlayerId, winnerCreditAmount, gameId, e.getMessage());
             }
         } else {
             // Bot win goes to house treasury
@@ -306,7 +459,7 @@ public class WalletService {
                         "House Bot win payout for " + gameId,
                         Map.of("gameId", gameId, "botId", winnerPlayerId, "amount", winnerCreditAmount));
             } catch (Exception e) {
-                log.warn("[Wallet] Failed to credit house bot win: {}", e.getMessage());
+                log.error("[Wallet] RECONCILE REQUIRED: failed to credit house bot win for gameId={}: {}", gameId, e.getMessage());
             }
         }
 
@@ -329,7 +482,7 @@ public class WalletService {
     /**
      * Settles a finished table match: debits loser stakes and credits winner with net pot (legacy support).
      */
-    public synchronized void settleGame(String gameId, String winnerPlayerId, List<String> loserPlayerIds, BigDecimal stake) {
+    public void settleGame(String gameId, String winnerPlayerId, List<String> loserPlayerIds, BigDecimal stake) {
         if (stake.compareTo(BigDecimal.ZERO) <= 0 || winnerPlayerId == null) return;
 
         BigDecimal totalPot = BigDecimal.ZERO;
@@ -364,10 +517,11 @@ public class WalletService {
     }
 
     /**
-     * Real-Money Deposit into player wallet (simulates / interfaces with UPI/Gateway).
+     * Real-Money Deposit into player wallet. Must only be called after a payment gateway
+     * has confirmed the payment; the controller gates this behind a configuration flag.
      */
-    public synchronized WalletTransactionDocument depositCash(String playerId, BigDecimal amount, String method) {
-        String key = "DEP_" + playerId + "_" + UUID.randomUUID().toString().substring(0, 8);
+    public WalletTransactionDocument depositCash(String playerId, BigDecimal amount, String method) {
+        String key = "DEP_" + playerId + "_" + UUID.randomUUID();
         return credit(playerId, amount, "CASH_DEPOSIT", key, null,
                 "Real Cash Deposit via " + (method != null ? method : "UPI"),
                 Map.of("method", method != null ? method : "UPI", "timestamp", Instant.now().toString()));
@@ -376,69 +530,29 @@ public class WalletService {
     /**
      * Real-Money Withdrawal to player's verified Bank / UPI ID.
      */
-    public synchronized WalletTransactionDocument withdrawCash(String playerId, BigDecimal amount, String method, String destination) {
-        String key = "WTH_" + playerId + "_" + UUID.randomUUID().toString().substring(0, 8);
+    public WalletTransactionDocument withdrawCash(String playerId, BigDecimal amount, String method, String destination) {
+        String key = "WTH_" + playerId + "_" + UUID.randomUUID();
         return debit(playerId, amount, "CASH_WITHDRAWAL", key, null,
                 "Real Cash Withdrawal to " + (destination != null ? destination : "Bank Account"),
                 Map.of("method", method != null ? method : "UPI_PAYOUT", "destination", destination != null ? destination : ""));
     }
 
-
-    public List<WalletTransactionDocument> getTransactions(String playerId) {
-        if (transactionRepository != null) {
-            try {
-                return transactionRepository.findByPlayerIdOrderByCreatedAtDesc(playerId);
-            } catch (Exception e) {
-                log.warn("[Wallet] Error querying MongoDB transactions: {}", e.getMessage());
-            }
-        }
-        return memoryTransactions.values().stream()
-                .filter(tx -> Objects.equals(tx.getPlayerId(), playerId))
-                .sorted(Comparator.comparing(WalletTransactionDocument::getCreatedAt).reversed())
-                .toList();
-    }
-
-    private boolean isAlreadyProcessed(String idempotencyKey) {
-        if (idempotencyKey == null) return false;
-        if (transactionRepository != null) {
-            try {
-                return transactionRepository.existsByIdempotencyKey(idempotencyKey);
-            } catch (Exception ignored) {}
+    public boolean hasTransaction(String idempotencyKey) {
+        if (isPersistent()) {
+            return transactionRepository.existsByIdempotencyKey(idempotencyKey);
         }
         return memoryTransactions.containsKey(idempotencyKey);
     }
 
-    private WalletTransactionDocument getExistingTransaction(String idempotencyKey) {
-        if (transactionRepository != null) {
-            try {
-                Optional<WalletTransactionDocument> txOpt = transactionRepository.findByIdempotencyKey(idempotencyKey);
-                if (txOpt.isPresent()) return txOpt.get();
-            } catch (Exception ignored) {}
+    /** Most recent ledger entries for a player (capped). */
+    public List<WalletTransactionDocument> getTransactions(String playerId) {
+        if (isPersistent()) {
+            return transactionRepository.findByPlayerIdOrderByCreatedAtDesc(playerId, PageRequest.of(0, TRANSACTION_HISTORY_LIMIT));
         }
-        return memoryTransactions.get(idempotencyKey);
-    }
-
-    private void saveAccount(WalletAccountDocument account) {
-        if (accountRepository != null) {
-            try {
-                accountRepository.save(account);
-                return;
-            } catch (Exception e) {
-                log.warn("[Wallet] Error saving account to MongoDB: {}", e.getMessage());
-            }
-        }
-        memoryAccounts.put(account.getPlayerId(), account);
-    }
-
-    private void saveTransaction(WalletTransactionDocument tx) {
-        if (transactionRepository != null) {
-            try {
-                transactionRepository.save(tx);
-                return;
-            } catch (Exception e) {
-                log.warn("[Wallet] Error saving transaction to MongoDB: {}", e.getMessage());
-            }
-        }
-        memoryTransactions.put(tx.getIdempotencyKey(), tx);
+        return memoryTransactions.values().stream()
+                .filter(tx -> Objects.equals(tx.getPlayerId(), playerId))
+                .sorted(Comparator.comparing(WalletTransactionDocument::getCreatedAt).reversed())
+                .limit(TRANSACTION_HISTORY_LIMIT)
+                .toList();
     }
 }

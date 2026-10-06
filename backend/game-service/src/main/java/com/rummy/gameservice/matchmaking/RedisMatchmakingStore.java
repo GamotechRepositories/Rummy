@@ -29,6 +29,7 @@ public class RedisMatchmakingStore implements MatchmakingStore {
     private static final String LOCK_PREFIX = "rummy:mm:lock:";
     private static final String PLAYER_TICKET_PREFIX = "rummy:mm:player:";
     private static final Duration TICKET_TTL = Duration.ofHours(2);
+    private static final long MAX_CLAIM_BATCH = 5_000;
 
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
@@ -76,8 +77,7 @@ public class RedisMatchmakingStore implements MatchmakingStore {
             return Optional.empty();
         }
         try {
-            List<String> ids = redis.opsForList().range(QUEUE_PREFIX + queueKey, 0, -1);
-            redis.delete(QUEUE_PREFIX + queueKey);
+            List<String> ids = redis.opsForList().leftPop(QUEUE_PREFIX + queueKey, MAX_CLAIM_BATCH);
             if (ids == null || ids.isEmpty()) {
                 unlock("q:" + queueKey);
                 return Optional.empty();
@@ -102,7 +102,10 @@ public class RedisMatchmakingStore implements MatchmakingStore {
     public void releaseQueue(String queueKey, List<String> leftoverTicketIds) {
         try {
             if (leftoverTicketIds != null && !leftoverTicketIds.isEmpty()) {
-                redis.opsForList().rightPushAll(QUEUE_PREFIX + queueKey, leftoverTicketIds);
+                // Put leftovers back at the head (oldest first) so players enqueued meanwhile stay behind them.
+                List<String> reversed = new ArrayList<>(leftoverTicketIds);
+                Collections.reverse(reversed);
+                redis.opsForList().leftPushAll(QUEUE_PREFIX + queueKey, reversed);
                 redis.opsForSet().add(QUEUE_INDEX, queueKey);
             }
         } finally {
@@ -117,7 +120,8 @@ public class RedisMatchmakingStore implements MatchmakingStore {
     }
 
     @Override
-    public void cancelActiveTicketsForPlayer(String playerId) {
+    public List<MatchmakingTicket> cancelActiveTicketsForPlayer(String playerId) {
+        List<MatchmakingTicket> cancelled = new ArrayList<>();
         try {
             String activeId = redis.opsForValue().get(PLAYER_TICKET_PREFIX + playerId);
             if (activeId != null) {
@@ -125,12 +129,14 @@ public class RedisMatchmakingStore implements MatchmakingStore {
                     if (t.getStatus() == MatchmakingTicket.Status.QUEUED) {
                         t.setStatus(MatchmakingTicket.Status.CANCELLED);
                         saveTicket(t);
+                        cancelled.add(t);
                     }
                 });
             }
         } catch (Exception e) {
             log.warn("[Matchmaking] cancelActiveTickets failed for {}: {}", playerId, e.getMessage());
         }
+        return cancelled;
     }
 
     @Override

@@ -23,7 +23,8 @@ public interface MatchmakingStore {
 
     Set<String> listQueueKeys();
 
-    void cancelActiveTicketsForPlayer(String playerId);
+    /** Cancels the player's QUEUED tickets and returns them so their escrowed stakes can be refunded. */
+    List<MatchmakingTicket> cancelActiveTicketsForPlayer(String playerId);
 
     int countQueued();
 

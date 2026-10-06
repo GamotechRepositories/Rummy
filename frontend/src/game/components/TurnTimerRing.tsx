@@ -21,10 +21,28 @@ export const TurnTimerRing: React.FC<TurnTimerRingProps> = ({
   showBadge = false,
   enableTickSound = false,
 }) => {
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
-  const [progress, setProgress] = useState<number>(1);
+  const getTimerState = () => {
+    if (!turnDeadline) return { secs: 0, ratio: 0 };
+    const msLeft = Math.max(0, new Date(turnDeadline).getTime() - Date.now());
+    return {
+      secs: Math.ceil(msLeft / 1000),
+      ratio: Math.min(1, Math.max(0, msLeft / (totalDurationSeconds * 1000)))
+    };
+  };
+
+  const initial = getTimerState();
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(initial.secs);
+  const [progress, setProgress] = useState<number>(initial.ratio);
+  const [prevDeadline, setPrevDeadline] = useState<string | null>(turnDeadline);
   const lastTickRef = useRef<number>(-1);
   const idPrefix = useId().replace(/:/g, '');
+
+  if (turnDeadline !== prevDeadline) {
+    const newState = getTimerState();
+    setSecondsRemaining(newState.secs);
+    setProgress(newState.ratio);
+    setPrevDeadline(turnDeadline);
+  }
 
   useEffect(() => {
     if (!turnDeadline) {

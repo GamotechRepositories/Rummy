@@ -2,7 +2,7 @@
 
 Deploy the **complete stack** on **any server**: AWS EC2, DigitalOcean, Azure VM, GCP, bare metal, or a home VPS.
 
-This is the **server-agnostic** guide. For Render-only shortcuts see [`RENDER_DEPLOY.md`](./RENDER_DEPLOY.md). Local dev see [`HOW_TO_RUN.md`](./HOW_TO_RUN.md).
+This is the **server-agnostic** guide. Local dev see [`HOW_TO_RUN.md`](./HOW_TO_RUN.md).
 
 ---
 
@@ -362,6 +362,10 @@ sudo cp -r dist/* /var/www/rummy/
 | `MATCHMAKING_AI_FALLBACK_MS` | No | `30000` (humans get more time to match) |
 | `MATCHMAKING_MAX_QUEUE_MS` | No | `90000` |
 | `RUMMY_KAFKA_ENABLED` | No | keep `false` unless Kafka deployed |
+| `RUMMY_DRAIN_TIMEOUT_SECONDS` | No | `270`; live games get this long to finish on shutdown, then move to another node. Keep below the platform's kill timeout |
+| `RUMMY_SHUTDOWN_PHASE_TIMEOUT` | No | `285s`; a little above the drain timeout |
+| `RUMMY_ADVERTISE_ADDRESS` | Multi-node | private `ip:port` other nodes use to reach this one (default: machine IP + port) |
+| `RUMMY_SETTLEMENT_MAX_CONCURRENT` | No | `32`; payouts in flight per node |
 
 ### Frontend (build-time only)
 
@@ -420,10 +424,12 @@ REDIS_URL=redis://...
 SERVER_INSTANCE_ID=game-node-N
 ```
 
-3. Load balancer in front of game nodes with **sticky sessions** for WebSocket  
-4. Wrong-node joins return `TABLE_NOT_ON_THIS_SERVER`
-
-Until then: **one** `game-service` process only.
+3. Any load balancer in front of the game nodes; **no sticky sessions needed**. A player who lands on a
+   node that does not host their table is relayed through it to the hosting node.
+4. Nodes must reach each other on the app port over the private network (security group / firewall),
+   at the address in `RUMMY_ADVERTISE_ADDRESS` (Kubernetes manifest sets it to the pod IP).
+5. Deploys and scale-down: unfinished games are handed to the remaining nodes; players reconnect
+   automatically and continue the same hand.
 
 ---
 
@@ -436,7 +442,8 @@ git pull
 # Backend (Docker)
 cd backend
 docker build -t rummy-backend:latest .
-docker stop rummy-backend && docker rm rummy-backend
+# -t must exceed RUMMY_DRAIN_TIMEOUT_SECONDS so live games can finish or be handed over
+docker stop -t 300 rummy-backend && docker rm rummy-backend
 docker run -d --name rummy-backend --restart unless-stopped \
   -p 127.0.0.1:8081:8081 --env-file /etc/rummy/backend.env rummy-backend:latest
 
@@ -507,7 +514,6 @@ sudo tail -f /var/log/nginx/error.log
 |------|---------|
 | Fastest path on EC2 / any VPS | Docker backend §4 + Nginx §6 + Atlas |
 | No Docker | Native Java §5 + Nginx §6 |
-| Click-ops PaaS | [`RENDER_DEPLOY.md`](./RENDER_DEPLOY.md) |
 | Local coding | [`HOW_TO_RUN.md`](./HOW_TO_RUN.md) |
 | Many game servers | §10 Redis + sticky WS |
 

@@ -26,6 +26,8 @@ import java.util.Optional;
 public class JwtHandshakeInterceptor implements HandshakeInterceptor {
 
     private static final Logger log = LoggerFactory.getLogger(JwtHandshakeInterceptor.class);
+    /** The verified handshake JWT, reused when this connection is relayed to the node hosting its table. */
+    public static final String AUTH_TOKEN_ATTRIBUTE = "rummy.authToken";
 
     private final JwtService jwtService;
     private final boolean enforceJwt;
@@ -33,7 +35,7 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
     @Autowired
     public JwtHandshakeInterceptor(
             JwtService jwtService,
-            @Value("${rummy.security.enforce-jwt:false}") boolean enforceJwt) {
+            @Value("${rummy.security.enforce-jwt:true}") boolean enforceJwt) {
         this.jwtService = Objects.requireNonNull(jwtService);
         this.enforceJwt = enforceJwt;
     }
@@ -62,7 +64,8 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
                 Claims claims = claimsOpt.get();
                 attributes.put("authenticatedPlayerId", claims.getSubject());
                 attributes.put("authenticatedPlayerName", claims.get("name", String.class));
-                log.info("[WS-Auth] Authenticated WebSocket handshake for player: {}", claims.getSubject());
+                attributes.put(AUTH_TOKEN_ATTRIBUTE, token);
+                log.debug("[WS-Auth] Authenticated WebSocket handshake for player: {}", claims.getSubject());
                 return true;
             } else if (enforceJwt) {
                 log.warn("[WS-Auth] Rejected WebSocket connection: Invalid JWT token");

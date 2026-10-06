@@ -5,9 +5,12 @@ import com.rummy.engine.model.PlayerState;
 import com.rummy.engine.model.PlayerStatus;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
+import com.rummy.gameservice.cluster.ClusterNodeService;
+import com.rummy.gameservice.recovery.TableRecoveryService;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
@@ -25,10 +28,22 @@ public class PlayerSessionService {
 
     private final TableRoutingRegistry routingRegistry;
     private final TableManager tableManager;
+    private ClusterNodeService clusterNodes;
+    private TableRecoveryService recovery;
 
     public PlayerSessionService(TableRoutingRegistry routingRegistry, @Lazy TableManager tableManager) {
         this.routingRegistry = routingRegistry;
         this.tableManager = tableManager;
+    }
+
+    @Autowired(required = false)
+    public void setClusterNodes(ClusterNodeService clusterNodes) {
+        this.clusterNodes = clusterNodes;
+    }
+
+    @Autowired(required = false)
+    public void setRecovery(@Lazy TableRecoveryService recovery) {
+        this.recovery = recovery;
     }
 
     public void bindPlayerToTable(String playerId, String tableId) {
@@ -63,22 +78,55 @@ public class PlayerSessionService {
 
         Optional<String> tableOpt = routingRegistry.getTableForPlayer(playerId);
         if (tableOpt.isEmpty()) {
-            return Optional.empty();
+            // Routing may have died with a crashed node; its match may still be resumable here.
+            if (recovery == null) {
+                return Optional.empty();
+            }
+            TableRecoveryService.RestoreResult restored = recovery.tryRestoreForPlayer(playerId);
+            if (restored.outcome() == TableRecoveryService.Outcome.OWNER_ALIVE) {
+                return Optional.of(recoveringSession(playerId, restored.tableId()));
+            }
+            if (restored.outcome() != TableRecoveryService.Outcome.RESTORED) {
+                return Optional.empty();
+            }
+            tableOpt = Optional.of(restored.tableId());
         }
 
         String tableId = tableOpt.get();
         Optional<TableActor> actorOpt = tableManager.getTable(tableId);
         if (actorOpt.isEmpty()) {
-            // Stale routing (server restart / table GC)
-            clearPlayerBinding(playerId);
-            return Optional.empty();
+            Optional<String> remoteOwner = clusterNodes != null
+                    ? clusterNodes.liveRemoteOwner(tableId)
+                    : Optional.empty();
+            if (remoteOwner.isPresent()) {
+                // Hosted on another live node; the socket handshake is redirected there.
+                return Optional.of(Map.of(
+                        "active", true,
+                        "tableId", tableId,
+                        "serverInstanceId", remoteOwner.get(),
+                        "displayName", playerId
+                ));
+            }
+            TableRecoveryService.RestoreResult restored = recovery != null
+                    ? recovery.tryRestore(tableId)
+                    : new TableRecoveryService.RestoreResult(TableRecoveryService.Outcome.NONE, tableId, null);
+            if (restored.outcome() == TableRecoveryService.Outcome.OWNER_ALIVE) {
+                return Optional.of(recoveringSession(playerId, tableId));
+            }
+            actorOpt = tableManager.getTable(tableId);
+            if (actorOpt.isEmpty()) {
+                // Stale routing (table finished and cleaned up, or its server died for good)
+                clearPlayerBinding(playerId);
+                return Optional.empty();
+            }
         }
 
         TableActor actor = actorOpt.get();
         var state = actor.getState();
         GameStatus status = state.getStatus();
 
-        if (status == GameStatus.COMPLETED || status == GameStatus.ABORTED) {
+        // A pool/deals match is COMPLETED between deals but still running.
+        if (status == GameStatus.ABORTED || (status == GameStatus.COMPLETED && !actor.isLive())) {
             clearPlayerBinding(playerId);
             return Optional.empty();
         }
@@ -112,6 +160,20 @@ public class PlayerSessionService {
                 "displayName", player.getDisplayName() != null ? player.getDisplayName() : playerId,
                 "gameId", state.getGameId()
         ));
+    }
+
+    /**
+     * The player's table is on a server that just stopped responding; once it is declared dead this
+     * node resumes the match when the client joins (it retries on {@code TABLE_RECOVERING}).
+     */
+    private Map<String, Object> recoveringSession(String playerId, String tableId) {
+        return Map.of(
+                "active", true,
+                "tableId", tableId,
+                "serverInstanceId", routingRegistry.getServerInstanceId(),
+                "recovering", true,
+                "displayName", playerId
+        );
     }
 
     public boolean isResumableStatus(PlayerStatus status) {

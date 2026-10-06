@@ -76,6 +76,9 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SERVER_INSTANCE_ID: game-server-node-1
       RUMMY_KAFKA_ENABLED: "false"
+      # Both nodes must share one secret or tokens from one node fail on the other.
+      RUMMY_JWT_SECRET: ${RUMMY_JWT_SECRET:?set RUMMY_JWT_SECRET (32+ chars) in deployment/docker/.env}
+      RUMMY_ADMIN_API_KEY: ${RUMMY_ADMIN_API_KEY:-}
     depends_on:
       mongo:
         condition: service_healthy
@@ -101,6 +104,8 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SERVER_INSTANCE_ID: game-server-node-2
       RUMMY_KAFKA_ENABLED: "false"
+      RUMMY_JWT_SECRET: ${RUMMY_JWT_SECRET:?set RUMMY_JWT_SECRET (32+ chars) in deployment/docker/.env}
+      RUMMY_ADMIN_API_KEY: ${RUMMY_ADMIN_API_KEY:-}
     depends_on:
       mongo:
         condition: service_healthy

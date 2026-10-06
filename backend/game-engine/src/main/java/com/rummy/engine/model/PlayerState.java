@@ -164,6 +164,28 @@ public final class PlayerState implements Serializable {
         return Collections.unmodifiableList(lastHand);
     }
 
+    List<CardInstance> lastHandSnapshot() {
+        return new ArrayList<>(lastHand);
+    }
+
+    /** Restores captured progress verbatim. See {@link GameStateSnapshots}. */
+    void restoreProgress(List<CardInstance> hand, List<CardInstance> lastHand, PlayerStatus status,
+                         int score, int cumulativeScore, long chipBalance, boolean hasDeclared, boolean hasDropped,
+                         int consecutiveMissedTurns, int turnsCompleted, Instant lastActionAt) {
+        this.hand.clear();
+        this.hand.addAll(hand);
+        this.lastHand = new ArrayList<>(lastHand);
+        this.status = Objects.requireNonNull(status);
+        this.score = score;
+        this.cumulativeScore = cumulativeScore;
+        this.chipBalance = chipBalance;
+        this.hasDeclared = hasDeclared;
+        this.hasDropped = hasDropped;
+        this.consecutiveMissedTurns = consecutiveMissedTurns;
+        this.turnsCompleted = turnsCompleted;
+        this.lastActionAt = lastActionAt;
+    }
+
     public void markEliminated() {
         this.status = PlayerStatus.ELIMINATED;
         this.lastActionAt = Instant.now();
