@@ -130,7 +130,7 @@ rummy:
     # How often queued credits and rollbacks are retried against operator wallets.
     outbox-interval-ms: ${RUMMY_OPERATOR_OUTBOX_INTERVAL_MS:5000}
     mock:
-      # Test operator with test money at / on the API host (test players only meet each other).
+      # Test operator with test money at /mock-operator/ (test players only meet each other).
       enabled: ${RUMMY_MOCK_OPERATOR_ENABLED:false}
       # When set, the test login pages need ?key=<this>.
       access-key: ${RUMMY_MOCK_OPERATOR_KEY:}

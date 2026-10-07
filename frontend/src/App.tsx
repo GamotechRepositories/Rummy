@@ -183,7 +183,7 @@ export function App() {
               : 'Royal Rummy is played through your gaming account. Sign in there and choose Rummy to start playing.'}
           </p>
           <a
-            href={`${getApiBaseUrl()}/`}
+            href={`${getApiBaseUrl()}/mock-operator/`}
             style={{ display: 'inline-block', marginTop: 18, color: '#facc15', fontSize: 14 }}
           >
             Test login (test money)

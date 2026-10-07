@@ -37,13 +37,14 @@ import java.util.Map;
 
 /**
  * A test operator, so the game can be played without a real partner, locally or on a live server:
- * open {@code /} on the API host to launch as any test player with ₹10,000 of test money.
+ * open {@code /mock-operator/} to launch as any test player with ₹10,000 of test money.
  *
  * <p>Balances live in MongoDB (shared by every node, kept across restarts). Test players are matched only
  * with each other, never with real-money players. When {@code rummy.operator.mock.access-key} is set, the
  * launch and cashier pages need it; {@code require-key} (on in production) refuses to start without one.
  */
 @RestController
+@RequestMapping("/mock-operator")
 @ConditionalOnProperty(name = "rummy.operator.mock.enabled", havingValue = "true")
 public class MockOperatorController {
 
@@ -86,7 +87,7 @@ public class MockOperatorController {
     @EventListener(ApplicationReadyEvent.class)
     public void register() {
         saveOperator();
-        log.warn("[MockOperator] ENABLED - test money only{}. Open {}/",
+        log.warn("[MockOperator] ENABLED - test money only{}. Open {}/mock-operator/",
                 accessKey.isEmpty() ? "" : " (access key required)", baseUrl);
     }
 
@@ -115,7 +116,7 @@ public class MockOperatorController {
         String walletUrl = baseUrl + "/mock-operator/wallet";
         doc.setName("Test operator (test money)");
         doc.setWalletUrl(walletUrl);
-        doc.setCashierUrl(baseUrl + "/");
+        doc.setCashierUrl(baseUrl + "/mock-operator/");
         doc.setEnabled(true);
         doc.setUpdatedAt(now);
         registry.save(doc);
@@ -123,12 +124,12 @@ public class MockOperatorController {
         walletClient.useLocalWalletUrl(OPERATOR_ID, walletUrl);
     }
 
-    @GetMapping(value = {"/", "/mock-operator", "/mock-operator/"}, produces = MediaType.TEXT_HTML_VALUE)
+    @GetMapping(value = {"", "/"}, produces = MediaType.TEXT_HTML_VALUE)
     public String home(@RequestParam(required = false) String key) {
         if (!keyOk(key)) {
             return page("<section class='card'><h2>Access key</h2>"
                     + "<p class='muted'>This server needs the test access key.</p>"
-                    + "<form class='row' method='get' action='/'>"
+                    + "<form class='row' method='get' action='/mock-operator/'>"
                     + "<input name='key' type='password' placeholder='Test access key' required autofocus>"
                     + "<button class='btn gold'>Open</button></form>"
                     + (key != null ? "<p class='error'>That key is not right.</p>" : "")
@@ -145,10 +146,10 @@ public class MockOperatorController {
             rows.append("<li class='player'><span class='avatar'>").append(HtmlUtils.htmlEscape(player.substring(0, 1).toUpperCase()))
                     .append("</span><span class='who'><b>").append(safe).append("</b><small>₹").append(rupees(paise(w)))
                     .append(" test money</small></span><span class='actions'>")
-                    .append("<form method='post' action='/cashier/top-up'>").append(hiddenKey).append(hidden("player", player))
+                    .append("<form method='post' action='/mock-operator/cashier/top-up'>").append(hiddenKey).append(hidden("player", player))
                     .append("<button class='btn ghost' title='Add test money'>+ ₹").append(rupees(TOP_UP_PAISE).replace(".00", ""))
                     .append("</button></form>")
-                    .append("<form method='get' action='/play'>").append(hiddenKey).append(hidden("player", player))
+                    .append("<form method='get' action='/mock-operator/play'>").append(hiddenKey).append(hidden("player", player))
                     .append("<button class='btn gold'>Play</button></form>")
                     .append("</span></li>");
         }
@@ -156,7 +157,7 @@ public class MockOperatorController {
                 ? "<p class='muted empty'>No test players yet. Create one above.</p>"
                 : "<ul class='players'>" + rows + "</ul>";
         return page("<section class='card'><h2>New player</h2>"
-                + "<form class='grid' method='get' action='/play'>" + hiddenKey
+                + "<form class='grid' method='get' action='/mock-operator/play'>" + hiddenKey
                 + "<label>Player id<input name='player' pattern='[A-Za-z0-9_.@:-]{1,64}' placeholder='Leave empty for a new one' autofocus></label>"
                 + "<label>Display name<input name='name' maxlength='20' placeholder='Optional'></label>"
                 + "<button class='btn gold'>Play</button></form>"
@@ -165,7 +166,7 @@ public class MockOperatorController {
                 + "<section class='card'><h2>Test players <span class='count'>" + count + "</span></h2>" + list + "</section>");
     }
 
-    @GetMapping({"/play", "/mock-operator/play"})
+    @GetMapping("/play")
     public ResponseEntity<?> play(@RequestParam(required = false) String player,
                                   @RequestParam(required = false) String name,
                                   @RequestParam(required = false) String key) {
@@ -186,12 +187,12 @@ public class MockOperatorController {
         }
     }
 
-    @GetMapping({"/cashier", "/mock-operator/cashier"})
+    @GetMapping("/cashier")
     public ResponseEntity<Void> cashier(@RequestParam(required = false) String key) {
         return redirectHome(key);
     }
 
-    @PostMapping({"/cashier/top-up", "/mock-operator/cashier/top-up"})
+    @PostMapping("/cashier/top-up")
     public ResponseEntity<Void> topUp(@RequestParam String player, @RequestParam(required = false) String key) {
         if (!keyOk(key)) {
             return ResponseEntity.notFound().build();
@@ -200,7 +201,7 @@ public class MockOperatorController {
         return redirectHome(key);
     }
 
-    @PostMapping("/mock-operator/wallet/{action}")
+    @PostMapping("/wallet/{action}")
     public ResponseEntity<Map<String, Object>> wallet(@PathVariable String action, HttpServletRequest request,
                                                       @RequestBody byte[] rawBody) {
         String body = new String(rawBody, StandardCharsets.UTF_8);
@@ -305,7 +306,7 @@ public class MockOperatorController {
     }
 
     private ResponseEntity<Void> redirectHome(String key) {
-        String location = "/" + (key != null && !key.isEmpty() ? "?key=" + URLEncoder.encode(key, StandardCharsets.UTF_8) : "");
+        String location = "/mock-operator/" + (key != null && !key.isEmpty() ? "?key=" + URLEncoder.encode(key, StandardCharsets.UTF_8) : "");
         return ResponseEntity.status(HttpStatus.SEE_OTHER).header(HttpHeaders.LOCATION, location).build();
     }
 
