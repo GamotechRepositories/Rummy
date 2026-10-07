@@ -182,14 +182,12 @@ export function App() {
               ? 'Game links work once and only for a short time. Go back to your gaming account and open the game again.'
               : 'Royal Rummy is played through your gaming account. Sign in there and choose Rummy to start playing.'}
           </p>
-          {import.meta.env.DEV && (
-            <a
-              href={`${getApiBaseUrl()}/`}
-              style={{ display: 'inline-block', marginTop: 18, color: '#facc15', fontSize: 14 }}
-            >
-              Test login (test money)
-            </a>
-          )}
+          <a
+            href={`${getApiBaseUrl()}/`}
+            style={{ display: 'inline-block', marginTop: 18, color: '#facc15', fontSize: 14 }}
+          >
+            Test login (test money)
+          </a>
         </div>
       </div>
     );
