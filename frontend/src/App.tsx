@@ -184,7 +184,7 @@ export function App() {
           </p>
           {import.meta.env.DEV && (
             <a
-              href={`${getApiBaseUrl()}/mock-operator/`}
+              href={`${getApiBaseUrl()}/`}
               style={{ display: 'inline-block', marginTop: 18, color: '#facc15', fontSize: 14 }}
             >
               Test login (test money)
