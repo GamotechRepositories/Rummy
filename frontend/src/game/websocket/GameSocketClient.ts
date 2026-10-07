@@ -294,6 +294,29 @@ class GameSocketClient {
         }
         break;
 
+      case 'SPLIT_REQUESTED':
+      case 'SPLIT_UPDATED':
+      case 'SPLIT_ACCEPTED':
+        // The GAME_VIEW that follows carries the split state
+        break;
+
+      case 'SPLIT_DECLINED': {
+        const { reason } = (msg.payload ?? {}) as { reason?: string };
+        const text =
+          reason === 'timeout'
+            ? 'Split cancelled: not everyone answered in time. Next deal starting.'
+            : reason === 'left'
+              ? 'Split cancelled: a player left the table.'
+              : 'Split declined. Next deal starting.';
+        useGameStore.getState().setErrorMessage(text);
+        setTimeout(() => {
+          if (useGameStore.getState().errorMessage === text) {
+            useGameStore.getState().setErrorMessage(null);
+          }
+        }, 4000);
+        break;
+      }
+
       case 'PONG':
         // Heartbeat ACK
         break;
@@ -463,6 +486,14 @@ class GameSocketClient {
 
   public rejoinTable(): void {
     this.sendMessage({ type: 'REJOIN' });
+  }
+
+  public requestSplit(): void {
+    this.sendMessage({ type: 'SPLIT_REQUEST' });
+  }
+
+  public respondSplit(accept: boolean): void {
+    this.sendMessage({ type: 'SPLIT_RESPONSE', payload: { accept } });
   }
 
   public leaveTable(): void {

@@ -88,6 +88,22 @@ public final class TableActor {
     private int effectiveTotalDeals;
     private final Set<String> voluntaryAbandoners = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /** Pool break between deals: long enough to rejoin or ask for a split. */
+    static final int POOL_BREAK_SECONDS = 10;
+    /** Everyone asked to split must answer within this long; silence counts as no. */
+    static final int SPLIT_ANSWER_SECONDS = 15;
+    /** Next deal after a split is turned down. */
+    private static final int AFTER_SPLIT_DECLINED_SECONDS = 5;
+
+    /** A pool prize split waiting for answers; lives only during one break between deals. */
+    private record SplitOffer(String requestedBy, Map<String, Integer> dropsLeft,
+                              Map<String, java.math.BigDecimal> payouts, Set<String> accepted, Instant deadline) {
+    }
+
+    private SplitOffer splitOffer;
+    /** One split request per break, so a refused split cannot be re-asked to stall the table. */
+    private boolean splitAskedThisBreak;
+
     private Instant lastActivityAt = Instant.now();
     /** Set once the whole match (all deals) is over and settled; drives memory reclamation. */
     private Instant matchFinishedAt;
@@ -623,7 +639,7 @@ public final class TableActor {
                     if (activeSurvivors.size() <= 1) {
                         // All opponents forfeited/abandoned table; surviving player is immediate champion!
                         PlayerState tournamentWinner = activeSurvivors.isEmpty()
-                                ? state.getPlayers().get(0)
+                                ? fallbackWinner()
                                 : activeSurvivors.get(0);
                         this.tournamentWinnerId = tournamentWinner.getPlayerId();
                         log.info("[TableActor:{}] DEALS MATCH COMPLETED (by forfeit)! Tournament winner is {} ({})",
@@ -726,10 +742,12 @@ public final class TableActor {
                 } else if (isPool) {
                     Map<String, Integer> currentCumulatives = new HashMap<>();
                     List<String> freshlyEliminated = new ArrayList<>();
+                    List<String> freshlyEliminatedIds = new ArrayList<>();
                     for (PlayerState p : state.getPlayers()) {
                         currentCumulatives.put(p.getPlayerId(), p.getCumulativeScore());
                         if (p.getCumulativeScore() >= threshold && p.getStatus() != PlayerStatus.ELIMINATED) {
                             p.markEliminated();
+                            freshlyEliminatedIds.add(p.getPlayerId());
                             freshlyEliminated.add(p.getDisplayName() != null ? p.getDisplayName() : p.getPlayerId());
                             log.info("[TableActor:{}] Player {} eliminated with score {}/{}",
                                     tableId, p.getPlayerId(), p.getCumulativeScore(), threshold);
@@ -798,40 +816,27 @@ public final class TableActor {
                                 .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
                                 .toList();
 
-                        // Next deal countdown in 5 seconds
-                        log.info("[TableActor:{}] Deal {} complete. {} survivors remain. Next deal in 5s...",
-                                tableId, state.getDealNumber(), activeSurvivors.size());
-
-                        this.nextDealCountdown = 5;
-                        this.nextDealScheduledAt = Instant.now().plusSeconds(5);
+                        log.info("[TableActor:{}] Deal {} complete. {} survivors remain. Next deal in {}s...",
+                                tableId, state.getDealNumber(), activeSurvivors.size(), POOL_BREAK_SECONDS);
 
                         Map<String, Object> poolEventPayload = new HashMap<>();
                         poolEventPayload.put("dealNumber", state.getDealNumber());
                         poolEventPayload.put("winnerPlayerId", finishedEvent.winnerPlayerId());
                         poolEventPayload.put("dealScores", finishedEvent.finalScores());
                         poolEventPayload.put("cumulativeScores", currentCumulatives);
-                        poolEventPayload.put("eliminatedPlayerIds", freshlyEliminated);
+                        poolEventPayload.put("eliminatedPlayerIds", freshlyEliminatedIds);
+                        poolEventPayload.put("eliminatedPlayerNames", freshlyEliminated);
                         poolEventPayload.put("survivorsRemaining", activeSurvivors.size());
-                        poolEventPayload.put("nextDealCountdownSeconds", 5);
+                        poolEventPayload.put("nextDealCountdownSeconds", POOL_BREAK_SECONDS);
 
+                        scheduleNextDealIn(POOL_BREAK_SECONDS);
                         broadcastMessage(WsServerMessage.of("POOL_DEAL_COMPLETED", requestId, tableId, state.getSequence(), poolEventPayload));
-
-                        if (nextDealFuture != null && !nextDealFuture.isDone()) {
-                            nextDealFuture.cancel(false);
-                        }
-                        nextDealFuture = scheduler.schedule(() -> {
-                            synchronized (TableActor.this) {
-                                startNextDeal();
-                            }
-                        }, 5, TimeUnit.SECONDS);
 
                     } else {
                         // Match complete! 1 or 0 survivors remain
                         PlayerState tournamentWinner = activeSurvivors.size() == 1
                                 ? activeSurvivors.get(0)
-                                : state.getPlayers().stream()
-                                        .min(Comparator.comparingInt(PlayerState::getCumulativeScore))
-                                        .orElse(state.getPlayers().get(0));
+                                : fallbackWinner();
                         this.tournamentWinnerId = tournamentWinner.getPlayerId();
                         log.info("[TableActor:{}] POOL MATCH COMPLETED! Tournament winner is {} ({}) with score {}",
                                 tableId, tournamentWinner.getPlayerId(), tournamentWinner.getDisplayName(), tournamentWinner.getCumulativeScore());
@@ -929,7 +934,8 @@ public final class TableActor {
                     stakeTier,
                     new ArrayList<>(lastEliminatedNames),
                     effectiveTotalDeals,
-                    stakeTier
+                    stakeTier,
+                    tableExtrasFor(playerId)
             );
             // Serialize under the table lock: the view references live state that the next command mutates.
             try {
@@ -1300,6 +1306,11 @@ public final class TableActor {
 
     /** Ends the match and queues its payout; players get {@code GAME_SETTLEMENT} once it is paid. */
     private void settleMatchWallet(String winnerId, Map<String, Integer> finalScores, String requestId) {
+        settleMatchWallet(winnerId, finalScores, requestId, null);
+    }
+
+    private void settleMatchWallet(String winnerId, Map<String, Integer> finalScores, String requestId,
+                                   Map<String, Integer> splitDrops) {
         matchFinishedAt = Instant.now();
         mutations++;
         if (walletService == null || stakeTier <= 0 || settlements == null) {
@@ -1308,7 +1319,8 @@ public final class TableActor {
         List<String> playerIds = state.getPlayers().stream().map(PlayerState::getPlayerId).toList();
         settlements.submit(new com.rummy.gameservice.wallet.SettlementService.Job(
                 state.getGameId(), tableId, rules.getRulesetId(), stakeTier, winnerId,
-                finalScores != null ? new HashMap<>(finalScores) : Map.of(), playerIds, new HashMap<>(rejoinCounts)),
+                finalScores != null ? new HashMap<>(finalScores) : Map.of(), playerIds, new HashMap<>(rejoinCounts),
+                splitDrops != null ? new LinkedHashMap<>(splitDrops) : null),
                 new com.rummy.gameservice.wallet.SettlementService.Listener() {
                     @Override
                     public void settled(com.rummy.gameservice.wallet.GameSettlementResult result) {
@@ -1347,8 +1359,10 @@ public final class TableActor {
         this.nextDealCountdown = null;
         this.nextDealScheduledAt = null;
         this.lastEliminatedNames.clear();
+        this.splitOffer = null;
+        this.splitAskedThisBreak = false;
 
-        if (state.getStatus() != GameStatus.COMPLETED) {
+        if (state.getStatus() != GameStatus.COMPLETED || tournamentWinnerId != null) {
             return;
         }
 
@@ -1360,7 +1374,7 @@ public final class TableActor {
             PlayerState tournamentWinner = state.getPlayers().stream()
                     .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
                     .findFirst()
-                    .orElse(state.getPlayers().get(0));
+                    .orElseGet(this::fallbackWinner);
             this.tournamentWinnerId = tournamentWinner.getPlayerId();
 
             Map<String, Integer> currentCumulatives = new HashMap<>();
@@ -1454,6 +1468,15 @@ public final class TableActor {
             return false;
         }
 
+        if (!betweenDeals()) {
+            sendErrorToPlayer(playerId, "REJOIN_CLOSED", "You can rejoin only in the break between deals", requestId);
+            return false;
+        }
+        if (splitOffer != null) {
+            sendErrorToPlayer(playerId, "SPLIT_PENDING", "The remaining players are deciding on a prize split", requestId);
+            return false;
+        }
+
         int maxActiveScore = activeSurvivors.stream()
                 .mapToInt(PlayerState::getCumulativeScore)
                 .max()
@@ -1540,6 +1563,268 @@ public final class TableActor {
                 log.info("[TableActor:{}] Player {} marked eliminated upon voluntary leave", tableId, playerId);
             }
         }
+        if (splitOffer != null && splitOffer.dropsLeft().containsKey(playerId)) {
+            declineSplit(playerId, "left");
+        }
+        concludeIfLastSurvivorBetweenDeals();
+        refreshHumanViews();
+    }
+
+    /** In the break between deals, a match left with one player is over: that player wins now, not after the break. */
+    private void concludeIfLastSurvivorBetweenDeals() {
+        if (!(rules.isEliminationGame() || rules.isDealsGame()) || state.getStatus() != GameStatus.COMPLETED
+                || tournamentWinnerId != null || matchFinishedAt != null || nextDealScheduledAt == null) {
+            return;
+        }
+        long survivors = state.getPlayers().stream().filter(p -> p.getStatus() != PlayerStatus.ELIMINATED).count();
+        if (survivors > 1) {
+            return;
+        }
+        if (nextDealFuture != null) {
+            nextDealFuture.cancel(false);
+        }
+        log.info("[TableActor:{}] Only {} player left between deals; ending the match now", tableId, survivors);
+        startNextDeal();
+    }
+
+    private boolean betweenDeals() {
+        return state.getStatus() == GameStatus.COMPLETED && nextDealScheduledAt != null
+                && tournamentWinnerId == null && matchFinishedAt == null;
+    }
+
+    /** Winner when nobody is left standing: never a player who walked out while someone else stayed. */
+    private PlayerState fallbackWinner() {
+        List<PlayerState> stayed = state.getPlayers().stream()
+                .filter(p -> !voluntaryAbandoners.contains(p.getPlayerId()))
+                .toList();
+        List<PlayerState> candidates = stayed.isEmpty() ? state.getPlayers() : stayed;
+        Comparator<PlayerState> best = rules.isDealsGame()
+                ? Comparator.<PlayerState>comparingLong(PlayerState::getChipBalance).reversed()
+                        .thenComparingInt(PlayerState::getCumulativeScore)
+                : Comparator.comparingInt(PlayerState::getCumulativeScore);
+        return candidates.stream().min(best).orElse(state.getPlayers().get(0));
+    }
+
+    private void scheduleNextDealIn(int seconds) {
+        if (nextDealFuture != null && !nextDealFuture.isDone()) {
+            nextDealFuture.cancel(false);
+        }
+        this.nextDealCountdown = seconds;
+        this.nextDealScheduledAt = Instant.now().plusSeconds(seconds);
+        nextDealFuture = scheduler.schedule(() -> {
+            synchronized (TableActor.this) {
+                startNextDeal();
+            }
+        }, seconds, TimeUnit.SECONDS);
+    }
+
+    // ---- Pool prize split ----
+
+    private java.math.BigDecimal poolNetPrize() {
+        java.math.BigDecimal entry = java.math.BigDecimal.valueOf(stakeTier);
+        int seats = 0;
+        for (PlayerState p : state.getPlayers()) {
+            seats += 1 + rejoinCounts.getOrDefault(p.getPlayerId(), 0);
+        }
+        return com.rummy.gameservice.wallet.PoolSplit.netPrize(entry.multiply(java.math.BigDecimal.valueOf(seats)));
+    }
+
+    private boolean isBot(String playerId) {
+        return botAgents.containsKey(playerId) || playerId.startsWith("BOT_");
+    }
+
+    /** Why {@code playerId} cannot ask for a split right now; null when they can. */
+    private String splitUnavailableReason(String playerId) {
+        if (!rules.isEliminationGame()) {
+            return "Split is only available in pool games";
+        }
+        if (stakeTier <= 0) {
+            return "Split is only available on cash tables";
+        }
+        if (!betweenDeals()) {
+            return "Split can be asked only in the break between deals";
+        }
+        if (splitOffer != null) {
+            return "A split is already being decided";
+        }
+        if (splitAskedThisBreak) {
+            return "Split was already asked in this break";
+        }
+        List<PlayerState> survivors = state.getPlayers().stream()
+                .filter(p -> p.getStatus() != PlayerStatus.ELIMINATED)
+                .toList();
+        if (survivors.stream().noneMatch(p -> p.getPlayerId().equals(playerId)) || voluntaryAbandoners.contains(playerId)) {
+            return "Only players still in the game can ask for a split";
+        }
+        if (!com.rummy.gameservice.wallet.PoolSplit.tableSizeAllows(state.getPlayers().size(), survivors.size())) {
+            return state.getPlayers().size() == 2
+                    ? "Split is not available on a 2-player table"
+                    : "Split needs " + (state.getPlayers().size() == 3 ? "2" : "2 or 3") + " players left";
+        }
+        if (survivors.stream().anyMatch(p -> isBot(p.getPlayerId()))) {
+            return "Split is not available while a computer player is still in the game";
+        }
+        return null;
+    }
+
+    private LinkedHashMap<String, Integer> currentDropsLeft() {
+        LinkedHashMap<String, Integer> drops = new LinkedHashMap<>();
+        for (PlayerState p : state.getPlayers()) {
+            if (p.getStatus() != PlayerStatus.ELIMINATED) {
+                drops.put(p.getPlayerId(), com.rummy.gameservice.wallet.PoolSplit.dropsRemaining(
+                        p.getCumulativeScore(), rules.getEliminationThreshold(), rules.getFirstDropPenalty()));
+            }
+        }
+        return drops;
+    }
+
+    private Optional<Map<String, java.math.BigDecimal>> currentSplitPayouts(Map<String, Integer> drops) {
+        return com.rummy.gameservice.wallet.PoolSplit.payouts(drops, java.math.BigDecimal.valueOf(stakeTier), poolNetPrize());
+    }
+
+    public synchronized boolean handleSplitRequest(String playerId, String requestId) {
+        if (frozen) {
+            sendErrorToPlayer(playerId, "TABLE_RECOVERING", "Reconnecting you to your game…", requestId);
+            return false;
+        }
+        String reason = splitUnavailableReason(playerId);
+        if (reason != null) {
+            sendErrorToPlayer(playerId, "SPLIT_NOT_ALLOWED", reason, requestId);
+            return false;
+        }
+        LinkedHashMap<String, Integer> drops = currentDropsLeft();
+        Map<String, java.math.BigDecimal> payouts = currentSplitPayouts(drops).orElse(null);
+        if (payouts == null) {
+            sendErrorToPlayer(playerId, "SPLIT_NOT_ALLOWED", "Not enough prize left to split at these scores", requestId);
+            return false;
+        }
+        splitAskedThisBreak = true;
+        Set<String> accepted = new LinkedHashSet<>();
+        accepted.add(playerId);
+        Instant deadline = Instant.now().plusSeconds(SPLIT_ANSWER_SECONDS);
+        SplitOffer offer = new SplitOffer(playerId, drops, payouts, accepted, deadline);
+        splitOffer = offer;
+        mutations++;
+
+        if (nextDealFuture != null && !nextDealFuture.isDone()) {
+            nextDealFuture.cancel(false);
+        }
+        nextDealCountdown = SPLIT_ANSWER_SECONDS;
+        nextDealScheduledAt = deadline;
+        nextDealFuture = scheduler.schedule(() -> {
+            synchronized (TableActor.this) {
+                if (splitOffer == offer && !destroyed && !frozen) {
+                    declineSplit(null, "timeout");
+                }
+            }
+        }, SPLIT_ANSWER_SECONDS, TimeUnit.SECONDS);
+
+        log.info("[TableActor:{}] {} asked to split the prize: {}", tableId, playerId, payouts);
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("requestedBy", playerId);
+        payload.put("payouts", payouts);
+        payload.put("dropsLeft", drops);
+        payload.put("answerSeconds", SPLIT_ANSWER_SECONDS);
+        broadcastMessage(WsServerMessage.of("SPLIT_REQUESTED", requestId, tableId, state.getSequence(), payload));
+        refreshHumanViews();
+        return true;
+    }
+
+    public synchronized boolean handleSplitResponse(String playerId, boolean accept, String requestId) {
+        if (frozen) {
+            sendErrorToPlayer(playerId, "TABLE_RECOVERING", "Reconnecting you to your game…", requestId);
+            return false;
+        }
+        SplitOffer offer = splitOffer;
+        if (offer == null || !offer.dropsLeft().containsKey(playerId)) {
+            sendErrorToPlayer(playerId, "SPLIT_NOT_PENDING", "There is no split waiting for your answer", requestId);
+            return false;
+        }
+        if (!accept) {
+            declineSplit(playerId, "declined");
+            return true;
+        }
+        offer.accepted().add(playerId);
+        mutations++;
+        if (offer.accepted().containsAll(offer.dropsLeft().keySet())) {
+            completeSplit(offer, requestId);
+        } else {
+            broadcastMessage(WsServerMessage.of("SPLIT_UPDATED", requestId, tableId, state.getSequence(),
+                    Map.of("acceptedBy", new ArrayList<>(offer.accepted()))));
+            refreshHumanViews();
+        }
+        return true;
+    }
+
+    private void declineSplit(String byPlayer, String reason) {
+        splitOffer = null;
+        mutations++;
+        scheduleNextDealIn(AFTER_SPLIT_DECLINED_SECONDS);
+        log.info("[TableActor:{}] Prize split off ({}{})", tableId, reason, byPlayer != null ? " by " + byPlayer : "");
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("declinedBy", byPlayer);
+        payload.put("reason", reason);
+        payload.put("nextDealCountdownSeconds", AFTER_SPLIT_DECLINED_SECONDS);
+        broadcastMessage(WsServerMessage.of("SPLIT_DECLINED", null, tableId, state.getSequence(), payload));
+        refreshHumanViews();
+    }
+
+    private void completeSplit(SplitOffer offer, String requestId) {
+        splitOffer = null;
+        if (nextDealFuture != null) {
+            nextDealFuture.cancel(false);
+        }
+        nextDealCountdown = null;
+        nextDealScheduledAt = null;
+
+        String winnerId = offer.payouts().entrySet().stream()
+                .max(Map.Entry.<String, java.math.BigDecimal>comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(offer.requestedBy());
+        this.tournamentWinnerId = winnerId;
+        Map<String, Integer> cumulatives = new HashMap<>();
+        for (PlayerState p : state.getPlayers()) {
+            cumulatives.put(p.getPlayerId(), p.getCumulativeScore());
+        }
+        log.info("[TableActor:{}] Prize split agreed: {}", tableId, offer.payouts());
+
+        if (persistenceService != null) {
+            persistenceService.recordGameFinished(state, tableId);
+        }
+        settleMatchWallet(winnerId, cumulatives, requestId, offer.dropsLeft());
+        broadcastMessage(WsServerMessage.of("SPLIT_ACCEPTED", requestId, tableId, state.getSequence(),
+                Map.of("payouts", offer.payouts())));
+        if (sessionService != null) {
+            sessionService.clearAllHumanBindings(tableId);
+        }
+        refreshHumanViews();
+    }
+
+    private PlayerGameView.TableExtras tableExtrasFor(String viewerId) {
+        if (!rules.isEliminationGame() && !rules.isDealsGame()) {
+            return PlayerGameView.TableExtras.NONE;
+        }
+        java.math.BigDecimal prize = stakeTier > 0 ? poolNetPrize() : null;
+        if (!rules.isEliminationGame()) {
+            return new PlayerGameView.TableExtras(0, false, prize, null);
+        }
+        boolean rejoinOpen = betweenDeals() && splitOffer == null && !voluntaryAbandoners.contains(viewerId);
+
+        PlayerGameView.SplitView split = null;
+        SplitOffer offer = splitOffer;
+        if (offer != null) {
+            Integer secondsLeft = (int) Math.max(0, java.time.Duration.between(Instant.now(), offer.deadline()).toSeconds());
+            split = new PlayerGameView.SplitView(false, offer.requestedBy(), offer.payouts(),
+                    new ArrayList<>(offer.accepted()),
+                    offer.dropsLeft().containsKey(viewerId) && !offer.accepted().contains(viewerId),
+                    secondsLeft);
+        } else if (splitUnavailableReason(viewerId) == null) {
+            Map<String, java.math.BigDecimal> preview = currentSplitPayouts(currentDropsLeft()).orElse(null);
+            if (preview != null) {
+                split = new PlayerGameView.SplitView(true, null, preview, List.of(), false, null);
+            }
+        }
+        return new PlayerGameView.TableExtras(rules.getRejoinMaxActiveThreshold(), rejoinOpen, prize, split);
     }
 
     public int getEffectiveTotalDeals() {

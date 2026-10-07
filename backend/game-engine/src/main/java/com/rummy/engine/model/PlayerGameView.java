@@ -65,8 +65,31 @@ public record PlayerGameView(
         /** The current turn has run past its normal time and is on the active player's extra-time bank. */
         boolean inExtraTime,
         /** The active player may take the open card now (jokers only as the deal's first open card). */
-        boolean topDiscardPickable
+        boolean topDiscardPickable,
+        /** Pool/Deals: prize the winner would get now (all entries and rejoins, less the platform fee). Null otherwise. */
+        java.math.BigDecimal prizePool,
+        /** Pool: prize split state for this viewer; null when no split can be requested or is pending. */
+        SplitView split
 ) implements Serializable {
+
+    /** Table facts the engine state does not hold: the pool rejoin window, the prize and any split offer. */
+    public record TableExtras(int rejoinCutoff, boolean rejoinOpen, java.math.BigDecimal prizePool, SplitView split) {
+        public static final TableExtras NONE = new TableExtras(0, false, null, null);
+    }
+
+    /**
+     * A pool prize split. {@code payouts} are the amounts each remaining player would receive;
+     * everyone listed must accept before the split happens.
+     */
+    public record SplitView(
+            boolean canRequest,
+            String requestedBy,
+            Map<String, java.math.BigDecimal> payouts,
+            List<String> acceptedBy,
+            boolean awaitingMyAnswer,
+            Integer secondsLeft
+    ) implements Serializable {
+    }
 
     public PlayerGameView(
             String tableId, String gameId, String viewerPlayerId, GameStatus gameStatus, long sequence,
@@ -83,7 +106,7 @@ public record PlayerGameView(
                 winningGroups, viewerSeatIndex, rulesetId, dealNumber, eliminationThreshold, viewerCumulativeScore, viewerIsEliminated,
                 standings, dealHistory, nextDealCountdown, tournamentWinnerId, dealerSeatIndex, canRejoin, rejoinScore, rejoinFee,
                 freshlyEliminatedNames, totalDeals, viewerChipBalance, hasTakenFirstTurn, drawnCardInstanceId, isDrawnFromDiscard,
-                !hasTakenFirstTurn, 0, false, false);
+                !hasTakenFirstTurn, 0, false, false, null, null);
     }
 
     public record OpponentView(
@@ -421,8 +444,24 @@ public record PlayerGameView(
                                       List<String> freshlyEliminatedNames,
                                       int totalDeals,
                                       int stakeTier) {
+        return from(state, viewerPlayerId, eliminationThreshold, dealHistory, nextDealCountdown, tournamentWinnerId,
+                rejoinFee, freshlyEliminatedNames, totalDeals, stakeTier, TableExtras.NONE);
+    }
+
+    public static PlayerGameView from(GameState state,
+                                      String viewerPlayerId,
+                                      int eliminationThreshold,
+                                      List<DealScoreRecord> dealHistory,
+                                      Integer nextDealCountdown,
+                                      String tournamentWinnerId,
+                                      int rejoinFee,
+                                      List<String> freshlyEliminatedNames,
+                                      int totalDeals,
+                                      int stakeTier,
+                                      TableExtras extras) {
         Objects.requireNonNull(state, "state must not be null");
         Objects.requireNonNull(viewerPlayerId, "viewerPlayerId must not be null");
+        TableExtras table = extras != null ? extras : TableExtras.NONE;
 
         boolean isCompleted = state.getStatus() == GameStatus.COMPLETED;
 
@@ -488,19 +527,14 @@ public record PlayerGameView(
                 .max()
                 .orElse(0);
 
-        int rejoinCutoff = 0;
-        if (eliminationThreshold == 101) {
-            rejoinCutoff = 79;
-        } else if (eliminationThreshold == 201) {
-            rejoinCutoff = 174;
-        }
-
         boolean isViewerEliminated = viewer.getStatus() == PlayerStatus.ELIMINATED;
         boolean canRejoin = eliminationThreshold > 0
+                && table.rejoinOpen()
+                && table.rejoinCutoff() > 0
                 && isViewerEliminated
                 && tournamentWinnerId == null
                 && activeSurvivors.size() >= 1
-                && maxActiveScore <= rejoinCutoff;
+                && maxActiveScore <= table.rejoinCutoff();
 
         int rejoinScore = canRejoin ? maxActiveScore + 1 : 0;
 
@@ -550,7 +584,9 @@ public record PlayerGameView(
                 !viewer.hasTakenFirstTurn() && viewer.getConsecutiveMissedTurns() == 0,
                 stakeTier,
                 turn != null && turn.isExtraTime(),
-                state.getStatus() == GameStatus.IN_PROGRESS && state.isTopDiscardPickable()
+                state.getStatus() == GameStatus.IN_PROGRESS && state.isTopDiscardPickable(),
+                table.prizePool(),
+                table.split()
         );
     }
 }

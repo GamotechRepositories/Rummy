@@ -447,6 +447,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             case "REJOIN" -> {
                 tableActor.handleRejoin(playerId, reqId);
             }
+            case "SPLIT_REQUEST" -> tableActor.handleSplitRequest(playerId, reqId);
+            case "SPLIT_RESPONSE" -> {
+                boolean accept = data != null && data.has("accept") && data.get("accept").asBoolean();
+                tableActor.handleSplitResponse(playerId, accept, reqId);
+            }
             default -> sendError(session, "UNKNOWN_COMMAND", "Unknown command type: " + type, reqId);
         }
     }

@@ -52,12 +52,14 @@ class SettlementServiceMongoTest {
         @Override
         public GameSettlementResult settleMatch(String gameId, String tableId, String rulesetId, BigDecimal stakeTier,
                                                 String winnerPlayerId, Map<String, Integer> finalScores,
-                                                List<String> allPlayerIds, Map<String, Integer> rejoinCounts) {
+                                                List<String> allPlayerIds, Map<String, Integer> rejoinCounts,
+                                                Map<String, Integer> splitDrops) {
             calls.incrementAndGet();
             if (failures.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {
                 throw new IllegalStateException("wallet database unreachable");
             }
-            return super.settleMatch(gameId, tableId, rulesetId, stakeTier, winnerPlayerId, finalScores, allPlayerIds, rejoinCounts);
+            return super.settleMatch(gameId, tableId, rulesetId, stakeTier, winnerPlayerId, finalScores, allPlayerIds,
+                    rejoinCounts, splitDrops);
         }
     }
 
@@ -195,7 +197,7 @@ class SettlementServiceMongoTest {
 
     private static SettlementService.Job job() {
         return new SettlementService.Job(GAME, TABLE, "POINTS_13", 100, "P1",
-                Map.of("P1", 0, "P2", 80), List.of("P1", "P2"), Map.of());
+                Map.of("P1", 0, "P2", 80), List.of("P1", "P2"), Map.of(), null);
     }
 
     private static SettlementService.Listener listener(CompletableFuture<GameSettlementResult> told) {

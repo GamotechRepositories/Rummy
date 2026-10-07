@@ -241,7 +241,7 @@ export const GameBoard: React.FC = () => {
   const prevDealRef = useRef<number | null>(null);
 
   const rawRulesetId = (gameState?.rulesetId ?? lastGameConfig?.rulesetId ?? 'POINTS_13').toUpperCase();
-  const entryFee = gameState?.stakeTier || lastGameConfig?.entryFee || 8;
+  const entryFee = gameState?.stakeTier || lastGameConfig?.entryFee || 0;
   const maxSeats = lastGameConfig?.maxPlayers ?? Math.max(2, opponents.length + 1);
   const isPointsRummy = rawRulesetId.includes('POINT');
   const isRummy21 = rawRulesetId.includes('21');
@@ -299,8 +299,10 @@ export const GameBoard: React.FC = () => {
     : `Entry ₹${entryFee}`;
 
   // Points tables have no pot: each loser pays their own points; the stake is the most anyone can lose.
-  const potLabel = isPointsTable ? 'MAX LOSS ' : 'POT ';
-  const potAmount = (isPointsTable ? entryFee : (opponents.length + 1) * entryFee).toFixed(2);
+  const potLabel = isPointsTable ? 'MAX LOSS ' : 'PRIZE ';
+  const potAmount = (
+    isPointsTable ? entryFee : gameState?.prizePool ?? (opponents.length + 1) * entryFee * 0.85
+  ).toFixed(2);
   const leaveRupees = isPointsTable ? (leavePenalty * pointValue).toFixed(2) : null;
 
   if (!gameState) {

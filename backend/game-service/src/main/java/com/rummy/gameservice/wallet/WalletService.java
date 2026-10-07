@@ -496,6 +496,22 @@ public class WalletService {
                                             Map<String, Integer> finalScores,
                                             List<String> allPlayerIds,
                                             Map<String, Integer> rejoinCounts) {
+        return settleMatch(gameId, tableId, rulesetId, stakeTier, winnerPlayerId, finalScores, allPlayerIds, rejoinCounts, null);
+    }
+
+    /**
+     * @param splitDrops pool prize split agreed by the remaining players: drops left per sharing player
+     *                   (see {@link PoolSplit}); null or empty for a single winner
+     */
+    public GameSettlementResult settleMatch(String gameId,
+                                            String tableId,
+                                            String rulesetId,
+                                            BigDecimal stakeTier,
+                                            String winnerPlayerId,
+                                            Map<String, Integer> finalScores,
+                                            List<String> allPlayerIds,
+                                            Map<String, Integer> rejoinCounts,
+                                            Map<String, Integer> splitDrops) {
         if (stakeTier == null || stakeTier.compareTo(BigDecimal.ZERO) <= 0 || winnerPlayerId == null) {
             log.warn("[Wallet] Skipping settlement: invalid stakeTier ({}) or null winner", stakeTier);
             return null;
@@ -569,7 +585,7 @@ public class WalletService {
                 int rejoins = (rejoinCounts != null) ? rejoinCounts.getOrDefault(pId, 0) : 0;
                 BigDecimal playerContribution = stakeTier.multiply(BigDecimal.valueOf(1 + rejoins));
                 totalGrossPot = totalGrossPot.add(playerContribution);
-                if (pId.equals(winnerPlayerId)) {
+                if (pId.equals(winnerPlayerId) || (splitDrops != null && splitDrops.containsKey(pId))) {
                     continue;
                 }
                 int penalty = scores.getOrDefault(pId, 80);
@@ -595,6 +611,56 @@ public class WalletService {
                 log.error("[Wallet] Failed to credit platform rake for gameId={}: {}", gameId, e.getMessage());
                 failedPayouts.add(rakeKey);
             }
+        }
+
+        Map<String, BigDecimal> splitPayouts = null;
+        if (!isPointsBased && splitDrops != null && !splitDrops.isEmpty()) {
+            splitPayouts = PoolSplit.payouts(new LinkedHashMap<>(splitDrops), stakeTier, netWinnerPrize).orElse(null);
+            if (splitPayouts == null) {
+                log.error("[Wallet] Agreed split of {} cannot be paid from prize {}; paying {} the whole prize",
+                        gameId, netWinnerPrize, winnerPlayerId);
+                for (String pId : splitDrops.keySet()) {
+                    if (!pId.equals(winnerPlayerId)) {
+                        int rejoins = (rejoinCounts != null) ? rejoinCounts.getOrDefault(pId, 0) : 0;
+                        BigDecimal paid = stakeTier.multiply(BigDecimal.valueOf(1 + rejoins));
+                        details.put(pId, new GameSettlementResult.PlayerSettlementDetail(
+                                pId, false, scores.getOrDefault(pId, 0), stakeTier, paid, BigDecimal.ZERO, BigDecimal.ZERO, paid.negate()));
+                    }
+                }
+            }
+        }
+
+        if (splitPayouts != null) {
+            for (Map.Entry<String, BigDecimal> share : splitPayouts.entrySet()) {
+                String pId = share.getKey();
+                int rejoins = (rejoinCounts != null) ? rejoinCounts.getOrDefault(pId, 0) : 0;
+                BigDecimal paid = stakeTier.multiply(BigDecimal.valueOf(1 + rejoins));
+                String account = pId.startsWith("BOT_") ? PLATFORM_TREASURY : pId;
+                String key = (pId.startsWith("BOT_") ? "BOT_WIN_" : "WIN_") + gameId + "_" + pId;
+                try {
+                    credit(account, share.getValue(), pId.startsWith("BOT_") ? "BOT_HOUSE_WIN" : "GAME_WIN", key, gameId,
+                            "Prize split payout for " + gameId + " (" + rulesetId + ")",
+                            Map.of("gameId", gameId, "grossPot", totalGrossPot, "rake", platformRake, "netPrize", netWinnerPrize,
+                                    "split", true, "dropsLeft", splitDrops.getOrDefault(pId, 0)));
+                } catch (Exception e) {
+                    log.error("[Wallet] Failed to credit split share {} to {} for gameId={}: {}", share.getValue(), pId, gameId, e.getMessage());
+                    failedPayouts.add(key);
+                }
+                details.put(pId, new GameSettlementResult.PlayerSettlementDetail(
+                        pId, true, scores.getOrDefault(pId, 0), stakeTier, BigDecimal.ZERO, BigDecimal.ZERO,
+                        share.getValue(), share.getValue().subtract(paid)));
+            }
+            if (!failedPayouts.isEmpty()) {
+                throw new IllegalStateException("Settlement of " + gameId + " incomplete, retrying: " + failedPayouts);
+            }
+            GameSettlementResult result = new GameSettlementResult(
+                    gameId, tableId, rulesetId, winnerPlayerId, stakeTier, totalGrossPot,
+                    DEFAULT_RAKE_RATE, platformRake, netWinnerPrize, details, splitPayouts
+            );
+            settlementCache.put(gameId, result);
+            log.info("[Wallet] Settlement complete for gameId={} (prize split): GrossPot={}, PlatformRake={}, Shares={}",
+                    gameId, totalGrossPot, platformRake, splitPayouts);
+            return result;
         }
 
         // Credit Winner
@@ -637,7 +703,7 @@ public class WalletService {
 
         GameSettlementResult result = new GameSettlementResult(
                 gameId, tableId, rulesetId, winnerPlayerId, stakeTier, totalGrossPot,
-                DEFAULT_RAKE_RATE, platformRake, netWinnerPrize, details
+                DEFAULT_RAKE_RATE, platformRake, netWinnerPrize, details, null
         );
 
         settlementCache.put(gameId, result);

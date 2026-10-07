@@ -147,6 +147,20 @@ export interface PlayerGameView {
   inExtraTime?: boolean;
   /** Server-computed: the open card may be taken now (a joker only as the deal's first open card). */
   topDiscardPickable?: boolean;
+  /** Pool/deals: prize after the platform fee, including rejoin fees. Absent on free tables. */
+  prizePool?: number | null;
+  /** Pool: prize split on offer or being decided in the break between deals. */
+  split?: SplitView | null;
+}
+
+export interface SplitView {
+  /** The viewer may ask the others to split now; payouts is then a preview. */
+  canRequest: boolean;
+  requestedBy: string | null;
+  payouts: Record<string, number>;
+  acceptedBy: string[];
+  awaitingMyAnswer: boolean;
+  secondsLeft: number | null;
 }
 
 export type GroupValidationType = 'PURE_SEQUENCE' | 'IMPURE_SEQUENCE' | 'SET' | 'INVALID';
@@ -232,5 +246,7 @@ export interface GameSettlementResult {
   platformRakeAmount: number;
   netWinnerPrize: number;
   playerDetails: Record<string, PlayerSettlementDetail>;
+  /** Pool prize split: what each sharing player received. */
+  splitPayouts?: Record<string, number> | null;
 }
 

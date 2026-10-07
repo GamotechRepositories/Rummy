@@ -403,7 +403,7 @@ export const ActionControls: React.FC = () => {
                   }}
                 >
                   <Sparkles size={16} />
-                  Re-Join (₹{gameState.rejoinFee || lastGameConfig?.entryFee || 8})
+                  Re-Join (₹{gameState.rejoinFee || gameState.stakeTier || lastGameConfig?.entryFee || 0})
                 </button>
               )}
               <button
@@ -618,7 +618,7 @@ export const ActionControls: React.FC = () => {
                 >
                   <div className="royal-dialog-penalty-label">
                     <span className="royal-dialog-penalty-tag" style={{ color: '#6ee7b7' }}>
-                      ENTRY FEE: ₹{gameState.rejoinFee || lastGameConfig?.entryFee || 8}
+                      ENTRY FEE: ₹{gameState.rejoinFee || gameState.stakeTier || lastGameConfig?.entryFee || 0}
                     </span>
                     <span className="royal-dialog-penalty-desc">
                       Starting Score: <strong>{gameState.rejoinScore} pts</strong> (Leader + 1)

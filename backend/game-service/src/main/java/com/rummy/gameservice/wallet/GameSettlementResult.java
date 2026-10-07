@@ -22,7 +22,9 @@ public record GameSettlementResult(
         BigDecimal platformRakeRate,   // e.g. 0.15 (15%)
         BigDecimal platformRakeAmount, // e.g. 30.00
         BigDecimal netWinnerPrize,     // e.g. 170.00
-        Map<String, PlayerSettlementDetail> playerDetails
+        Map<String, PlayerSettlementDetail> playerDetails,
+        /** Pool prize split: what each sharing player received (they add up to netWinnerPrize). Null when not split. */
+        Map<String, BigDecimal> splitPayouts
 ) implements Serializable {
 
     public record PlayerSettlementDetail(

@@ -38,8 +38,10 @@ public class SettlementService {
     private static final Duration FIRST_RETRY_AFTER = Duration.ofSeconds(60);
     private static final Duration MAX_BACKOFF = Duration.ofMinutes(10);
 
+    /** {@code splitDrops}: drops left per player for an agreed pool prize split; null for a normal single-winner payout. */
     public record Job(String gameId, String tableId, String rulesetId, long stakeTier, String winnerId,
-                      Map<String, Integer> finalScores, List<String> playerIds, Map<String, Integer> rejoinCounts) {
+                      Map<String, Integer> finalScores, List<String> playerIds, Map<String, Integer> rejoinCounts,
+                      Map<String, Integer> splitDrops) {
     }
 
     /** Called on the settlement thread once the payout is final. */
@@ -131,7 +133,7 @@ public class SettlementService {
             }
             GameSettlementResult result = wallet.settleMatch(job.gameId(), job.tableId(), job.rulesetId(),
                     BigDecimal.valueOf(job.stakeTier()), job.winnerId(), job.finalScores(), job.playerIds(),
-                    job.rejoinCounts());
+                    job.rejoinCounts(), job.splitDrops());
             if (escrows != null) {
                 escrows.completeSettlement(job.gameId());
             }

@@ -28,6 +28,18 @@ interface GameResultModalProps {
   onOpenScoreboard?: () => void;
 }
 
+const splitButtonStyle = (color: string): React.CSSProperties => ({
+  background: color,
+  color: '#fff',
+  border: 'none',
+  borderRadius: '8px',
+  padding: '7px 14px',
+  fontWeight: 800,
+  fontSize: '12px',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+});
+
 const GROUP_CONFIG: Record<GroupValidationType, { label: string; color: string; bg: string }> = {
   PURE_SEQUENCE: { label: 'Pure', color: '#34d399', bg: 'rgba(52, 211, 153, 0.15)' },
   IMPURE_SEQUENCE: { label: 'Sequence', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)' },
@@ -500,12 +512,22 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
       displayGrossPot = calculatedPot;
       displayRake = calculatedPot * 0.15;
       displayPrize = calculatedPot - displayRake;
+    } else if (gameState.prizePool != null) {
+      displayPrize = gameState.prizePool;
+      displayGrossPot = Math.round((gameState.prizePool / 0.85) * 100) / 100;
+      displayRake = displayGrossPot - displayPrize;
     } else {
       displayGrossPot = stakeTier * unrankedPlayers.length;
       displayRake = displayGrossPot * 0.15;
       displayPrize = displayGrossPot - displayRake;
     }
   }
+
+  const split = isPool && isIntermediateDeal ? gameState.split ?? null : null;
+  const splitPayouts = gameSettlement?.splitPayouts ?? null;
+  const nameOf = (id: string) =>
+    id === playerId ? 'You' : unrankedPlayers.find((p) => p.playerId === id)?.name ?? id;
+  const rejoinFee = gameState.rejoinFee || stakeTier;
 
   const togglePlayerExpanded = (pId: string) => {
     setExpandedPlayerIds((prev) => ({
@@ -666,7 +688,11 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                 }}
               >
                 <RotateCcw size={14} style={{ animation: 'spin 4s linear infinite' }} />
-                <span>Next Deal starting in <strong>{dealCountdown}s</strong>...</span>
+                {split?.requestedBy ? (
+                  <span>Split decision in <strong>{dealCountdown}s</strong>...</span>
+                ) : (
+                  <span>Next Deal starting in <strong>{dealCountdown}s</strong>...</span>
+                )}
               </div>
             )}
 
@@ -701,7 +727,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                     <div style={{ fontSize: '11.5px', color: '#cbd5e1' }}>
                       {gameState?.canRejoin
                         ? `Eligible to Re-Join at ${gameState.rejoinScore} pts!`
-                        : `Re-Join closed (highest active score > ${threshold === 201 ? 174 : 79} pts).`}
+                        : 'Re-Join is not available now.'}
                     </div>
                   </div>
                 </div>
@@ -726,9 +752,115 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                       boxShadow: '0 0 10px rgba(16, 185, 129, 0.4)',
                     }}
                   >
-                    ✨ Re-Join (₹{gameState.rejoinFee || lastGameConfig?.entryFee || 8})
+                    ✨ Re-Join (₹{rejoinFee})
                   </button>
                 )}
+              </div>
+            )}
+
+            {split && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  background: 'rgba(59, 130, 246, 0.14)',
+                  border: '1px solid rgba(96, 165, 250, 0.45)',
+                  color: '#e0f2fe',
+                  fontSize: '12.5px',
+                  maxWidth: '620px',
+                  width: '100%',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ fontWeight: 800, marginBottom: '8px' }}>
+                  {split.requestedBy
+                    ? `${nameOf(split.requestedBy)} asked to split the prize`
+                    : 'Split the prize and end the game?'}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '4px 14px', marginBottom: '8px' }}>
+                  {Object.entries(split.payouts).map(([pid, amount]) => (
+                    <React.Fragment key={pid}>
+                      <span>{nameOf(pid)}</span>
+                      <strong style={{ color: '#86efac' }}>₹{Number(amount).toFixed(2)}</strong>
+                      <span style={{ color: '#cbd5e1' }}>
+                        {split.requestedBy ? (split.acceptedBy.includes(pid) ? '✓ Accepted' : 'Waiting…') : ''}
+                      </span>
+                    </React.Fragment>
+                  ))}
+                </div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '8px' }}>
+                  Shares follow drops left: each extra drop is worth one entry fee (₹{stakeTier}), the rest is shared
+                  equally. Everyone must accept.
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {split.canRequest && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.play('click');
+                        socketClient.requestSplit();
+                      }}
+                      style={splitButtonStyle('#2563eb')}
+                    >
+                      Request Split
+                    </button>
+                  )}
+                  {split.awaitingMyAnswer && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.play('click');
+                          socketClient.respondSplit(true);
+                        }}
+                        style={splitButtonStyle('#059669')}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.play('click');
+                          socketClient.respondSplit(false);
+                        }}
+                        style={splitButtonStyle('#dc2626')}
+                      >
+                        Decline
+                      </button>
+                    </>
+                  )}
+                  {split.requestedBy && !split.awaitingMyAnswer && (
+                    <span style={{ color: '#cbd5e1' }}>Waiting for the other players to answer…</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {splitPayouts && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  background: 'rgba(16, 185, 129, 0.14)',
+                  border: '1px solid rgba(52, 211, 153, 0.45)',
+                  color: '#ecfdf5',
+                  fontSize: '12.5px',
+                  maxWidth: '620px',
+                  width: '100%',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ fontWeight: 800, marginBottom: '8px' }}>Prize split agreed</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '4px 14px' }}>
+                  {Object.entries(splitPayouts).map(([pid, amount]) => (
+                    <React.Fragment key={pid}>
+                      <span>{nameOf(pid)}</span>
+                      <strong style={{ color: '#86efac' }}>+₹{Number(amount).toFixed(2)}</strong>
+                    </React.Fragment>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -809,7 +941,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
 
                 <div className="result-pot-strip-item val-winner">
                   <span className="result-pot-strip-label" style={{ color: '#86efac' }}>
-                    {isPool ? 'Pool Champion Prize' : isDeals ? 'Deals Champion Prize' : 'Net Winnings'}
+                    {splitPayouts ? 'Prize (Split)' : isPool ? 'Pool Champion Prize' : isDeals ? 'Deals Champion Prize' : 'Net Winnings'}
                   </span>
                   <span className="result-pot-strip-val val-green">+₹{Number(displayPrize).toFixed(2)}</span>
                   {isPointsBased && (
@@ -1190,7 +1322,9 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                               won ? 'result-row-delta--win' : 'result-row-delta--loss'
                             }`}
                           >
-                            {won ? `+₹${Number(displayPrize).toFixed(2)}` : `-₹${Number(pLoss).toFixed(2)}`}
+                            {splitPayouts?.[p.playerId] != null
+                              ? `+₹${Number(splitPayouts[p.playerId]).toFixed(2)}`
+                              : won ? `+₹${Number(displayPrize).toFixed(2)}` : `-₹${Number(pLoss).toFixed(2)}`}
                           </div>
 
                           <div className="result-row-score-sub">
@@ -1308,7 +1442,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
               }}
             >
               <Sparkles size={16} />
-              Re-Join Table (₹{gameState.rejoinFee || lastGameConfig?.entryFee || 8})
+              Re-Join Table (₹{rejoinFee})
             </button>
           )}
 

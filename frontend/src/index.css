@@ -1905,7 +1905,15 @@ h1, h2, h3, h4, .font-display {
   overflow: visible;
   /* Lift groups onto the green felt, clear of the wood rim */
   padding-bottom: clamp(8px, 1.4cqh, 14px);
-  transform: translateY(clamp(-48px, -6.5cqh, -22px));
+  transform: translateY(clamp(-36px, -4.5cqh, -12px));
+}
+
+/* Tablets and phones: sit lower so the groups stay clear of the center piles */
+@media (max-width: 1024px), (max-height: 600px) {
+  .player-hand {
+    padding-bottom: clamp(4px, 0.8cqh, 10px);
+    transform: translateY(clamp(-14px, -1.6cqh, -4px));
+  }
 }
 
 .player-hand-toolbar {

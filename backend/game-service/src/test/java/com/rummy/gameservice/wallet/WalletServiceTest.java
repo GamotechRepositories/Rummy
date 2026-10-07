@@ -183,6 +183,37 @@ class WalletServiceTest {
     }
 
     @Test
+    @DisplayName("Pool split: each sharing player is paid their share; the eliminated player pays the entry")
+    void testPoolSplitSettlement() {
+        List<String> players = List.of("USR_SP_A", "USR_SP_B", "USR_SP_C", "USR_SP_D");
+        BigDecimal stake = BigDecimal.valueOf(25);
+        for (String p : players) {
+            fund(p);
+            walletService.debit(p, stake, "GAME_ENTRY_STAKE", "STAKE_SPLIT_" + p, "MATCH_SPLIT", "Entry", null);
+        }
+        java.util.LinkedHashMap<String, Integer> drops = new java.util.LinkedHashMap<>();
+        drops.put("USR_SP_A", 5);
+        drops.put("USR_SP_B", 4);
+        drops.put("USR_SP_C", 4);
+
+        // Gross 100, rake 15, prize 85: A gets one extra drop (25) + 20, B and C get 20 each
+        GameSettlementResult result = walletService.settleMatch(
+                "MATCH_SPLIT", "TBL_SPLIT", "POOL_101", stake, "USR_SP_A",
+                java.util.Map.of("USR_SP_A", 0, "USR_SP_B", 20, "USR_SP_C", 20, "USR_SP_D", 120),
+                players, java.util.Map.of(), drops);
+
+        assertThat(result.netWinnerPrize()).isEqualByComparingTo("85.00");
+        assertThat(result.splitPayouts()).containsOnlyKeys("USR_SP_A", "USR_SP_B", "USR_SP_C");
+        assertThat(result.splitPayouts().get("USR_SP_A")).isEqualByComparingTo("45.00");
+        assertThat(result.splitPayouts().get("USR_SP_B")).isEqualByComparingTo("20.00");
+        assertThat(walletService.getOrCreateWallet("USR_SP_A").getBalance()).isEqualByComparingTo("1020.00");
+        assertThat(walletService.getOrCreateWallet("USR_SP_B").getBalance()).isEqualByComparingTo("995.00");
+        assertThat(walletService.getOrCreateWallet("USR_SP_D").getBalance()).isEqualByComparingTo("975.00");
+        assertThat(result.playerDetails().get("USR_SP_D").isWinner()).isFalse();
+        assertThat(walletService.getPlatformTreasuryBalance()).isEqualByComparingTo("15.00");
+    }
+
+    @Test
     @DisplayName("21-Card Rummy: 120-pt cap, First Drop 30 pts, 75% stake refund, 15% platform rake")
     void testTwentyOneCardRummySettlement() {
         String winner = "USR_21_WIN";
