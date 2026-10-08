@@ -138,6 +138,17 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   const isCurrentTurn = activePlayerId === player.playerId && !dealInProgress && !isEliminated;
   const isDropped = player.status === 'DROPPED';
   const isDeclared = player.status === 'DECLARED';
+  const isWinner =
+    !isEliminated &&
+    (isDeclared ||
+      (gameState?.winnerId && gameState.winnerId === player.playerId) ||
+      (gameState?.tournamentWinnerId && gameState.tournamentWinnerId === player.playerId));
+  const isLost =
+    !isEliminated &&
+    !isDropped &&
+    !isWinner &&
+    (gameStatus === 'SHOWDOWN' || gameStatus === 'COMPLETED') &&
+    Boolean(gameState?.winnerId || gameState?.tournamentWinnerId);
   const isDealer = seatNumber === gameState?.dealerSeatIndex;
   const isDangerZone = isPool && !isEliminated && (player.cumulativeScore ?? 0) >= threshold * 0.75;
   const avatar = getAvatarForPlayer(player.displayName || player.playerId);
@@ -152,13 +163,15 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   const avatarElement = (
     <div className="opponent-avatar-wrap">
       {/* Turn Spotlight Glow on Felt */}
-      {(isCurrentTurn || isShowdownWaiting) && (
+      {(isCurrentTurn || isShowdownWaiting || isWinner) && (
         <div
           style={{
             position: 'absolute',
             inset: '-14px',
             borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(251, 191, 36, 0.45) 0%, transparent 70%)',
+            background: isWinner
+              ? 'radial-gradient(circle, rgba(16, 185, 129, 0.55) 0%, transparent 70%)'
+              : 'radial-gradient(circle, rgba(251, 191, 36, 0.45) 0%, transparent 70%)',
             pointerEvents: 'none',
             animation: 'pulse 1.8s infinite ease-in-out',
             zIndex: 1,
@@ -182,12 +195,16 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
       <div
         className="opponent-avatar-bezel"
         style={{
-          background: isCurrentTurn
-            ? 'linear-gradient(135deg, #fef08a 0%, #d97706 50%, #fef08a 100%)'
-            : 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(212,175,55,0.6) 50%, rgba(0,0,0,0.6) 100%)',
-          boxShadow: isCurrentTurn
-            ? '0 0 18px rgba(251, 191, 36, 0.7), 0 4px 12px rgba(0,0,0,0.6)'
-            : '0 4px 12px rgba(0,0,0,0.55)',
+          background: isWinner
+            ? 'linear-gradient(135deg, #6ee7b7 0%, #059669 50%, #047857 100%)'
+            : isCurrentTurn
+              ? 'linear-gradient(135deg, #fef08a 0%, #d97706 50%, #fef08a 100%)'
+              : 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(212,175,55,0.6) 50%, rgba(0,0,0,0.6) 100%)',
+          boxShadow: isWinner
+            ? '0 0 20px rgba(16, 185, 129, 0.8), 0 4px 12px rgba(0,0,0,0.6)'
+            : isCurrentTurn
+              ? '0 0 18px rgba(251, 191, 36, 0.7), 0 4px 12px rgba(0,0,0,0.6)'
+              : '0 4px 12px rgba(0,0,0,0.55)',
         }}
       >
         {/* Character Illustration SVG */}
@@ -213,65 +230,6 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
             avatar.renderSvg(51)
           )}
         </div>
-
-        {/* Status Overlay Badges */}
-        {isEliminated && (
-          <span
-            style={{
-              position: 'absolute',
-              bottom: '-3px',
-              background: 'linear-gradient(135deg, #b91c1c, #7f1d1d)',
-              color: '#ffffff',
-              fontSize: '8px',
-              fontWeight: 900,
-              padding: '1px 5px',
-              borderRadius: '4px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
-              border: '1px solid rgba(254, 202, 202, 0.4)',
-              zIndex: 15,
-            }}
-          >
-            OUT
-          </span>
-        )}
-
-        {!isEliminated && isDropped && (
-          <span
-            style={{
-              position: 'absolute',
-              bottom: '-3px',
-              background: 'linear-gradient(135deg, #ef4444, #991b1b)',
-              color: '#ffffff',
-              fontSize: '8px',
-              fontWeight: 900,
-              padding: '1px 5px',
-              borderRadius: '4px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
-              zIndex: 15,
-            }}
-          >
-            DROPPED
-          </span>
-        )}
-
-        {!isEliminated && isDeclared && (
-          <span
-            style={{
-              position: 'absolute',
-              bottom: '-3px',
-              background: 'linear-gradient(135deg, #10b981, #047857)',
-              color: '#ffffff',
-              fontSize: '8px',
-              fontWeight: 900,
-              padding: '1px 5px',
-              borderRadius: '4px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
-              zIndex: 15,
-            }}
-          >
-            WON
-          </span>
-        )}
       </div>
 
       {/* Dealer Button Puck - placed above bezel and timer ring */}
@@ -280,6 +238,17 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
           D
         </div>
       )}
+
+      {/* Status Overlay Badges - positioned on top of avatar and loader with high z-index */}
+      {isEliminated ? (
+        <span className="avatar-status-badge avatar-status-badge--out">OUT</span>
+      ) : isDropped ? (
+        <span className="avatar-status-badge avatar-status-badge--dropped">DROPPED</span>
+      ) : isWinner ? (
+        <span className="avatar-status-badge avatar-status-badge--won">WON</span>
+      ) : isLost ? (
+        <span className="avatar-status-badge avatar-status-badge--lost">LOST</span>
+      ) : null}
     </div>
   );
 

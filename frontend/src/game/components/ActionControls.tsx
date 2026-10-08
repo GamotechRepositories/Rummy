@@ -185,6 +185,18 @@ export const ActionControls: React.FC = () => {
   const threshold = gameState.eliminationThreshold || (isPool201 ? 201 : (gameState.rulesetId?.includes('101') ? 101 : 0));
   const isPool = threshold > 0;
   const viewerIsEliminated = gameState.viewerIsEliminated || gameState.viewerStatus === 'ELIMINATED';
+  const viewerIsDropped = gameState?.viewerStatus === 'DROPPED';
+  const viewerIsWinner =
+    !viewerIsEliminated &&
+    (gameState?.viewerStatus === 'DECLARED' ||
+      (gameState?.winnerId && gameState.winnerId === gameState.viewerPlayerId) ||
+      (gameState?.tournamentWinnerId && gameState.tournamentWinnerId === gameState.viewerPlayerId));
+  const viewerIsLost =
+    !viewerIsEliminated &&
+    !viewerIsDropped &&
+    !viewerIsWinner &&
+    (gameStatus === 'SHOWDOWN' || gameStatus === 'COMPLETED') &&
+    Boolean(gameState?.winnerId || gameState?.tournamentWinnerId);
   const viewerCumulative = gameState.viewerCumulativeScore ?? gameState.viewerScore ?? 0;
   const isDealer = gameState.viewerSeatIndex === gameState.dealerSeatIndex;
   const isDangerZone = isPool && !viewerIsEliminated && viewerCumulative >= threshold * 0.75;
@@ -256,7 +268,7 @@ export const ActionControls: React.FC = () => {
                 />
               </div>
             )}
-            <div className={`bcb-avatar${((isMyTurn && gameStatus === 'IN_PROGRESS') || (gameStatus === 'SHOWDOWN' && !gameState.hasSubmittedMeld && gameState.winnerId !== gameState.viewerPlayerId)) && !dealInProgress && !viewerIsEliminated ? ' on' : ''}${viewerIsEliminated ? ' eliminated' : ''}`}>
+            <div className={`bcb-avatar${viewerIsWinner ? ' won' : ''}${((isMyTurn && gameStatus === 'IN_PROGRESS') || (gameStatus === 'SHOWDOWN' && !gameState.hasSubmittedMeld && gameState.winnerId !== gameState.viewerPlayerId)) && !dealInProgress && !viewerIsEliminated ? ' on' : ''}${viewerIsEliminated ? ' eliminated' : ''}`}>
               <img className="bcb-avatar-photo" src={photoForCharacter(avatarId)} alt="" draggable={false} />
             </div>
             {isDealer && (
@@ -264,6 +276,16 @@ export const ActionControls: React.FC = () => {
                 D
               </div>
             )}
+            {/* Viewer Status Badge (WON, LOST, DROPPED, OUT) - elevated above loader ring */}
+            {viewerIsEliminated ? (
+              <span className="avatar-status-badge avatar-status-badge--out">OUT</span>
+            ) : viewerIsDropped ? (
+              <span className="avatar-status-badge avatar-status-badge--dropped">DROPPED</span>
+            ) : viewerIsWinner ? (
+              <span className="avatar-status-badge avatar-status-badge--won">WON</span>
+            ) : viewerIsLost ? (
+              <span className="avatar-status-badge avatar-status-badge--lost">LOST</span>
+            ) : null}
           </div>
           <div className="bcb-player-meta">
             <div className="bcb-player-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
