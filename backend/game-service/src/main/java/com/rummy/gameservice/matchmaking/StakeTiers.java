@@ -29,6 +29,10 @@ public final class StakeTiers {
             "RUMMY_21", RUMMY_21);
 
     private static final Set<Integer> TABLE_SIZES = Set.of(2, 6);
+    /** Best of 2 deals is a heads-up format; 6-seat deals tables play 3 deals. */
+    private static final Map<String, Set<Integer>> TABLE_SIZES_BY_RULESET = Map.of(
+            "DEALS_RUMMY", Set.of(2),
+            "DEALS_2", Set.of(2));
 
     private StakeTiers() {
     }
@@ -45,7 +49,13 @@ public final class StakeTiers {
 
     public static boolean isOffered(String canonicalRulesetId, int stake, int maxPlayers) {
         List<Integer> stakes = BY_RULESET.get(canonicalRulesetId);
-        return stakes != null && stakes.contains(stake) && TABLE_SIZES.contains(maxPlayers);
+        return stakes != null && stakes.contains(stake)
+                && TABLE_SIZES_BY_RULESET.getOrDefault(canonicalRulesetId, TABLE_SIZES).contains(maxPlayers);
+    }
+
+    public static String tableSizesLabel(String canonicalRulesetId) {
+        Set<Integer> sizes = TABLE_SIZES_BY_RULESET.getOrDefault(canonicalRulesetId, TABLE_SIZES);
+        return sizes.size() == 1 ? sizes.iterator().next() + " players only" : "2 or 6 players";
     }
 
     public static List<Integer> stakesFor(String canonicalRulesetId) {

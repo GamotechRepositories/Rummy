@@ -58,7 +58,7 @@ public class MatchmakingController {
                     "success", false,
                     "error", "INVALID_REQUEST",
                     "message", "Choose one of the offered tables: stakes " + StakeTiers.stakesFor(ruleset.get())
-                            + ", 2 or 6 players"
+                            + ", " + StakeTiers.tableSizesLabel(ruleset.get())
             ));
         }
         request.setRulesetId(ruleset.get());

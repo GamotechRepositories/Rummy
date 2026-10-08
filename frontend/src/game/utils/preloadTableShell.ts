@@ -1,9 +1,10 @@
 /**
- * Public table art only. Must match the background URL on `.casino-table-stage`.
+ * Public table art only. Must match the background URLs on `.casino-table-stage`
+ * and `.rummy-card-back`.
  * Fetched during matchmaking so the felt is already cached when the table opens.
  * Does not join a table or request any game state.
  */
-const TABLE_SHELL_IMAGES = ['/table-board.png?v=011548'] as const;
+const TABLE_SHELL_IMAGES = ['/table-board.webp', '/card-back.webp'] as const;
 
 export function preloadTableShell(): void {
   for (const src of TABLE_SHELL_IMAGES) {

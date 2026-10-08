@@ -152,10 +152,51 @@ class BotPlayerAgentTest {
     }
 
     @Test
-    @DisplayName("Bot should take First Drop on turn 1 if opening hand is hopeless")
-    void testBotTakesFirstDropOnHopelessOpeningHand() {
-        BotPlayerAgent bot = new BotPlayerAgent("BOT_1", "Computer", BotDifficulty.HARD);
+    @DisplayName("Bot never drops on its opening turns, even with a hopeless hand")
+    void testBotDoesNotDropStraightAfterTheDeal() {
+        BotPlayerAgent bot = new BotPlayerAgent("BOT_1", "Computer", BotDifficulty.HARD, neverHesitates());
 
+        assertThat(bot.decideAction(hopelessTurnView(false, 0, 0), rules)).isInstanceOf(DrawCommand.class);
+        assertThat(bot.decideAction(hopelessTurnView(true, 0, 0), rules)).isInstanceOf(DrawCommand.class);
+    }
+
+    @Test
+    @DisplayName("Heads-up bot middle-drops a hopeless hand late in the deal")
+    void testBotMiddleDropsHopelessHandLater() {
+        BotPlayerAgent bot = new BotPlayerAgent("BOT_1", "Computer", BotDifficulty.HARD, neverHesitates());
+
+        GameCommand cmd = null;
+        for (int turn = 1; turn <= 8; turn++) {
+            cmd = bot.decideAction(hopelessTurnView(turn > 1, 0, 0), rules);
+            if (turn < 8) {
+                assertThat(cmd).as("turn %d", turn).isInstanceOf(DrawCommand.class);
+            }
+        }
+        assertThat(cmd).isInstanceOf(DropCommand.class);
+        assertThat(cmd.playerId()).isEqualTo("BOT_1");
+    }
+
+    @Test
+    @DisplayName("Pool bot keeps playing rather than drop into elimination")
+    void testPoolBotDoesNotDropIntoElimination() {
+        BotPlayerAgent bot = new BotPlayerAgent("BOT_1", "Computer", BotDifficulty.HARD, neverHesitates());
+
+        for (int turn = 1; turn <= 10; turn++) {
+            assertThat(bot.decideAction(hopelessTurnView(turn > 1, 101, 85), rules))
+                    .as("turn %d", turn).isInstanceOf(DrawCommand.class);
+        }
+    }
+
+    private static java.util.Random neverHesitates() {
+        return new java.util.Random() {
+            @Override
+            public double nextDouble() {
+                return 0.99;
+            }
+        };
+    }
+
+    private static PlayerGameView hopelessTurnView(boolean hasTakenFirstTurn, int eliminationThreshold, int cumulativeScore) {
         // Dry 13-card hand with 0 jokers, 0 melds, high deadwood points
         List<CardInstance> dryHand = List.of(
                 card(Suit.SPADES, Rank.KING, "1"),
@@ -173,20 +214,14 @@ class BotPlayerAgentTest {
                 card(Suit.SPADES, Rank.ACE, "13")
         );
 
-        // hasTakenFirstTurn is false (turn 1 before draw)
-        PlayerGameView view = new PlayerGameView(
+        return new PlayerGameView(
                 "T1", "G1", "BOT_1", GameStatus.IN_PROGRESS, 1L,
                 dryHand, List.of(), null, null, 80,
                 "BOT_1", TurnPhase.AWAITING_DRAW, Instant.now().plusSeconds(30), true,
                 null, List.of(), 0, PlayerStatus.ACTIVE, List.of(), 0,
-                "POINTS_13", 1, 0, 0, false, List.of(), List.of(), null, null, 0, false, 0, 0, List.of(),
-                1, 0L, false, null, false
+                "POINTS_13", 1, eliminationThreshold, cumulativeScore, false, List.of(), List.of(), null, null, 0,
+                false, 0, 0, List.of(), 1, 0L, hasTakenFirstTurn, null, false
         );
-
-        GameCommand cmd = bot.decideAction(view, rules);
-        assertThat(cmd).isInstanceOf(DropCommand.class);
-        DropCommand dropCmd = (DropCommand) cmd;
-        assertThat(dropCmd.playerId()).isEqualTo("BOT_1");
     }
 
     @Test

@@ -729,7 +729,7 @@ h1, h2, h3, h4, .font-display {
   justify-content: flex-start;
   /* No side/bottom padding — bottom navbar runs edge-to-edge */
   padding: 0;
-  background: #040c07 url('/table-board.png?v=011548') no-repeat center center;
+  background: #040c07 url('/table-board.webp') no-repeat center center;
   background-size: 100% 100%;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75);
   /* Children size against this fitted image box */
@@ -950,7 +950,7 @@ h1, h2, h3, h4, .font-display {
   height: calc(var(--card-h) * 1.02);
   border-radius: calc(var(--card-w) * 0.1);
   border: none;
-  background: #c40000 url("/Red%20and%20White%20Ornamental%20Card%20Back.png") center / cover no-repeat;
+  background: #c40000 url("/card-back.webp") center / cover no-repeat;
 }
 
 .deck-closed-layer--1 {
@@ -2896,7 +2896,7 @@ h1, h2, h3, h4, .font-display {
   height: var(--card-h);
   border-radius: 6px;
   border: none;
-  background: #c40000 url("/Red%20and%20White%20Ornamental%20Card%20Back.png") center / cover no-repeat;
+  background: #c40000 url("/card-back.webp") center / cover no-repeat;
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55);
   position: relative;
   overflow: hidden;
@@ -2924,7 +2924,7 @@ h1, h2, h3, h4, .font-display {
   height: clamp(24px, 2.6cqw, 32px);
   border-radius: 2px;
   border: none;
-  background: #c40000 url("/Red%20and%20White%20Ornamental%20Card%20Back.png") center / cover no-repeat;
+  background: #c40000 url("/card-back.webp") center / cover no-repeat;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
   transform-origin: bottom center;
 }
@@ -3197,7 +3197,7 @@ h1, h2, h3, h4, .font-display {
   height: var(--card-h);
   border-radius: 6px;
   border: none;
-  background: #c40000 url("/Red%20and%20White%20Ornamental%20Card%20Back.png") center / cover no-repeat;
+  background: #c40000 url("/card-back.webp") center / cover no-repeat;
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
   display: flex;
   align-items: center;

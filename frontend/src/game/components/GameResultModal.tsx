@@ -852,7 +852,9 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                   textAlign: 'left',
                 }}
               >
-                <div style={{ fontWeight: 800, marginBottom: '8px' }}>Prize split agreed</div>
+                <div style={{ fontWeight: 800, marginBottom: '8px' }}>
+                  {isDeals ? 'Still level on chips after the tie-breakers: prize shared' : 'Prize split agreed'}
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '4px 14px' }}>
                   {Object.entries(splitPayouts).map(([pid, amount]) => (
                     <React.Fragment key={pid}>

@@ -275,7 +275,7 @@ class TableActorTest {
     }
 
     @Test
-    @DisplayName("Deals Rummy: Chip underflow protection and tie-breaker by lowest cumulative score")
+    @DisplayName("Deals Rummy: Chip underflow protection")
     void testDealsTieBreakerAndUnderflowProtection() {
         Deck deck = Deck.createStandard13CardDeck();
         GameState dealsState = new GameState("G_TIE", "T_TIE", "DEALS_2", "1.0.0", List.of(), deck);

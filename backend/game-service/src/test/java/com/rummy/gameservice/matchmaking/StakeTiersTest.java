@@ -20,4 +20,12 @@ class StakeTiersTest {
         assertThat(StakeTiers.isOffered("POOL_101", 25, 6)).isTrue();
         assertThat(StakeTiers.isOffered("DEALS_2", 250, 2)).isFalse();
     }
+
+    @Test
+    void twoDealsIsHeadsUpOnly() {
+        assertThat(StakeTiers.isOffered("DEALS_2", 25, 2)).isTrue();
+        assertThat(StakeTiers.isOffered("DEALS_2", 25, 6)).isFalse();
+        assertThat(StakeTiers.isOffered("DEALS_3", 25, 6)).isTrue();
+        assertThat(StakeTiers.isOffered("DEALS_3", 25, 2)).isTrue();
+    }
 }

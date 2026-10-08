@@ -86,6 +86,28 @@ public final class HandEvaluator {
             return Optional.empty();
         }
 
+        if (rules != null && HandSolver.fits(hand)) {
+            HandSolver solver = new HandSolver(hand, cutJoker);
+            boolean rulesRejectedAnArrangement = false;
+            for (int i = 0; i < hand.size(); i++) {
+                CardInstance finishCandidate = hand.get(i);
+                if (finishCandidate.getInstanceId().equals(forbiddenFinishId)) {
+                    continue;
+                }
+                List<CardGroup> groups = solver.declaration(solver.without(i));
+                if (groups == null) {
+                    continue;
+                }
+                if (rules.validateDeclaration(groups, cutJoker).isValid()) {
+                    return Optional.of(new EvaluationResult(true, finishCandidate, groups, Collections.emptyList(), 0));
+                }
+                rulesRejectedAnArrangement = true;
+            }
+            if (!rulesRejectedAnArrangement) {
+                return Optional.empty();
+            }
+        }
+
         // Try each card as the finish card
         for (int i = 0; i < hand.size(); i++) {
             CardInstance finishCandidate = hand.get(i);
@@ -460,23 +482,21 @@ public final class HandEvaluator {
 
                 if (d == 1) {
                     // Consecutive run connector (e.g. 8-9)
-                    // Check if both sides are dead
                     com.rummy.engine.model.Rank lower = minOrder > 1 ? com.rummy.engine.model.Rank.values()[minOrder - 2] : null;
                     com.rummy.engine.model.Rank higher = maxOrder < 13 ? com.rummy.engine.model.Rank.values()[maxOrder] : null;
 
                     int deadLower = lower != null ? countKnownCopies(card.suit(), lower, pool, discardHistory) : activeDeckCount;
                     int deadHigher = higher != null ? countKnownCopies(card.suit(), higher, pool, discardHistory) : activeDeckCount;
 
-                    if (deadLower >= activeDeckCount && deadHigher >= activeDeckCount) {
-                        // Both sides are dead: impossible to complete natural 3-card sequence
+                    int outsLower = Math.max(0, activeDeckCount - deadLower);
+                    int outsHigher = Math.max(0, activeDeckCount - deadHigher);
+                    int totalOuts = outsLower + outsHigher;
+
+                    if (totalOuts == 0) {
                         continue;
-                    } else if (deadLower >= activeDeckCount || deadHigher >= activeDeckCount) {
-                        // One side is dead (1-way inside draw)
-                        bestScore = Math.max(bestScore, 9);
-                    } else {
-                        // Both sides open
-                        bestScore = Math.max(bestScore, 18);
                     }
+                    // EV Score: scale score directly by the number of outs available in the deck
+                    bestScore = Math.max(bestScore, totalOuts * 5);
                 } else if (d == 2) {
                     // One-gap run connector (e.g. 7-9 needs 8)
                     com.rummy.engine.model.Rank gapRank = (minOrder >= 1 && minOrder <= 12)
@@ -484,15 +504,30 @@ public final class HandEvaluator {
                             : null;
                     int deadGap = gapRank != null ? countKnownCopies(card.suit(), gapRank, pool, discardHistory) : activeDeckCount;
 
-                    if (deadGap >= activeDeckCount) {
-                        // Middle gap card is completely dead
+                    int outsGap = Math.max(0, activeDeckCount - deadGap);
+
+                    if (outsGap == 0) {
                         continue;
                     }
-                    bestScore = Math.max(bestScore, 10);
+                    // EV Score: scale score directly by the number of outs available in the deck
+                    bestScore = Math.max(bestScore, outsGap * 5);
                 }
             } else if (card.rank() == oc.rank()) {
-                // Same rank pair connector
-                bestScore = Math.max(bestScore, 12);
+                // Same rank pair connector (different suit)
+                // In Rummy, sets require different suits. Count outs for the remaining 2 suits.
+                int outs = 0;
+                for (com.rummy.engine.model.Suit s : com.rummy.engine.model.Suit.values()) {
+                    if (s != card.suit() && s != oc.suit()) {
+                        int dead = countKnownCopies(s, card.rank(), pool, discardHistory);
+                        outs += Math.max(0, activeDeckCount - dead);
+                    }
+                }
+                if (outs == 0) {
+                    continue;
+                }
+                // Sets are slightly less flexible than runs, use a 3.5 multiplier (e.g. 4 outs = 14 pts)
+                int score = (int)(outs * 3.5);
+                bestScore = Math.max(bestScore, score);
             }
         }
 
@@ -578,104 +613,46 @@ public final class HandEvaluator {
     }
 
     /**
-     * Determines whether a strategic First Drop should be taken on turn 1.
-     */
-    public static boolean shouldTakeFirstDrop(List<CardInstance> hand, Card cutJoker, RummyRules rules) {
-        if (hand == null || rules == null) {
-            return false;
-        }
-        int expectedCards = rules.getCardsPerPlayer();
-        if (hand.size() < expectedCards) {
-            return false;
-        }
-        if (rules.getFirstDropPenalty() >= rules.getMaximumPenalty()) {
-            return false;
-        }
-
-        // 1. Any jokers in hand?
-        boolean hasJoker = hand.stream()
-                .anyMatch(c -> c.isPrintedJoker() || c.getCard().isWildJoker(cutJoker));
-        if (hasJoker) {
-            return false;
-        }
-
-        // 2. Any ready melds in hand?
-        List<CardGroup> melds = findAllCandidateMelds(hand, cutJoker);
-        if (!melds.isEmpty()) {
-            return false;
-        }
-
-        // 3. Check deadwood points
-        EvaluationResult eval = evaluateDeadwood(hand, cutJoker);
-        if (eval.deadwoodPoints() < 65) {
-            return false;
-        }
-
-        // 4. Count 2-card consecutive connectors
-        int strongConnectors = 0;
-        for (int i = 0; i < hand.size(); i++) {
-            for (int j = i + 1; j < hand.size(); j++) {
-                Card c1 = hand.get(i).getCard();
-                Card c2 = hand.get(j).getCard();
-                if (c1.suit() == c2.suit()) {
-                    int dLow = Math.abs(c1.rank().getOrder() - c2.rank().getOrder());
-                    int dHigh = Math.abs(c1.rank().getAceHighOrder() - c2.rank().getAceHighOrder());
-                    if (Math.min(dLow, dHigh) == 1) {
-                        strongConnectors++;
-                    }
-                }
-            }
-        }
-
-        return strongConnectors <= 1;
-    }
-
-    /**
-     * Determines whether a strategic Middle Drop (40 points) should be taken on turn 2 or 3.
-     * In Indian Rummy, taking a middle drop cuts losses in half (40 pts instead of 80 pts).
-     * Critical for survival in Pool 101/201 Rummy.
+     * Whether a middle drop now costs less than playing on. Uses only the bot's own hand and public table
+     * facts (its turn count in the deal and how many opponents are still in it).
+     *
+     * Drops are kept for hands that are as good as lost: neither a pure sequence nor a joker by turn 6 against
+     * four or more opponents, or by turn 8 short-handed. In bot self-play no such hand went on to win the deal.
+     * A single joker is enough to keep playing.
+     *
+     * @param turnsPlayed     the bot's turns in this deal, counting the current one
+     * @param activeOpponents opponents still playing this deal
      */
     public static boolean shouldTakeMiddleDrop(
             List<CardInstance> hand,
             Card cutJoker,
             RummyRules rules,
             int cumulativeScore,
-            int eliminationThreshold
+            int eliminationThreshold,
+            int turnsPlayed,
+            int activeOpponents
     ) {
         if (hand == null || rules == null) {
             return false;
         }
-        if (rules.getMiddleDropPenalty() >= rules.getMaximumPenalty()) {
+        int dropPenalty = rules.getMiddleDropPenalty();
+        if (dropPenalty >= rules.getMaximumPenalty()) {
             return false;
         }
-
-        // 1. Any jokers in hand? Keep playing
-        boolean hasJoker = hand.stream().anyMatch(c -> c.isPrintedJoker() || c.getCard().isWildJoker(cutJoker));
-        if (hasJoker) {
+        if (eliminationThreshold > 0 && cumulativeScore + dropPenalty >= eliminationThreshold) {
             return false;
         }
-
-        // 2. Already has a pure sequence? Keep playing
         if (hasPureSequence(hand, cutJoker)) {
             return false;
         }
-
-        // 3. Deadwood must be high (>= 70)
-        EvaluationResult eval = evaluateDeadwood(hand, cutJoker);
-        if (eval.deadwoodPoints() < 70) {
+        if (hand.stream().anyMatch(c -> c.isPrintedJoker() || c.getCard().isWildJoker(cutJoker))) {
+            return false;
+        }
+        if (rules.scoreLosingHand(hand, cutJoker) <= dropPenalty) {
             return false;
         }
 
-        // 4. In Pool Rummy, check if 80 points would cause elimination while 40 points saves us
-        if (eliminationThreshold > 0) {
-            int middlePenalty = rules.getMiddleDropPenalty();
-            int maxPenalty = rules.getMaximumPenalty();
-            if (cumulativeScore + maxPenalty >= eliminationThreshold && cumulativeScore + middlePenalty < eliminationThreshold) {
-                // Lifesaving middle drop
-                return true;
-            }
-        }
-
-        return eval.deadwoodPoints() >= 75;
+        int firstDropTurn = activeOpponents >= 4 ? 6 : 8;
+        return turnsPlayed >= firstDropTurn;
     }
 }

@@ -6,6 +6,7 @@ import { GameBoard } from './game/components/GameBoard';
 import { AppErrorBoundary } from './game/components/AppErrorBoundary';
 import { LandscapeGate } from './game/components/LandscapeGate';
 import { installSoundUnlock } from './game/audio/soundEngine';
+import { preloadLobbyArt } from './game/utils/preloadLobbyArt';
 import {
   clearActiveSessionLocal,
   fetchActiveSession,
@@ -83,6 +84,7 @@ export function App() {
 
   useEffect(() => {
     installSoundUnlock();
+    preloadLobbyArt();
     let cancelled = false;
     let hasSession = false;
 
@@ -170,7 +172,7 @@ export function App() {
       <div className="app-frame" style={{ display: 'grid', placeItems: 'center', color: '#f8fafc', padding: 24 }}>
         <div style={{ textAlign: 'center', maxWidth: 420 }}>
           <img
-            src="/image.png"
+            src="/image.webp"
             alt="Royal Rummy"
             style={{ height: 64, maxWidth: '80vw', objectFit: 'contain', marginBottom: 16 }}
           />
@@ -198,7 +200,7 @@ export function App() {
       <div className="app-frame" style={{ display: 'grid', placeItems: 'center', color: '#f8fafc' }}>
         <div style={{ textAlign: 'center', opacity: 0.95 }}>
           <img
-            src="/image.png"
+            src="/image.webp"
             alt="Royal Rummy"
             style={{
               height: 64,

@@ -19,12 +19,18 @@ public final class BotPlayerAgent implements PlayerAgent {
 
     public static final String BOT_VERSION = "1.0.0";
 
+    /** Chance of playing one more turn on a hand it would drop, so drops do not land on a fixed beat. */
+    static final double DROP_HESITATION = 0.10;
+    /** Least improvement (in {@link HandSolver#cost} points) for which the bot shows its hand by taking the open card. */
+    static final int OPEN_CARD_MIN_GAIN = 8;
+
     private final String playerId;
     private final String displayName;
     private final BotDifficulty difficulty;
     private final Random random;
     private final Set<Card> opponentPicks;
     private final Map<String, Set<Card>> opponentPicksByPlayer;
+    private final Map<String, Set<Card>> opponentDiscardsByPlayer;
     private int botTurnCountInDeal;
     
     // Hand State Caching
@@ -32,12 +38,17 @@ public final class BotPlayerAgent implements PlayerAgent {
     private HandEvaluator.EvaluationResult cachedDeadwood;
 
     public BotPlayerAgent(String playerId, String displayName, BotDifficulty difficulty) {
+        this(playerId, displayName, difficulty, new Random());
+    }
+
+    BotPlayerAgent(String playerId, String displayName, BotDifficulty difficulty, Random random) {
         this.playerId = Objects.requireNonNull(playerId, "playerId must not be null");
         this.displayName = displayName != null ? displayName : "Bot_" + playerId;
         this.difficulty = difficulty != null ? difficulty : BotDifficulty.MEDIUM;
-        this.random = new Random();
+        this.random = random;
         this.opponentPicks = java.util.concurrent.ConcurrentHashMap.newKeySet();
         this.opponentPicksByPlayer = new java.util.concurrent.ConcurrentHashMap<>();
+        this.opponentDiscardsByPlayer = new java.util.concurrent.ConcurrentHashMap<>();
         this.botTurnCountInDeal = 0;
     }
 
@@ -82,11 +93,22 @@ public final class BotPlayerAgent implements PlayerAgent {
     }
 
     /**
+     * Records a card an opponent threw away. Cards near what a player discards are ones they are not
+     * collecting, so they are safer to hand that player.
+     */
+    public void recordOpponentDiscard(String opponentPlayerId, Card card) {
+        if (opponentPlayerId != null && card != null && !card.isPrintedJoker()) {
+            opponentDiscardsByPlayer.computeIfAbsent(opponentPlayerId, k -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(card);
+        }
+    }
+
+    /**
      * Resets the memory of opponent picks at the start of each new deal.
      */
     public void resetDealMemory() {
         opponentPicks.clear();
         opponentPicksByPlayer.clear();
+        opponentDiscardsByPlayer.clear();
         botTurnCountInDeal = 0;
         lastHandState = "";
         cachedDeadwood = null;
@@ -116,26 +138,13 @@ public final class BotPlayerAgent implements PlayerAgent {
         if (view.turnPhase() == TurnPhase.AWAITING_DRAW) {
             botTurnCountInDeal++;
 
-            // EMOTIONAL PLAY / TILT: If close to elimination, bot might just drop out of fear if no pure sequence
-            if (!view.hasTakenFirstTurn() && difficulty != BotDifficulty.EASY && view.eliminationThreshold() > 0) {
-                if (view.viewerCumulativeScore() >= view.eliminationThreshold() * 0.8) {
-                    // Very close to elimination. If no pure seq, high chance to just drop immediately (Tilt)
-                    if (!HandEvaluator.hasPureSequence(view.hand(), cutCard) && random.nextDouble() < 0.6) {
-                        return new DropCommand(cmdId, view.gameId(), playerId, now);
-                    }
-                }
-            }
-
-            // 1. Strategic First Drop check on turn 1 before drawing
-            if (!view.hasTakenFirstTurn() && difficulty != BotDifficulty.EASY) {
-                if (HandEvaluator.shouldTakeFirstDrop(view.hand(), cutCard, rules)) {
-                    return new DropCommand(cmdId, view.gameId(), playerId, now);
-                }
-            }
-
-            // 2. Strategic Middle Drop check on turn 2 or 3 (Hard difficulty)
-            if (view.hasTakenFirstTurn() && difficulty == BotDifficulty.HARD && botTurnCountInDeal >= 2 && botTurnCountInDeal <= 3) {
-                if (HandEvaluator.shouldTakeMiddleDrop(view.hand(), cutCard, rules, view.viewerCumulativeScore(), view.eliminationThreshold())) {
+            if (view.hasTakenFirstTurn() && difficulty != BotDifficulty.EASY) {
+                int activeOpponents = (int) view.opponents().stream()
+                        .filter(o -> o.status() == com.rummy.engine.model.PlayerStatus.ACTIVE)
+                        .count();
+                if (HandEvaluator.shouldTakeMiddleDrop(view.hand(), cutCard, rules, view.viewerCumulativeScore(),
+                        view.eliminationThreshold(), botTurnCountInDeal, activeOpponents)
+                        && random.nextDouble() >= DROP_HESITATION) {
                     return new DropCommand(cmdId, view.gameId(), playerId, now);
                 }
             }
@@ -174,9 +183,9 @@ public final class BotPlayerAgent implements PlayerAgent {
                         return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.DISCARD_PILE, now);
                     }
 
-                    // 3. If bot already has a pure sequence, it is safe to pick cards that form impure sequences or sets
+                    // 3. With a pure sequence in hand, take open cards that genuinely bring the hand closer to declaring
                     boolean hasPure = HandEvaluator.hasPureSequence(view.hand(), cutCard);
-                    if (hasPure && HandEvaluator.doesCardImproveHand(topDiscard, view.hand(), cutCard)) {
+                    if (hasPure && takingOpenCardPays(potentialHand, topDiscard, cutCard)) {
                         return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.DISCARD_PILE, now);
                     }
                 }
@@ -184,6 +193,26 @@ public final class BotPlayerAgent implements PlayerAgent {
         }
 
         return new DrawCommand(cmdId, view.gameId(), playerId, DrawSource.CLOSED_DECK, now);
+    }
+
+    /**
+     * Whether the hand after taking the open card (the last card of {@code handWithOpenCard}) and making its
+     * best discard is clearly better than the hand now.
+     */
+    private boolean takingOpenCardPays(List<CardInstance> handWithOpenCard, CardInstance openCard, Card cutCard) {
+        int openIndex = handWithOpenCard.size() - 1;
+        if (!HandSolver.fits(handWithOpenCard)) {
+            return HandEvaluator.doesCardImproveHand(openCard, handWithOpenCard.subList(0, openIndex), cutCard);
+        }
+        HandSolver solver = new HandSolver(handWithOpenCard, cutCard);
+        int now = solver.cost(solver.without(openIndex));
+        int bestAfter = Integer.MAX_VALUE;
+        for (int i = 0; i < handWithOpenCard.size(); i++) {
+            if (i != openIndex) {
+                bestAfter = Math.min(bestAfter, solver.cost(solver.without(i)));
+            }
+        }
+        return bestAfter <= now - OPEN_CARD_MIN_GAIN;
     }
 
     private GameCommand decideDiscardOrDeclare(PlayerGameView view, Card cutCard, RummyRules rules, String cmdId, Instant now) {
@@ -202,6 +231,13 @@ public final class BotPlayerAgent implements PlayerAgent {
         // 2. Identify the next active player clockwise to enforce downstream defensive blocking
         String nextPlayerId = findNextActiveOpponentId(view);
         int deckCount = rules != null ? rules.getDeckCount() : 2;
+
+        if (difficulty != BotDifficulty.EASY && HandSolver.fits(hand)) {
+            CardInstance best = chooseDiscard(view, cutCard, forbiddenCardId, nextPlayerId, deckCount);
+            if (best != null) {
+                return new DiscardCommand(cmdId, view.gameId(), playerId, best.getInstanceId(), now);
+            }
+        }
 
         // 3. Select optimal discard by finding the best card to release (lowest value to us, safest against opponents)
         HandEvaluator.EvaluationResult eval = getCachedDeadwood(view, cutCard);
@@ -244,21 +280,82 @@ public final class BotPlayerAgent implements PlayerAgent {
     }
 
     /**
+     * Picks the discard that leaves the closest hand to a declaration ({@link HandSolver#cost}), counting
+     * also the connections the card would still offer and how much it would help the opponents. Jokers and
+     * the card just taken from the open pile are kept. Returns null if nothing may be discarded.
+     */
+    private CardInstance chooseDiscard(PlayerGameView view, Card cutCard, String forbiddenCardId, String nextPlayerId, int deckCount) {
+        List<CardInstance> hand = view.hand();
+        HandSolver solver = new HandSolver(hand, cutCard);
+        double dangerWeight = 0.3;
+        int limit = view.eliminationThreshold();
+        if (difficulty == BotDifficulty.HARD && limit > 0) {
+            int score = view.viewerCumulativeScore();
+            if (score >= limit * 0.75) {
+                dangerWeight = 0.15;
+            } else if (score <= limit * 0.25) {
+                dangerWeight = 0.4;
+            }
+        }
+        CardInstance best = null;
+        double bestCost = Double.MAX_VALUE;
+        for (int i = 0; i < hand.size(); i++) {
+            CardInstance c = hand.get(i);
+            if (c.getInstanceId().equals(forbiddenCardId) || c.isPrintedJoker() || c.getCard().isWildJoker(cutCard)) {
+                continue;
+            }
+            double cost = solver.cost(solver.without(i))
+                    + HandEvaluator.calculateConnectorScore(c, hand, cutCard, view.discardHistory(), deckCount)
+                    + dangerWeight * dangerScore(c, nextPlayerId);
+            if (cost < bestCost) {
+                bestCost = cost;
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * How much discarding {@code c} would help opponents, from the open cards they took. Halved against the
+     * next player when they have thrown away a card of the same rank or a near card of the same suit.
+     */
+    private int dangerScore(CardInstance c, String nextPlayerId) {
+        int danger = !opponentPicksByPlayer.isEmpty() && nextPlayerId != null
+                ? HandEvaluator.calculateOpponentDangerScore(c, opponentPicksByPlayer, nextPlayerId)
+                : HandEvaluator.calculateOpponentDangerScore(c, opponentPicks);
+        if (danger > 0 && nextPlayerId != null && nextPlayerRejected(c.getCard(), opponentDiscardsByPlayer.get(nextPlayerId))) {
+            danger /= 2;
+        }
+        return danger;
+    }
+
+    private static boolean nextPlayerRejected(Card card, Set<Card> discards) {
+        if (discards == null) {
+            return false;
+        }
+        for (Card d : discards) {
+            if (d.rank() == card.rank()) {
+                return true;
+            }
+            if (d.suit() == card.suit()) {
+                int gapLow = Math.abs(d.rank().getOrder() - card.rank().getOrder());
+                int gapHigh = Math.abs(d.rank().getAceHighOrder() - card.rank().getAceHighOrder());
+                if (Math.min(gapLow, gapHigh) <= 1) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Calculates how desirable a card is to discard.
      * Incorporates Card Counting (dead card awareness in discard history) and Next-Player Downstream Defense.
-     * Includes PRO LOGIC: Dynamic Risk Assessment and Baiting/Trapping.
      */
     private int calculateDiscardDesirability(CardInstance c, PlayerGameView view, Card cutCard, String nextPlayerId, int deckCount) {
         int rawPts = c.getCard().points(cutCard);
         int connScore = HandEvaluator.calculateConnectorScore(c, view.hand(), cutCard, view.discardHistory(), deckCount);
-        int dangerScore;
-        if (difficulty == BotDifficulty.EASY) {
-            dangerScore = 0;
-        } else if (!opponentPicksByPlayer.isEmpty() && nextPlayerId != null) {
-            dangerScore = HandEvaluator.calculateOpponentDangerScore(c, opponentPicksByPlayer, nextPlayerId);
-        } else {
-            dangerScore = HandEvaluator.calculateOpponentDangerScore(c, opponentPicks);
-        }
+        int dangerScore = difficulty == BotDifficulty.EASY ? 0 : dangerScore(c, nextPlayerId);
 
         // DYNAMIC RISK ASSESSMENT
         // Base weights: Points (want to throw), Connector (want to keep), Danger (bad to throw)
@@ -282,18 +379,7 @@ public final class BotPlayerAgent implements PlayerAgent {
             }
         }
 
-        // TRAPPING / BAITING LOGIC
-        // A pro player sometimes discards a card near their required sequence to trick opponents (Baiting).
-        int trapBonus = 0;
-        if (difficulty == BotDifficulty.HARD && dangerScore == 0 && connScore > 0 && connScore < 18) {
-            // 20% chance to use this card as bait if it's not our best connector but still related to our hand.
-            // Makes the bot highly unpredictable and human-like.
-            if (random.nextDouble() < 0.20) {
-                trapBonus = 25; // Artificially make this card highly desirable to discard as a trap
-            }
-        }
-
-        return (int) (rawPts * pointsWeight) - connScore - (int) (dangerScore * dangerWeight) + trapBonus;
+        return (int) (rawPts * pointsWeight) - connScore - (int) (dangerScore * dangerWeight);
     }
 
     /**
@@ -344,9 +430,9 @@ public final class BotPlayerAgent implements PlayerAgent {
 
         // Base think time based on phase
         if (phase == TurnPhase.AWAITING_DRAW) {
-            thinkMillis = ThreadLocalRandom.current().nextLong(2000, 4000);
+            thinkMillis = ThreadLocalRandom.current().nextLong(1000, 2500);
         } else {
-            thinkMillis = ThreadLocalRandom.current().nextLong(3000, 6000);
+            thinkMillis = ThreadLocalRandom.current().nextLong(1500, 3500);
         }
 
         // Difficulty modifiers

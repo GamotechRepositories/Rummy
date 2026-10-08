@@ -24,9 +24,13 @@ import { getApiBaseUrl } from '../utils/apiConfig';
 import { authFetch } from '../utils/authClient';
 import { tryLockLandscape } from '../hooks/useRequiresLandscape';
 import { preloadTableShell } from '../utils/preloadTableShell';
+import { LOBBY_VARIANT_ART } from '../utils/preloadLobbyArt';
 import { PLAYER_CHARACTERS, photoForCharacter } from '../utils/avatarUtils';
 
 export type VariantType = 'POINTS' | 'POOL' | 'DEALS' | 'RUMMY_21';
+
+/** Matches the server's StakeTiers: 2 Deals tables seat 2 players only. */
+const isTwoPlayerOnly = (rulesetId: string) => rulesetId === 'DEALS_2' || rulesetId === 'DEALS_RUMMY';
 
 const POINT_VALUE_TIERS = [
   { pt: 0.05, entry: 4 },
@@ -48,10 +52,10 @@ const VARIANT_BANNERS: Array<{
   label: string;
   src: string;
 }> = [
-  { id: 'POINTS', cardId: 'card-select-points', label: 'Point Rummy', src: '/3cc9cf25-042c-4870-9b09-f7f07c2ddc39.jpg' },
-  { id: 'POOL', cardId: 'card-select-pool', label: 'Pool Rummy', src: '/7b9b7c96-a115-450d-ae27-568b5b8fbc89.jpg' },
-  { id: 'DEALS', cardId: 'card-select-deals', label: 'Deal Rummy', src: '/8a9db3f4-972d-4293-b2df-9c50601211ea.jpg' },
-  { id: 'RUMMY_21', cardId: 'card-select-21card', label: '21-Card Rummy', src: '/7ac1f003-0294-4d18-ae39-93b53258c895.jpg' },
+  { id: 'POINTS', cardId: 'card-select-points', label: 'Point Rummy', src: LOBBY_VARIANT_ART.POINTS },
+  { id: 'POOL', cardId: 'card-select-pool', label: 'Pool Rummy', src: LOBBY_VARIANT_ART.POOL },
+  { id: 'DEALS', cardId: 'card-select-deals', label: 'Deal Rummy', src: LOBBY_VARIANT_ART.DEALS },
+  { id: 'RUMMY_21', cardId: 'card-select-21card', label: '21-Card Rummy', src: LOBBY_VARIANT_ART.RUMMY_21 },
 ];
 
 function StakeStepper({
@@ -210,6 +214,10 @@ export const LobbyScreen: React.FC = () => {
     activeVariantTitle = '21-Card Marriage Rummy';
   }
 
+  // Best of 2 deals is heads-up only; 6-seat deals tables play 3 deals.
+  const twoPlayerOnly = isTwoPlayerOnly(activeRulesetId);
+  const tablePlayers = twoPlayerOnly ? 2 : selectedPlayers;
+
   const fetchBalance = useCallback(async () => {
     try {
       const res = await authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${playerId}`);
@@ -280,8 +288,8 @@ export const LobbyScreen: React.FC = () => {
     const rId = customConfig?.rulesetId ?? activeRulesetId;
     const eFee = customConfig?.entryFee ?? activeEntryFee;
     // Lobby only offers 2P / 6P tables — preserve 6 on rematch
-    const rawPlayers = Number(customConfig?.maxPlayers ?? selectedPlayers) || 2;
-    const mPlayers = rawPlayers >= 5 ? 6 : 2;
+    const rawPlayers = Number(customConfig?.maxPlayers ?? tablePlayers) || 2;
+    const mPlayers = rawPlayers >= 5 && !isTwoPlayerOnly(rId) ? 6 : 2;
 
     setLastGameConfig({
       rulesetId: rId,
@@ -439,7 +447,7 @@ export const LobbyScreen: React.FC = () => {
       <header className="lobby-topbar" style={{ display: currentPage === 'CONFIGURE_TABLE' ? 'none' : undefined }}>
         <div className="lobby-brand" title="Royal Rummy">
           <img
-            src="/image.png"
+            src="/image.webp"
             alt="Royal Rummy"
             className="lobby-brand-logo"
             draggable={false}
@@ -543,7 +551,7 @@ export const LobbyScreen: React.FC = () => {
                   aria-label={v.label}
                   onClick={() => handleSelectVariant(v.id)}
                 >
-                  <img src={v.src} alt={v.label} />
+                  <img src={v.src} alt={v.label} decoding="async" />
                 </button>
               ))}
             </div>
@@ -615,7 +623,7 @@ export const LobbyScreen: React.FC = () => {
                   <button
                     type="button"
                     id="btn-select-player-2"
-                    className={`stake-player-btn${selectedPlayers === 2 ? ' on' : ''}`}
+                    className={`stake-player-btn${tablePlayers === 2 ? ' on' : ''}`}
                     onClick={() => {
                       soundEngine.play('click');
                       setSelectedPlayers(2);
@@ -627,7 +635,10 @@ export const LobbyScreen: React.FC = () => {
                   <button
                     type="button"
                     id="btn-select-player-6"
-                    className={`stake-player-btn${selectedPlayers === 6 ? ' on' : ''}`}
+                    className={`stake-player-btn${tablePlayers === 6 ? ' on' : ''}`}
+                    disabled={twoPlayerOnly}
+                    title={twoPlayerOnly ? '2 Deals is played by 2 players. Choose 3 Deals for a 6-player table.' : undefined}
+                    style={twoPlayerOnly ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
                     onClick={() => {
                       soundEngine.play('click');
                       setSelectedPlayers(6);
@@ -717,7 +728,7 @@ export const LobbyScreen: React.FC = () => {
                     </div>
                   </div>
                   <div className="stake-winnings-hint" style={{ fontSize: 13, color: '#fef08a', fontWeight: 700, marginTop: 10, textAlign: 'center' }}>
-                    🏆 Max Winnings: up to ₹ {Math.round((selectedPlayers - 1) * POINT_VALUE_TIERS[ptIndex].entry * 0.85)} (80 pts cap)
+                    🏆 Max Winnings: up to ₹ {Math.round((tablePlayers - 1) * POINT_VALUE_TIERS[ptIndex].entry * 0.85)} (80 pts cap)
                   </div>
                 </>
               )}
@@ -809,7 +820,7 @@ export const LobbyScreen: React.FC = () => {
                   </div>
 
                   <div className="stake-winnings-hint" style={{ fontSize: 13, color: '#fef08a', fontWeight: 700 }}>
-                    🏆 Estimated Winner Pool: ₹ {Math.round(poolEntry * selectedPlayers * 0.85)}
+                    🏆 Estimated Winner Pool: ₹ {Math.round(poolEntry * tablePlayers * 0.85)}
                   </div>
                 </div>
               )}
@@ -905,7 +916,7 @@ export const LobbyScreen: React.FC = () => {
                     })}
                   </div>
                   <div className="stake-winnings-hint" style={{ fontSize: 13, color: '#fef08a', fontWeight: 700 }}>
-                    🏆 Winner Takes All: ₹ {Math.round(dealsEntry * selectedPlayers * 0.85)}
+                    🏆 Winner Takes All: ₹ {Math.round(dealsEntry * tablePlayers * 0.85)}
                   </div>
                 </div>
               )}
@@ -980,7 +991,7 @@ export const LobbyScreen: React.FC = () => {
               </button>
 
               <div className="stake-summary">
-                Table Stake: ₹ {activeEntryFee} · {selectedPlayers} Players Table
+                Table Stake: ₹ {activeEntryFee} · {tablePlayers} Players Table
                 {activePointValue !== null && ` · ₹${activePointValue}/point`}
               </div>
             </div>
@@ -1014,7 +1025,7 @@ export const LobbyScreen: React.FC = () => {
             <div className="stake-ribbon mm-ribbon">
               <h2>FINDING TABLE</h2>
               <p>
-                {activeVariantTitle.toUpperCase()} · {selectedPlayers} PLAYERS
+                {activeVariantTitle.toUpperCase()} · {tablePlayers} PLAYERS
               </p>
             </div>
 
@@ -1027,11 +1038,11 @@ export const LobbyScreen: React.FC = () => {
                 </span>
               </div>
               <div className="mm-seats">
-                {Array.from({ length: selectedPlayers }, (_, seat) => (
+                {Array.from({ length: tablePlayers }, (_, seat) => (
                   <span
                     key={seat}
                     className={`mm-seat${seat === 0 || mmQueueTime >= 15 ? ' on' : ''}${
-                      mmQueueTime < 15 && seat === mmQueueTime % selectedPlayers ? ' pulse' : ''
+                      mmQueueTime < 15 && seat === mmQueueTime % tablePlayers ? ' pulse' : ''
                     }`}
                   />
                 ))}
@@ -1072,7 +1083,7 @@ export const LobbyScreen: React.FC = () => {
                   </div>
                   <div className="stake-metric-sub">Seats</div>
                 </div>
-                <div className="mm-metric-value">{selectedPlayers}P</div>
+                <div className="mm-metric-value">{tablePlayers}P</div>
               </div>
             </div>
 

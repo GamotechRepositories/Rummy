@@ -120,35 +120,6 @@ class HandEvaluatorTest {
     }
 
     @Test
-    @DisplayName("should advise first drop for dry hopeless opening hand")
-    void testShouldTakeFirstDrop() {
-        // Dry 13-card hand with scattered high cards, 0 melds, 0 jokers, high deadwood
-        List<CardInstance> dryHand = List.of(
-                card(Suit.SPADES, Rank.KING, "1"),
-                card(Suit.HEARTS, Rank.KING, "2"),
-                card(Suit.DIAMONDS, Rank.QUEEN, "3"),
-                card(Suit.CLUBS, Rank.JACK, "4"),
-                card(Suit.SPADES, Rank.TEN, "5"),
-                card(Suit.HEARTS, Rank.NINE, "6"),
-                card(Suit.DIAMONDS, Rank.EIGHT, "7"),
-                card(Suit.CLUBS, Rank.SEVEN, "8"),
-                card(Suit.SPADES, Rank.FOUR, "9"),
-                card(Suit.HEARTS, Rank.THREE, "10"),
-                card(Suit.DIAMONDS, Rank.TWO, "11"),
-                card(Suit.CLUBS, Rank.FIVE, "12"),
-                card(Suit.SPADES, Rank.ACE, "13")
-        );
-
-        assertThat(HandEvaluator.shouldTakeFirstDrop(dryHand, null, rules)).isTrue();
-
-        // If hand contains a joker, it should NOT drop
-        CardInstance jokerCard = new CardInstance("JOKER", Card.printedJoker(), 1);
-        List<CardInstance> handWithJoker = new java.util.ArrayList<>(dryHand);
-        handWithJoker.set(0, jokerCard);
-        assertThat(HandEvaluator.shouldTakeFirstDrop(handWithJoker, null, rules)).isFalse();
-    }
-
-    @Test
     @DisplayName("should penalize connectors when needed cards are dead in discard history (Card Counting)")
     void testDeadCardAwareness() {
         CardInstance sevenSpades = card(Suit.SPADES, Rank.SEVEN, "7S");
@@ -211,9 +182,46 @@ class HandEvaluatorTest {
     }
 
     @Test
-    @DisplayName("should advise middle drop to save from pool elimination")
-    void testShouldTakeMiddleDrop() {
-        List<CardInstance> hopelessHand = List.of(
+    @DisplayName("should drop a hopeless hand from turn 6 against four or more opponents")
+    void testMiddleDropAtCrowdedTable() {
+        assertThat(HandEvaluator.shouldTakeMiddleDrop(hopelessHand(), null, rules, 0, 0, 5, 5)).isFalse();
+        assertThat(HandEvaluator.shouldTakeMiddleDrop(hopelessHand(), null, rules, 0, 0, 6, 5)).isTrue();
+        assertThat(HandEvaluator.shouldTakeMiddleDrop(hopelessHand(), null, rules, 0, 0, 6, 4)).isTrue();
+    }
+
+    @Test
+    @DisplayName("should keep playing a hopeless hand short-handed until turn 8")
+    void testMiddleDropShortHanded() {
+        assertThat(HandEvaluator.shouldTakeMiddleDrop(hopelessHand(), null, rules, 0, 0, 7, 3)).isFalse();
+        assertThat(HandEvaluator.shouldTakeMiddleDrop(hopelessHand(), null, rules, 0, 0, 8, 3)).isTrue();
+        assertThat(HandEvaluator.shouldTakeMiddleDrop(hopelessHand(), null, rules, 0, 0, 7, 1)).isFalse();
+        assertThat(HandEvaluator.shouldTakeMiddleDrop(hopelessHand(), null, rules, 0, 0, 8, 1)).isTrue();
+    }
+
+    @Test
+    @DisplayName("should keep playing with a pure sequence or any joker")
+    void testNoMiddleDropWithPureSequenceOrJoker() {
+        List<CardInstance> withPure = new java.util.ArrayList<>(hopelessHand());
+        withPure.set(4, card(Suit.SPADES, Rank.QUEEN, "Q"));
+        withPure.set(8, card(Suit.SPADES, Rank.JACK, "J"));
+        assertThat(HandEvaluator.shouldTakeMiddleDrop(withPure, null, rules, 0, 0, 10, 5)).isFalse();
+
+        List<CardInstance> withJoker = new java.util.ArrayList<>(hopelessHand());
+        withJoker.set(1, new CardInstance("J1", Card.printedJoker(), 1));
+        assertThat(HandEvaluator.shouldTakeMiddleDrop(withJoker, null, rules, 0, 0, 10, 5)).isFalse();
+    }
+
+    @Test
+    @DisplayName("should never take a pool drop that eliminates the bot")
+    void testPoolMiddleDrop() {
+        // Pool 101 at 65: dropping (40) reaches 105
+        assertThat(HandEvaluator.shouldTakeMiddleDrop(hopelessHand(), null, rules, 65, 101, 10, 5)).isFalse();
+        // Pool 201 at 140: dropping (40) stays at 180
+        assertThat(HandEvaluator.shouldTakeMiddleDrop(hopelessHand(), null, rules, 140, 201, 8, 1)).isTrue();
+    }
+
+    private static List<CardInstance> hopelessHand() {
+        return List.of(
                 card(Suit.SPADES, Rank.KING, "1"),
                 card(Suit.HEARTS, Rank.KING, "2"),
                 card(Suit.DIAMONDS, Rank.QUEEN, "3"),
@@ -228,13 +236,5 @@ class HandEvaluatorTest {
                 card(Suit.CLUBS, Rank.FIVE, "12"),
                 card(Suit.SPADES, Rank.ACE, "13")
         );
-
-        // In Pool 101, cumulative score 65:
-        // Score + 80 = 145 (ELIMINATED!)
-        // Score + 40 = 105 (ELIMINATED!)
-        // In Pool 201, cumulative score 140:
-        // Score + 80 = 220 (ELIMINATED!)
-        // Score + 40 = 180 (ALIVE! Middle drop saves the match!)
-        assertThat(HandEvaluator.shouldTakeMiddleDrop(hopelessHand, null, rules, 140, 201)).isTrue();
     }
 }
