@@ -609,12 +609,12 @@ export const GameBoard: React.FC = () => {
               </div>
 
               <h3 className="royal-dialog-title">
-                {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped
+                {(gameState?.gameStatus === 'IN_PROGRESS' || gameState?.gameStatus === 'SHOWDOWN') && !gameState?.viewerDropped
                   ? 'Leave Active Table?'
                   : 'Table Details'}
               </h3>
               <p className="royal-dialog-subtitle">
-                {gameState?.gameStatus === 'IN_PROGRESS' && !gameState?.viewerDropped
+                {(gameState?.gameStatus === 'IN_PROGRESS' || gameState?.gameStatus === 'SHOWDOWN') && !gameState?.viewerDropped
                   ? (leaveCountsAsDrop
                     ? 'Your hand is currently live. Leaving now counts as a drop.'
                     : 'Your hand is currently live. Leaving the table mid-game will forfeit the round.')
@@ -658,7 +658,7 @@ export const GameBoard: React.FC = () => {
                 </div>
               </div>
 
-              {gameState?.gameStatus === 'IN_PROGRESS' && gameState?.viewerStatus === 'ACTIVE' && (
+              {(gameState?.gameStatus === 'IN_PROGRESS' || gameState?.gameStatus === 'SHOWDOWN') && gameState?.viewerStatus === 'ACTIVE' && (
                 <div className="royal-dialog-penalty-box">
                   <div className="royal-dialog-penalty-label">
                     <span className="royal-dialog-penalty-tag">

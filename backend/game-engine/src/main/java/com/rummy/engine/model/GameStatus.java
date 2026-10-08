@@ -25,6 +25,11 @@ public enum GameStatus {
     DECLARING,
 
     /**
+     * A valid declaration was made. Opponents are given time to arrange and submit their melds.
+     */
+    SHOWDOWN,
+
+    /**
      * Hand or game has concluded; scores and payouts are being calculated.
      */
     SETTLING,

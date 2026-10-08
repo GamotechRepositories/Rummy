@@ -480,6 +480,18 @@ class GameSocketClient {
     });
   }
 
+  public submitMeld(groups: { cards: CardInstance[] }[]): void {
+    const serializedGroups = groups.map(g =>
+      g.cards.map(c => ({ instanceId: c.instanceId }))
+    );
+    this.sendMessage({
+      type: 'SUBMIT_MELD',
+      payload: {
+        groups: serializedGroups,
+      },
+    });
+  }
+
   public drop(): void {
     this.sendMessage({ type: 'DROP' });
   }

@@ -99,7 +99,7 @@ public final class GameStateSnapshots {
                 turn,
                 snap.sequence(), GameStatus.valueOf(snap.status()), snap.winnerPlayerId(), winningGroups,
                 snap.dealNumber(), snap.dealerSeatIndex(),
-                instant(snap.createdAt()), instant(snap.finishedAt()));
+                instant(snap.createdAt()), instant(snap.finishedAt()), null, null);
     }
 
     private static String instant(Instant instant) {

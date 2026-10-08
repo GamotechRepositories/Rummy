@@ -452,6 +452,15 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 boolean accept = data != null && data.has("accept") && data.get("accept").asBoolean();
                 tableActor.handleSplitResponse(playerId, accept, reqId);
             }
+            case "SUBMIT_MELD" -> {
+                if (data == null || !data.has("groups")) {
+                    sendError(session, "MISSING_GROUPS", "groups are required for SUBMIT_MELD", reqId);
+                    return;
+                }
+                List<CardGroup> groups = parseCardGroups(data.get("groups"), tableActor.getState().requirePlayer(playerId).getHandSnapshot());
+                SubmitMeldCommand cmd = new SubmitMeldCommand(reqId, gameId, playerId, groups, now);
+                tableActor.processCommand(cmd, reqId);
+            }
             default -> sendError(session, "UNKNOWN_COMMAND", "Unknown command type: " + type, reqId);
         }
     }

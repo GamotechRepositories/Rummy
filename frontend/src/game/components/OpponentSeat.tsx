@@ -147,10 +147,12 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
   const isRightSide =
     position === 'right' || position === 'top-right' || position === 'bottom-right';
 
+  const isShowdownWaiting = gameStatus === 'SHOWDOWN' && !isEliminated && gameState?.winnerId !== player.playerId;
+
   const avatarElement = (
     <div className="opponent-avatar-wrap">
       {/* Turn Spotlight Glow on Felt */}
-      {isCurrentTurn && (
+      {(isCurrentTurn || isShowdownWaiting) && (
         <div
           style={{
             position: 'absolute',
@@ -165,13 +167,13 @@ export const OpponentSeat: React.FC<OpponentSeatProps> = ({
       )}
 
       {/* Turn Timer Ring */}
-      {isCurrentTurn && (
+      {(isCurrentTurn || isShowdownWaiting) && (
         <div className="opponent-avatar-timer">
           <TurnTimerRing
-            turnDeadline={turnDeadline ?? null}
+            turnDeadline={gameStatus === 'SHOWDOWN' ? (gameState?.showdownDeadline ?? null) : (turnDeadline ?? null)}
             strokeWidth={4.5}
             showBadge={false}
-            extraTime={!!gameState?.inExtraTime}
+            extraTime={!!gameState?.inExtraTime && gameStatus !== 'SHOWDOWN'}
           />
         </div>
       )}

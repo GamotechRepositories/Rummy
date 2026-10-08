@@ -58,6 +58,42 @@ export const ActionControls: React.FC = () => {
     }
   }, [isMyTurn, turnPhase]);
 
+  // Auto-submit visual groups when Showdown timer expires if player hasn't clicked Submit Meld
+  React.useEffect(() => {
+    if (
+      gameStatus !== 'SHOWDOWN' ||
+      gameState?.hasSubmittedMeld ||
+      gameState?.winnerId === gameState?.viewerPlayerId
+    ) {
+      return;
+    }
+    if (!gameState?.showdownDeadline) return;
+
+    const deadlineMs = new Date(gameState.showdownDeadline).getTime();
+    // Trigger slightly before deadline (300ms) or at 0 to guarantee delivery to server
+    const msUntilExpiry = Math.max(0, deadlineMs - Date.now() - 300);
+
+    const timer = setTimeout(() => {
+      const current = useGameStore.getState();
+      if (
+        current.gameState?.gameStatus === 'SHOWDOWN' &&
+        !current.gameState?.hasSubmittedMeld &&
+        current.gameState?.winnerId !== current.gameState?.viewerPlayerId
+      ) {
+        soundEngine.play('click');
+        socketClient.submitMeld(current.groups);
+      }
+    }, msUntilExpiry);
+
+    return () => clearTimeout(timer);
+  }, [
+    gameStatus,
+    gameState?.hasSubmittedMeld,
+    gameState?.showdownDeadline,
+    gameState?.winnerId,
+    gameState?.viewerPlayerId,
+  ]);
+
   if (!gameState) return null;
 
   const drawPhase = isDrawPhase(isMyTurn, turnPhase);
@@ -209,18 +245,18 @@ export const ActionControls: React.FC = () => {
 
         <div className="bcb-player">
           <div className="bcb-avatar-wrap">
-            {isMyTurn && !dealInProgress && !viewerIsEliminated && (
+            {((isMyTurn && !dealInProgress && !viewerIsEliminated) || (gameStatus === 'SHOWDOWN' && !gameState.hasSubmittedMeld && gameState.winnerId !== gameState.viewerPlayerId)) && (
               <div className="bcb-timer">
                 <TurnTimerRing
-                  turnDeadline={gameState.turnDeadline ?? null}
+                  turnDeadline={gameStatus === 'SHOWDOWN' ? (gameState.showdownDeadline ?? null) : (gameState.turnDeadline ?? null)}
                   strokeWidth={4.5}
                   showBadge={false}
                   enableTickSound={true}
-                  extraTime={!!gameState.inExtraTime}
+                  extraTime={!!gameState.inExtraTime && gameStatus !== 'SHOWDOWN'}
                 />
               </div>
             )}
-            <div className={`bcb-avatar${isMyTurn && !dealInProgress && !viewerIsEliminated ? ' on' : ''}${viewerIsEliminated ? ' eliminated' : ''}`}>
+            <div className={`bcb-avatar${((isMyTurn && gameStatus === 'IN_PROGRESS') || (gameStatus === 'SHOWDOWN' && !gameState.hasSubmittedMeld && gameState.winnerId !== gameState.viewerPlayerId)) && !dealInProgress && !viewerIsEliminated ? ' on' : ''}${viewerIsEliminated ? ' eliminated' : ''}`}>
               <img className="bcb-avatar-photo" src={photoForCharacter(avatarId)} alt="" draggable={false} />
             </div>
             {isDealer && (
@@ -483,6 +519,65 @@ export const ActionControls: React.FC = () => {
               <Flag size={18} />
               Drop {dropPenaltyPoints}
             </button>
+          )}
+
+          {gameStatus === 'SHOWDOWN' && !viewerIsEliminated && (
+            <>
+              {(() => {
+                const isWinner = gameState?.winnerId === gameState?.viewerPlayerId;
+                const declarePlayerName = isWinner
+                  ? 'You'
+                  : gameState?.opponents.find(o => o.playerId === gameState?.winnerId)?.displayName || 'A player';
+
+                if (isWinner) {
+                  return (
+                    <div style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>
+                      You declared! Waiting for opponents to submit...
+                    </div>
+                  );
+                }
+
+                if (gameState?.hasSubmittedMeld) {
+                  return (
+                    <div style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>
+                      Meld Submitted. Waiting for {declarePlayerName}...
+                    </div>
+                  );
+                }
+
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div style={{
+                      color: '#ef4444', 
+                      fontSize: '14px', 
+                      fontWeight: 600,
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(239, 68, 68, 0.3)'
+                    }}>
+                      {declarePlayerName} declared! Group cards quickly!
+                    </div>
+                    <button
+                      id="btn-action-submit-meld"
+                      type="button"
+                      className="bcb-action bcb-action--primary"
+                      onClick={() => {
+                        soundEngine.play('click');
+                        socketClient.submitMeld(groups);
+                      }}
+                      style={{
+                        background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                        boxShadow: '0 0 12px rgba(59, 130, 246, 0.45)',
+                      }}
+                    >
+                      <Award size={18} />
+                      Submit Meld
+                    </button>
+                  </div>
+                );
+              })()}
+            </>
           )}
         </div>
       </div>

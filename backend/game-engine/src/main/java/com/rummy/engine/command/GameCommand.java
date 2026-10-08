@@ -11,7 +11,8 @@ import java.util.List;
  */
 public sealed interface GameCommand extends Serializable
         permits JoinCommand, ReadyCommand, StartGameCommand, DrawCommand,
-                DiscardCommand, DeclareCommand, DropCommand, TimeoutCommand {
+                DiscardCommand, DeclareCommand, DropCommand, TimeoutCommand,
+                SubmitMeldCommand, ShowdownTimeoutCommand {
 
     String commandId();
 

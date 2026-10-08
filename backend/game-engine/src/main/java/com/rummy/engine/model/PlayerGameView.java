@@ -69,7 +69,12 @@ public record PlayerGameView(
         /** Pool/Deals: prize the winner would get now (all entries and rejoins, less the platform fee). Null otherwise. */
         java.math.BigDecimal prizePool,
         /** Pool: prize split state for this viewer; null when no split can be requested or is pending. */
-        SplitView split
+        SplitView split,
+        /** Showdown timing */
+        Instant showdownDeadline,
+        String closureReason,
+        boolean hasSubmittedMeld,
+        Map<String, List<CardGroup>> submittedMelds
 ) implements Serializable {
 
     /** Table facts the engine state does not hold: the pool rejoin window, the prize and any split offer. */
@@ -106,7 +111,7 @@ public record PlayerGameView(
                 winningGroups, viewerSeatIndex, rulesetId, dealNumber, eliminationThreshold, viewerCumulativeScore, viewerIsEliminated,
                 standings, dealHistory, nextDealCountdown, tournamentWinnerId, dealerSeatIndex, canRejoin, rejoinScore, rejoinFee,
                 freshlyEliminatedNames, totalDeals, viewerChipBalance, hasTakenFirstTurn, drawnCardInstanceId, isDrawnFromDiscard,
-                !hasTakenFirstTurn, 0, false, false, null, null);
+                !hasTakenFirstTurn, 0, false, false, null, null, null, null, false, null);
     }
 
     public record OpponentView(
@@ -586,7 +591,11 @@ public record PlayerGameView(
                 turn != null && turn.isExtraTime(),
                 state.getStatus() == GameStatus.IN_PROGRESS && state.isTopDiscardPickable(),
                 table.prizePool(),
-                table.split()
+                table.split(),
+                state.getShowdownDeadline(),
+                null,
+                state.getSubmittedMelds().containsKey(viewerPlayerId),
+                state.getSubmittedMelds()
         );
     }
 }

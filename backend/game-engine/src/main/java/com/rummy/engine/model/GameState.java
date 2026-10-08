@@ -27,6 +27,8 @@ public final class GameState implements Serializable {
     private GameStatus status;
     private String winnerPlayerId;
     private List<CardGroup> winningGroups;
+    private Instant showdownDeadline;
+    private final Map<String, List<CardGroup>> submittedMelds;
     private int dealNumber = 1;
     private int dealerSeatIndex = 0;
     private final Instant createdAt;
@@ -52,6 +54,8 @@ public final class GameState implements Serializable {
         this.status = GameStatus.WAITING_FOR_PLAYERS;
         this.winnerPlayerId = null;
         this.winningGroups = null;
+        this.showdownDeadline = null;
+        this.submittedMelds = new HashMap<>();
         this.dealNumber = 1;
         this.createdAt = Instant.now();
         this.finishedAt = null;
@@ -62,7 +66,8 @@ public final class GameState implements Serializable {
               List<PlayerState> players, Deck deck, List<CardInstance> discardPile,
               CardInstance cutJoker, CardInstance finishCard, TurnState turnState,
               long sequence, GameStatus status, String winnerPlayerId, List<CardGroup> winningGroups,
-              int dealNumber, int dealerSeatIndex, Instant createdAt, Instant finishedAt) {
+              int dealNumber, int dealerSeatIndex, Instant createdAt, Instant finishedAt,
+              Instant showdownDeadline, Map<String, List<CardGroup>> submittedMelds) {
         this.gameId = Objects.requireNonNull(gameId);
         this.tableId = Objects.requireNonNull(tableId);
         this.rulesetId = Objects.requireNonNull(rulesetId);
@@ -77,6 +82,8 @@ public final class GameState implements Serializable {
         this.status = Objects.requireNonNull(status);
         this.winnerPlayerId = winnerPlayerId;
         this.winningGroups = winningGroups != null ? new ArrayList<>(winningGroups) : null;
+        this.showdownDeadline = showdownDeadline;
+        this.submittedMelds = submittedMelds != null ? new HashMap<>(submittedMelds) : new HashMap<>();
         this.dealNumber = dealNumber;
         this.dealerSeatIndex = dealerSeatIndex;
         this.createdAt = Objects.requireNonNull(createdAt);
@@ -152,6 +159,8 @@ public final class GameState implements Serializable {
         this.turnState = null;
         this.winnerPlayerId = null;
         this.winningGroups = null;
+        this.showdownDeadline = null;
+        this.submittedMelds.clear();
         this.finishedAt = null;
         this.status = GameStatus.WAITING_FOR_PLAYERS;
         rotateDealer();
@@ -327,6 +336,22 @@ public final class GameState implements Serializable {
 
     public void setWinningGroups(List<CardGroup> winningGroups) {
         this.winningGroups = winningGroups != null ? new ArrayList<>(winningGroups) : null;
+    }
+
+    public Instant getShowdownDeadline() {
+        return showdownDeadline;
+    }
+
+    public void setShowdownDeadline(Instant showdownDeadline) {
+        this.showdownDeadline = showdownDeadline;
+    }
+
+    public Map<String, List<CardGroup>> getSubmittedMelds() {
+        return Collections.unmodifiableMap(submittedMelds);
+    }
+
+    public void addSubmittedMeld(String playerId, List<CardGroup> groups) {
+        this.submittedMelds.put(playerId, new ArrayList<>(groups));
     }
 
     public Instant getCreatedAt() {

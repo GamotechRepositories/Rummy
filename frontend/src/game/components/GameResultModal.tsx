@@ -1185,6 +1185,8 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
 
               // Group calculation matching the game table style
               let playerGroups: ShowdownGroup[] = [];
+              const submittedMeld = gameState.submittedMelds?.[p.playerId];
+
               if (won) {
                 playerGroups = autoGroupShowdownCards(
                   p.hand,
@@ -1193,6 +1195,16 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                   gameState.winningGroups,
                   isRummy21
                 );
+              } else if (submittedMeld && submittedMeld.length > 0) {
+                const mapped = submittedMeld.map((g) => {
+                  const groupType = evaluateCardGroup(g.cards, gameState.cutJoker);
+                  return {
+                    type: groupType,
+                    cards: sortGroupCardsForDisplay(g.cards, groupType, gameState.cutJoker),
+                    pts: 0,
+                  };
+                });
+                playerGroups = applyRummyGroupPenalties(mapped, gameState.cutJoker, false, isRummy21);
               } else if (
                 p.isMe &&
                 myVisualGroups &&

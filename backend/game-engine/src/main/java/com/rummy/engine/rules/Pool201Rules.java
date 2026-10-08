@@ -125,7 +125,7 @@ public final class Pool201Rules implements RummyRules {
 
     @Override
     public int scoreLosingHand(List<CardInstance> hand, Card cutJoker) {
-        return ScoreCalculator.bestHandPoints(hand, cutJoker, maximumPenalty);
+        return maximumPenalty;
     }
 
     @Override

@@ -51,6 +51,7 @@ public final class TableActor {
     private ScheduledFuture<?> turnTimeoutFuture;
     private ScheduledFuture<?> autoStartFallbackFuture;
     private ScheduledFuture<?> botTurnFuture;
+    private ScheduledFuture<?> showdownTimeoutFuture;
 
     /**
      * After the last human drops, bots keep playing for a few rounds then drop one-by-one
@@ -581,6 +582,43 @@ public final class TableActor {
                 for (Map.Entry<String, BotPlayerAgent> entry : botAgents.entrySet()) {
                     if (!entry.getKey().equals(discardedEvent.playerId())) {
                         entry.getValue().recordOpponentDiscard(discardedEvent.playerId(), thrown);
+                    }
+                }
+            }
+            if (event instanceof com.rummy.engine.event.ShowdownStartedEvent showdownEvent) {
+                if (turnTimeoutFuture != null && !turnTimeoutFuture.isDone()) {
+                    turnTimeoutFuture.cancel(false);
+                }
+                long delaySeconds = Math.max(1, showdownEvent.showdownDeadline().getEpochSecond() - Instant.now().getEpochSecond());
+                showdownTimeoutFuture = scheduler.schedule(() -> {
+                    synchronized (this) {
+                        if (state.getStatus() == GameStatus.SHOWDOWN) {
+                            log.info("[TableActor:{}] Showdown timed out", tableId);
+                            ShowdownTimeoutCommand timeoutCmd = new ShowdownTimeoutCommand(UUID.randomUUID().toString(),
+                                    state.getGameId(), Instant.now());
+                            processCommand(timeoutCmd, "SYSTEM_SHOWDOWN_TIMEOUT");
+                        }
+                    }
+                }, delaySeconds, TimeUnit.SECONDS);
+
+                // Bots submit their meld for showdown
+                for (PlayerState p : state.getPlayers()) {
+                    if (p.isBot() && p.getStatus() == PlayerStatus.ACTIVE && !p.getPlayerId().equals(showdownEvent.winnerId())) {
+                        scheduler.schedule(() -> {
+                            synchronized(this) {
+                                if (state.getStatus() == GameStatus.SHOWDOWN) {
+                                    com.rummy.engine.bot.HandEvaluator.EvaluationResult eval = com.rummy.engine.bot.HandEvaluator.evaluateDeadwood(
+                                            state.requirePlayer(p.getPlayerId()).getHandSnapshot(), state.getCutJoker().getCard());
+                                    List<com.rummy.engine.rules.CardGroup> submitGroups = new ArrayList<>(eval.meldedGroups());
+                                    if (!eval.deadwoodCards().isEmpty()) {
+                                        submitGroups.add(com.rummy.engine.rules.CardGroup.of(eval.deadwoodCards()));
+                                    }
+                                    SubmitMeldCommand submitCmd = new SubmitMeldCommand(UUID.randomUUID().toString(),
+                                            state.getGameId(), p.getPlayerId(), submitGroups, Instant.now());
+                                    processCommand(submitCmd, "BOT_SUBMIT_MELD");
+                                }
+                            }
+                        }, 2 + new java.util.Random().nextInt(3), TimeUnit.SECONDS);
                     }
                 }
             }
@@ -1940,7 +1978,7 @@ public final class TableActor {
         Optional<TableSnapshot> snapshot = captureSnapshot();
         if (snapshot.isPresent()) {
             frozen = true;
-            for (ScheduledFuture<?> f : new ScheduledFuture<?>[]{turnTimeoutFuture, botTurnFuture, nextDealFuture}) {
+            for (ScheduledFuture<?> f : new ScheduledFuture<?>[]{turnTimeoutFuture, showdownTimeoutFuture, botTurnFuture, nextDealFuture}) {
                 if (f != null) {
                     f.cancel(false);
                 }
@@ -1972,6 +2010,9 @@ public final class TableActor {
         destroyed = true;
         if (turnTimeoutFuture != null) {
             turnTimeoutFuture.cancel(true);
+        }
+        if (showdownTimeoutFuture != null) {
+            showdownTimeoutFuture.cancel(true);
         }
         if (botTurnFuture != null) {
             botTurnFuture.cancel(true);

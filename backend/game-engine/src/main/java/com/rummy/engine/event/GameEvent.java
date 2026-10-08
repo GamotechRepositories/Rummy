@@ -9,7 +9,8 @@ import java.time.Instant;
 public sealed interface GameEvent extends Serializable
         permits PlayerJoinedEvent, PlayerReadyEvent, GameStartedEvent, CardDrawnEvent,
                 CardDiscardedEvent, TurnChangedEvent, PlayerDroppedEvent,
-                DeclareAcceptedEvent, DeclareRejectedEvent, GameFinishedEvent {
+                DeclareAcceptedEvent, DeclareRejectedEvent, GameFinishedEvent,
+                ShowdownStartedEvent, MeldSubmittedEvent {
 
     String eventId();
 

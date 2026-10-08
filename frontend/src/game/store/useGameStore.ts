@@ -303,7 +303,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     // If viewer hand is cleared (e.g. dropped), recover cards at showdown
     const effectiveHand =
-      hand.length === 0 && view.gameStatus === 'COMPLETED' && nextLastKnown.length > 0
+      hand.length === 0 && (view.gameStatus === 'COMPLETED' || view.gameStatus === 'SHOWDOWN') && nextLastKnown.length > 0
         ? nextLastKnown
         : hand;
 
@@ -339,7 +339,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         : organizeHandIntoGroups(effectiveExistingGroups, hand, cutJoker);
 
     const handIds = new Set(effectiveHand.map((c) => c.instanceId));
-    const viewerDropped = view.viewerStatus === 'DROPPED' && view.gameStatus === 'IN_PROGRESS';
+    const viewerDropped = view.viewerStatus === 'DROPPED' && (view.gameStatus === 'IN_PROGRESS' || view.gameStatus === 'SHOWDOWN');
     const nextSelected = isNewDealOrGame || viewerDropped ? [] : selectedCardIds.filter((id) => handIds.has(id));
 
     const isTournamentOver =

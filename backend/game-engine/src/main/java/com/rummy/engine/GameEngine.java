@@ -50,8 +50,10 @@ public final class GameEngine {
                 case DrawCommand cmd -> handleDraw(state, cmd, rules);
                 case DiscardCommand cmd -> handleDiscard(state, cmd, rules);
                 case DeclareCommand cmd -> handleDeclare(state, cmd, rules);
+                case SubmitMeldCommand cmd -> handleSubmitMeld(state, cmd, rules);
                 case DropCommand cmd -> handleDrop(state, cmd, rules);
                 case TimeoutCommand cmd -> handleTimeout(state, cmd, rules);
+                case ShowdownTimeoutCommand cmd -> handleShowdownTimeout(state, cmd, rules);
             };
         } catch (Exception e) {
             return EngineResult.failure(state, e.getMessage());
@@ -356,37 +358,17 @@ public final class GameEngine {
             // Valid declaration!
             player.markDeclared();
             player.setScore(0);
-            state.setStatus(GameStatus.COMPLETED);
+            state.setStatus(GameStatus.SHOWDOWN);
             state.setWinnerPlayerId(cmd.playerId());
             state.setWinningGroups(cmd.groups());
 
-            // Score opponents
-            Map<String, Integer> scoreMap = new HashMap<>();
-            scoreMap.put(cmd.playerId(), 0);
+            Instant showdownDeadline = cmd.timestamp().plusSeconds(30);
+            state.setShowdownDeadline(showdownDeadline);
 
-            for (PlayerState opponent : state.getPlayers()) {
-                if (!opponent.getPlayerId().equals(cmd.playerId()) && opponent.getStatus() == PlayerStatus.ACTIVE) {
-                    Card cutCard = state.getCutJoker() != null ? state.getCutJoker().getCard() : null;
-                    int penalty = rules.scoreLosingHand(opponent.getHandSnapshot(), cutCard);
-                    opponent.setScore(penalty);
-                    opponent.addCumulativeScore(penalty);
-                    scoreMap.put(opponent.getPlayerId(), penalty);
-                } else if (opponent.getStatus() == PlayerStatus.DROPPED) {
-                    scoreMap.put(opponent.getPlayerId(), opponent.getScore());
-                } else if (opponent.getStatus() == PlayerStatus.ELIMINATED || opponent.getStatus() == PlayerStatus.READY) {
-                    scoreMap.put(opponent.getPlayerId(), 0);
-                }
-            }
-
-            long declSeq = state.nextSequence();
-            String declEventId = UUID.randomUUID().toString();
-            events.add(new DeclareAcceptedEvent(declEventId, state.getGameId(), declSeq, cmd.timestamp(),
-                    cmd.playerId(), finishCard, cmd.groups(), scoreMap));
-
-            long finishSeq = state.nextSequence();
-            String finishEventId = UUID.randomUUID().toString();
-            events.add(new GameFinishedEvent(finishEventId, state.getGameId(), finishSeq, cmd.timestamp(),
-                    cmd.playerId(), scoreMap));
+            long seq = state.nextSequence();
+            String startEventId = UUID.randomUUID().toString();
+            events.add(new ShowdownStartedEvent(startEventId, state.getGameId(), seq, cmd.timestamp(),
+                    cmd.playerId(), cmd.groups(), showdownDeadline));
 
             return EngineResult.success(state, events);
         } else {
@@ -421,6 +403,79 @@ public final class GameEngine {
 
             return EngineResult.success(state, events);
         }
+    }
+
+    private EngineResult handleSubmitMeld(GameState state, SubmitMeldCommand cmd, RummyRules rules) {
+        if (state.getStatus() != GameStatus.SHOWDOWN) {
+            return EngineResult.failure(state, "Game is not in showdown phase");
+        }
+        PlayerState player = state.requirePlayer(cmd.playerId());
+        if (player.getStatus() != PlayerStatus.ACTIVE || cmd.playerId().equals(state.getWinnerPlayerId())) {
+            return EngineResult.failure(state, "You cannot submit a meld");
+        }
+        
+        state.addSubmittedMeld(cmd.playerId(), cmd.groups());
+        
+        long seq = state.nextSequence();
+        String eventId = UUID.randomUUID().toString();
+        List<GameEvent> events = new ArrayList<>();
+        events.add(new MeldSubmittedEvent(eventId, state.getGameId(), seq, cmd.timestamp(), cmd.playerId()));
+
+        // Check if all active non-winner players have submitted
+        long activeOpponents = state.getPlayers().stream()
+                .filter(p -> p.getStatus() == PlayerStatus.ACTIVE && !p.getPlayerId().equals(state.getWinnerPlayerId()))
+                .count();
+        if (state.getSubmittedMelds().size() >= activeOpponents) {
+            return finishGameAfterShowdown(state, cmd.timestamp(), rules, events);
+        }
+
+        return EngineResult.success(state, events);
+    }
+
+    private EngineResult handleShowdownTimeout(GameState state, ShowdownTimeoutCommand cmd, RummyRules rules) {
+        if (state.getStatus() != GameStatus.SHOWDOWN) {
+            return EngineResult.failure(state, "Game is not in showdown phase");
+        }
+        return finishGameAfterShowdown(state, cmd.timestamp(), rules, new ArrayList<>());
+    }
+
+    private EngineResult finishGameAfterShowdown(GameState state, Instant timestamp, RummyRules rules, List<GameEvent> previousEvents) {
+        state.setStatus(GameStatus.COMPLETED);
+        
+        Map<String, Integer> scoreMap = new HashMap<>();
+        scoreMap.put(state.getWinnerPlayerId(), 0);
+
+        for (PlayerState opponent : state.getPlayers()) {
+            if (!opponent.getPlayerId().equals(state.getWinnerPlayerId()) && opponent.getStatus() == PlayerStatus.ACTIVE) {
+                Card cutCard = state.getCutJoker() != null ? state.getCutJoker().getCard() : null;
+                int penalty;
+                if (state.getSubmittedMelds().containsKey(opponent.getPlayerId())) {
+                    penalty = rules.calculateLosingScore(state.getSubmittedMelds().get(opponent.getPlayerId()), cutCard);
+                } else {
+                    // No meld submitted within showdown deadline -> full maximum penalty
+                    penalty = rules.getMaximumPenalty();
+                }
+                opponent.setScore(penalty);
+                opponent.addCumulativeScore(penalty);
+                scoreMap.put(opponent.getPlayerId(), penalty);
+            } else if (opponent.getStatus() == PlayerStatus.DROPPED) {
+                scoreMap.put(opponent.getPlayerId(), opponent.getScore());
+            } else if (opponent.getStatus() == PlayerStatus.ELIMINATED || opponent.getStatus() == PlayerStatus.READY) {
+                scoreMap.put(opponent.getPlayerId(), 0);
+            }
+        }
+
+        long declSeq = state.nextSequence();
+        String declEventId = UUID.randomUUID().toString();
+        previousEvents.add(new DeclareAcceptedEvent(declEventId, state.getGameId(), declSeq, timestamp,
+                state.getWinnerPlayerId(), state.getFinishCard(), state.getWinningGroups(), scoreMap));
+
+        long finishSeq = state.nextSequence();
+        String finishEventId = UUID.randomUUID().toString();
+        previousEvents.add(new GameFinishedEvent(finishEventId, state.getGameId(), finishSeq, timestamp,
+                state.getWinnerPlayerId(), scoreMap));
+
+        return EngineResult.success(state, previousEvents);
     }
 
     private EngineResult handleDrop(GameState state, DropCommand cmd, RummyRules rules) {

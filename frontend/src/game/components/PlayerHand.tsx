@@ -336,7 +336,7 @@ export const PlayerHand: React.FC<{ arrivingCount?: number }> = ({ arrivingCount
   const totalCards = groups.reduce((n, g) => n + g.cards.length, 0);
   const lastKnownHand = useGameStore((state) => state.lastKnownHand);
   const viewerDropped =
-    gameState?.viewerStatus === 'DROPPED' && gameState.gameStatus === 'IN_PROGRESS';
+    gameState?.viewerStatus === 'DROPPED' && (gameState.gameStatus === 'IN_PROGRESS' || gameState.gameStatus === 'SHOWDOWN');
   const laidCount = Math.max(totalCards, lastKnownHand.length);
 
   if (viewerDropped) {

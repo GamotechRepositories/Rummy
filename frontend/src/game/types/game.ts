@@ -30,6 +30,7 @@ export type GameStatus =
   | 'IN_PROGRESS'
   | 'DECLARING'
   | 'COMPLETED'
+  | 'SHOWDOWN'
   | 'ABORTED';
 
 export type TurnPhase =
@@ -151,6 +152,14 @@ export interface PlayerGameView {
   prizePool?: number | null;
   /** Pool: prize split on offer or being decided in the break between deals. */
   split?: SplitView | null;
+  /** Optional text explaining why the table is ending early or who abandoned it. */
+  closureReason?: string | null;
+  /** Deadline for opponents to submit their final meld during the SHOWDOWN phase. */
+  showdownDeadline?: string | null;
+  /** True if the viewer has already submitted their meld during the SHOWDOWN phase. */
+  hasSubmittedMeld?: boolean;
+  /** Groupings submitted by players during SHOWDOWN */
+  submittedMelds?: Record<string, { cards: CardInstance[] }[]>;
 }
 
 export interface SplitView {
