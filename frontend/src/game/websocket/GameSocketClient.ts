@@ -188,20 +188,6 @@ class GameSocketClient {
           ) {
             const me = useGameStore.getState().playerId;
             soundEngine.play(next.winnerId === me ? 'win' : 'lose');
-          } else if (
-            prev &&
-            next.hand &&
-            prev.hand &&
-            next.hand.length > prev.hand.length
-          ) {
-            soundEngine.play('draw');
-          } else if (
-            prev &&
-            next.hand &&
-            prev.hand &&
-            next.hand.length < prev.hand.length
-          ) {
-            soundEngine.play('discard');
           }
         }
         break;

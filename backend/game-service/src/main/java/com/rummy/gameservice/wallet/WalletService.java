@@ -229,7 +229,7 @@ public class WalletService {
                 .orElseThrow(() -> new IllegalStateException("Wallet not found for " + playerId));
         BigDecimal before = account.getBalance();
         BigDecimal after = before.add(delta);
-        if (after.signum() < 0) {
+        if (after.signum() < 0 && !PLATFORM_TREASURY.equals(playerId)) {
             throw insufficientBalance(playerId, before, delta.negate());
         }
         account.setBalance(after);
@@ -281,7 +281,7 @@ public class WalletService {
             WalletAccountDocument account = memoryAccounts.computeIfAbsent(playerId, WalletAccountDocument::new);
             BigDecimal before = account.getBalance();
             BigDecimal after = before.add(delta);
-            if (after.signum() < 0) {
+            if (after.signum() < 0 && !PLATFORM_TREASURY.equals(playerId)) {
                 throw insufficientBalance(playerId, before, delta.negate());
             }
             account.setBalance(after);
@@ -560,8 +560,22 @@ public class WalletService {
                 BigDecimal refund = stakeTier.subtract(loss).setScale(2, java.math.RoundingMode.HALF_UP);
                 totalGrossPot = totalGrossPot.add(loss);
 
-                // If human player dropped early, refund their unlost stake
-                if (!pId.startsWith("BOT_") && refund.compareTo(BigDecimal.ZERO) > 0) {
+                // If bot player lost, debit house loss from platform treasury (Method 2: Gross Accounting)
+                if (pId.startsWith("BOT_")) {
+                    if (loss.compareTo(BigDecimal.ZERO) > 0) {
+                        String botLossKey = "BOT_LOSS_" + gameId + "_" + pId;
+                        try {
+                            debit(PLATFORM_TREASURY, loss, "BOT_HOUSE_LOSS", botLossKey, gameId,
+                                    "House Bot loss (" + penalty + " pts) for " + gameId + " (" + rId + ")",
+                                    Map.of("gameId", gameId, "botId", pId, "penalty", penalty, "loss", loss, "variant", rId));
+                        } catch (Exception e) {
+                            log.error("[Wallet] Failed to debit house bot loss {} for bot {} in gameId={}: {}",
+                                    loss, pId, gameId, e.getMessage());
+                            failedPayouts.add(botLossKey);
+                        }
+                    }
+                } else if (refund.compareTo(BigDecimal.ZERO) > 0) {
+                    // If human player dropped early, refund their unlost stake
                     String refundKey = "REFUND_" + gameId + "_" + pId;
                     try {
                         credit(pId, refund, "GAME_REFUND", refundKey, gameId,
@@ -585,6 +599,21 @@ public class WalletService {
                 int rejoins = (rejoinCounts != null) ? rejoinCounts.getOrDefault(pId, 0) : 0;
                 BigDecimal playerContribution = stakeTier.multiply(BigDecimal.valueOf(1 + rejoins));
                 totalGrossPot = totalGrossPot.add(playerContribution);
+
+                // If bot player participated, debit their tournament stake from platform treasury (House Stake)
+                if (pId.startsWith("BOT_") && playerContribution.compareTo(BigDecimal.ZERO) > 0) {
+                    String botLossKey = "BOT_LOSS_" + gameId + "_" + pId;
+                    try {
+                        debit(PLATFORM_TREASURY, playerContribution, "BOT_HOUSE_LOSS", botLossKey, gameId,
+                                "House Bot tournament stake for " + gameId + " (" + rId + ")",
+                                Map.of("gameId", gameId, "botId", pId, "contribution", playerContribution, "variant", rId));
+                    } catch (Exception e) {
+                        log.error("[Wallet] Failed to debit house bot tournament stake {} for bot {} in gameId={}: {}",
+                                playerContribution, pId, gameId, e.getMessage());
+                        failedPayouts.add(botLossKey);
+                    }
+                }
+
                 if (pId.equals(winnerPlayerId) || (splitDrops != null && splitDrops.containsKey(pId))) {
                     continue;
                 }

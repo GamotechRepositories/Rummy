@@ -41,7 +41,6 @@ class SoundEngine {
   private ctx: AudioContext | null = null;
   private muted = false;
   private unlocked = false;
-  private lastPlay = 0;
   private sampleBuffers: Map<string, AudioBuffer> = new Map();
   private samplesLoading = false;
   private noiseBuffer: AudioBuffer | null = null;
@@ -51,6 +50,7 @@ class SoundEngine {
   private loseAudio: HTMLAudioElement | null = null;
   private lastWinPlay = 0;
   private lastLosePlay = 0;
+  private lastSoundTimes: Partial<Record<SoundName, number>> = {};
 
   constructor() {
     try {
@@ -476,9 +476,11 @@ class SoundEngine {
   play(name: SoundName): void {
     if (this.muted) return;
     const now = performance.now();
-    // Debounce identical spam
-    if (now - this.lastPlay < 30 && name === 'tick') return;
-    this.lastPlay = now;
+    // Debounce rapid identical sound triggers (especially draw, discard, tick)
+    const lastTime = this.lastSoundTimes[name] ?? 0;
+    const cooldown = (name === 'draw' || name === 'discard') ? 220 : (name === 'tick' ? 30 : 40);
+    if (now - lastTime < cooldown) return;
+    this.lastSoundTimes[name] = now;
 
     const ctx = this.ensureCtx();
     if (!ctx) return;

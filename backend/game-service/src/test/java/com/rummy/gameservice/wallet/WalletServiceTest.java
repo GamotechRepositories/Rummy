@@ -334,4 +334,75 @@ class WalletServiceTest {
         BigDecimal finalTreasury = walletService.getPlatformTreasuryBalance();
         assertThat(finalTreasury.subtract(initialTreasury)).isEqualByComparingTo(BigDecimal.valueOf(50.00));
     }
+
+    @Test
+    @DisplayName("Points Rummy with Human Winner: Treasury pays Bot Loss (50) - Rake (7.50) = Net -42.50 (exact human net gain)")
+    void testHumanWinnerAgainstBotPointsRummySettlement() {
+        String humanWinner = "USR_HUMAN_W";
+        String botLoser = "BOT_BOB";
+        fund(humanWinner);
+
+        BigDecimal stakeTier = BigDecimal.valueOf(100);
+        walletService.debit(humanWinner, stakeTier, "GAME_ENTRY_STAKE", "STAKE_BOT_M2_" + humanWinner, "MATCH_BOT_2", "Entry", null);
+
+        BigDecimal initialTreasury = walletService.getPlatformTreasuryBalance();
+
+        // Bot loser has penalty 40 pts -> loss 50.00
+        GameSettlementResult result = walletService.settleMatch(
+                "MATCH_BOT_2", "TBL_BOT_2", "POINTS_13", stakeTier, humanWinner,
+                java.util.Map.of(humanWinner, 0, botLoser, 40),
+                List.of(humanWinner, botLoser)
+        );
+
+        assertThat(result).isNotNull();
+        assertThat(result.totalGrossPot()).isEqualByComparingTo(BigDecimal.valueOf(50.00));
+        assertThat(result.platformRakeAmount()).isEqualByComparingTo(BigDecimal.valueOf(7.50));
+        assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(42.50));
+
+        // Human winner receives 100 (stake refund) + 42.50 (prize) = 142.50 (balance: 900 + 142.50 = 1042.50, net gain +42.50)
+        assertThat(walletService.getOrCreateWallet(humanWinner).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1042.50));
+
+        // Platform Treasury debited 50.00 (BOT_HOUSE_LOSS) and credited 7.50 (PLATFORM_RAKE) -> net delta = -42.50
+        BigDecimal finalTreasury = walletService.getPlatformTreasuryBalance();
+        assertThat(finalTreasury.subtract(initialTreasury)).isEqualByComparingTo(BigDecimal.valueOf(-42.50));
+
+        // Ledger verify: BOT_HOUSE_LOSS transaction exists
+        assertThat(walletService.hasTransaction("BOT_LOSS_MATCH_BOT_2_" + botLoser)).isTrue();
+        assertThat(walletService.hasTransaction("RAKE_MATCH_BOT_2")).isTrue();
+    }
+
+    @Test
+    @DisplayName("Pool Rummy with Human Winner: Treasury pays Bot Stake (100) - Rake (30) = Net -70.00 (exact human net gain)")
+    void testHumanWinnerAgainstBotPoolRummySettlement() {
+        String humanWinner = "USR_HUMAN_POOL_W";
+        String botLoser = "BOT_CHARLIE";
+        fund(humanWinner);
+
+        BigDecimal stakeTier = BigDecimal.valueOf(100);
+        walletService.debit(humanWinner, stakeTier, "GAME_ENTRY_STAKE", "STAKE_POOL_M1_" + humanWinner, "MATCH_POOL_BOT_1", "Entry", null);
+
+        BigDecimal initialTreasury = walletService.getPlatformTreasuryBalance();
+
+        GameSettlementResult result = walletService.settleMatch(
+                "MATCH_POOL_BOT_1", "TBL_POOL_1", "POOL_101", stakeTier, humanWinner,
+                java.util.Map.of(humanWinner, 0, botLoser, 80),
+                List.of(humanWinner, botLoser)
+        );
+
+        assertThat(result).isNotNull();
+        // 2 players * 100 = 200 gross pot
+        assertThat(result.totalGrossPot()).isEqualByComparingTo(BigDecimal.valueOf(200.00));
+        assertThat(result.platformRakeAmount()).isEqualByComparingTo(BigDecimal.valueOf(30.00));
+        assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(170.00));
+
+        // Human winner receives 170.00 net prize (balance: 900 + 170 = 1070.00, net gain +70.00)
+        assertThat(walletService.getOrCreateWallet(humanWinner).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1070.00));
+
+        // Treasury debited 100.00 (bot tournament stake) and credited 30.00 (rake) -> net delta = -70.00
+        BigDecimal finalTreasury = walletService.getPlatformTreasuryBalance();
+        assertThat(finalTreasury.subtract(initialTreasury)).isEqualByComparingTo(BigDecimal.valueOf(-70.00));
+
+        assertThat(walletService.hasTransaction("BOT_LOSS_MATCH_POOL_BOT_1_" + botLoser)).isTrue();
+        assertThat(walletService.hasTransaction("RAKE_MATCH_POOL_BOT_1")).isTrue();
+    }
 }
