@@ -38,8 +38,10 @@ interface GameStoreState {
   /** Soft-reconnect in progress (waiting for first GAME_VIEW). */
   resumePending: boolean;
   dealInProgress: boolean;
+  walletBalance: number | null;
 
   // Actions
+  setWalletBalance: (balance: number | null) => void;
   setConnectionStatus: (status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING') => void;
   setSession: (tableId: string, playerId: string, displayName: string) => void;
   setDisplayName: (displayName: string) => void;
@@ -205,6 +207,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   lastKnownHand: [],
   resumePending: false,
   dealInProgress: false,
+  walletBalance: null,
+
+  setWalletBalance: (balance) => set({ walletBalance: balance }),
 
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 

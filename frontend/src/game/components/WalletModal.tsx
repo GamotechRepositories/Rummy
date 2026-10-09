@@ -58,7 +58,9 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => 
       const res = await authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${playerId}`);
       if (res.ok) {
         const data = await res.json();
-        setBalance(Number(data.balance ?? 0));
+        const b = Number(data.balance ?? 0);
+        setBalance(b);
+        useGameStore.getState().setWalletBalance(b);
         setCashierUrl(typeof data.cashierUrl === 'string' && data.cashierUrl ? data.cashierUrl : null);
       } else {
         setError('Could not load your balance.');

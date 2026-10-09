@@ -343,6 +343,13 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({ arrivingCount }) => {
     commitMove(ids, targetGroupId);
   };
 
+  const isDealing = arrivingCount !== undefined;
+  const arrivedCardIds = useMemo(() => {
+    if (arrivingCount === undefined) return null;
+    const count = Math.max(0, arrivingCount);
+    return new Set((gameState?.hand ?? []).slice(0, count).map((c) => c.instanceId));
+  }, [arrivingCount, gameState?.hand]);
+
   const totalCards = groups.reduce((n, g) => n + g.cards.length, 0);
   const lastKnownHand = useGameStore((state) => state.lastKnownHand);
   const viewerDropped =
@@ -366,14 +373,6 @@ export const PlayerHand: React.FC<PlayerHandProps> = ({ arrivingCount }) => {
       </div>
     );
   }
-
-
-  const isDealing = arrivingCount !== undefined;
-  const arrivedCardIds = useMemo(() => {
-    if (arrivingCount === undefined) return null;
-    const count = Math.max(0, arrivingCount);
-    return new Set((gameState?.hand ?? []).slice(0, count).map((c) => c.instanceId));
-  }, [arrivingCount, gameState?.hand]);
 
   return (
     <div className={`player-hand${touchDragging ? ' is-touch-dragging' : ''}`}>

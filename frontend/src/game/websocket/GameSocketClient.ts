@@ -1,8 +1,8 @@
 import { useGameStore } from '../store/useGameStore';
 import type { CardInstance, PlayerGameView, WsClientMessage, WsServerMessage } from '../types/game';
 import { soundEngine } from '../audio/soundEngine';
-import { getWsBaseUrl } from '../utils/apiConfig';
-import { ensureAuthToken, getAuthToken } from '../utils/authClient';
+import { getWsBaseUrl, getApiBaseUrl } from '../utils/apiConfig';
+import { ensureAuthToken, getAuthToken, authFetch } from '../utils/authClient';
 
 class GameSocketClient {
   private ws: WebSocket | null = null;
@@ -206,6 +206,17 @@ class GameSocketClient {
         if (msg.payload) {
           console.log('[WS] Received match financial settlement:', msg.payload);
           useGameStore.getState().setGameSettlement(msg.payload as any);
+          const pid = useGameStore.getState().playerId;
+          if (pid) {
+            void authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${pid}`)
+              .then((res) => (res.ok ? res.json() : null))
+              .then((data) => {
+                if (data && data.balance != null) {
+                  useGameStore.getState().setWalletBalance(Number(data.balance));
+                }
+              })
+              .catch(() => {});
+          }
         }
         break;
 

@@ -141,12 +141,13 @@ export const LobbyScreen: React.FC = () => {
     autoMatchmakePending,
     setAutoMatchmakePending,
     setLastGameConfig,
+    walletBalance,
+    setWalletBalance,
   } = useGameStore();
 
   const [localName, setLocalName] = useState(displayName);
   const [isEditingName, setIsEditingName] = useState(false);
   const [characterOpen, setCharacterOpen] = useState(false);
-  const [walletBalance, setWalletBalance] = useState<number>(0);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [rematchNotice, setRematchNotice] = useState(false);
 
@@ -297,7 +298,21 @@ export const LobbyScreen: React.FC = () => {
       maxPlayers: mPlayers,
     });
 
-    if (walletBalance < eFee) {
+    // Ensure fresh live balance before checking
+    let currentBal = useGameStore.getState().walletBalance;
+    try {
+      const res = await authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${playerId}`);
+      if (res.ok) {
+        const data = await res.json();
+        const fresh = Number(data.balance ?? 0);
+        setWalletBalance(fresh);
+        currentBal = fresh;
+      }
+    } catch {
+      // Backend offline or network error fallback to currentBal
+    }
+
+    if (currentBal !== null && currentBal < eFee) {
       setErrorMsg(
         `Insufficient Balance: You need ₹ ${eFee} to join this table. Use 'Add Cash' to top up your account.`
       );
@@ -486,7 +501,7 @@ export const LobbyScreen: React.FC = () => {
 
           <div className="lobby-balance">
             <Coins size={14} />
-            <span>₹ {walletBalance.toLocaleString()}</span>
+            <span>₹ {(walletBalance ?? 0).toLocaleString()}</span>
             <button
               type="button"
               className="lobby-add-btn"

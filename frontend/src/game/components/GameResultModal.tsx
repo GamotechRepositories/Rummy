@@ -494,7 +494,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
         ? (activeRulesetId.includes('201') ? 'Pool 201 Rummy' : 'Pool 101 Rummy')
         : `${totalDeals} Deals Rummy`;
 
-  const stakeTier = gameSettlement?.stakeTier ?? lastGameConfig?.entryFee ?? 100;
+  const stakeTier = gameState?.stakeTier ?? gameSettlement?.stakeTier ?? lastGameConfig?.entryFee ?? 8;
   let displayGrossPot = gameSettlement?.totalGrossPot ?? 0;
   let displayRake = gameSettlement?.platformRakeAmount ?? 0;
   let displayPrize = gameSettlement?.netWinnerPrize ?? 0;
