@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { CardView } from './CardView';
 import type { GroupValidationType } from '../types/game';
@@ -34,13 +34,18 @@ function findDropGroupId(clientX: number, clientY: number): string | 'NEW' | nul
   return null;
 }
 
-export const PlayerHand: React.FC<{ arrivingCount?: number }> = ({ arrivingCount }) => {
+interface PlayerHandProps {
+  arrivingCount?: number;
+}
+
+export const PlayerHand: React.FC<PlayerHandProps> = ({ arrivingCount }) => {
   const {
     groups,
     selectedCardIds,
     gameState,
     toggleSelectCard,
     moveCardsToGroup,
+    dealInProgress,
   } = useGameStore();
 
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -247,6 +252,7 @@ export const PlayerHand: React.FC<{ arrivingCount?: number }> = ({ arrivingCount
 
   const handleCardPointerDown = (e: React.PointerEvent, cardId: string) => {
     if (e.button !== 0 && e.button !== -1) return;
+    if (dealInProgress) return;
 
     const ids = resolveDragIds(cardId);
     pointerDragRef.current = {
@@ -265,6 +271,10 @@ export const PlayerHand: React.FC<{ arrivingCount?: number }> = ({ arrivingCount
   };
 
   const handleCardDragStart = (e: React.DragEvent, cardId: string) => {
+    if (dealInProgress) {
+      e.preventDefault();
+      return;
+    }
     // Touch path uses pointer events — ignore HTML5 on touch
     if (pointerDragRef.current) {
       e.preventDefault();
@@ -357,31 +367,34 @@ export const PlayerHand: React.FC<{ arrivingCount?: number }> = ({ arrivingCount
     );
   }
 
-  if (arrivingCount != null) {
-    const arriving = (gameState?.hand ?? []).slice(0, arrivingCount);
-    return (
-      <div className="player-hand player-hand--arriving">
-        <div className="player-hand-tray" id="seat-self" ref={trayRef}>
-          <div className="deal-arrive-row" aria-label={`${arriving.length} cards dealt`}>
-            {arriving.map((card) => (
-              <CardView key={card.instanceId} card={card} wildJoker={wildJoker} />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+
+  const isDealing = arrivingCount !== undefined;
+  const arrivedCardIds = useMemo(() => {
+    if (arrivingCount === undefined) return null;
+    const count = Math.max(0, arrivingCount);
+    return new Set((gameState?.hand ?? []).slice(0, count).map((c) => c.instanceId));
+  }, [arrivingCount, gameState?.hand]);
 
   return (
     <div className={`player-hand${touchDragging ? ' is-touch-dragging' : ''}`}>
       <div className="player-hand-tray" id="seat-self" ref={trayRef}>
-        {totalCards === 0 && (
+        {totalCards === 0 && !isDealing && (
           <div className="player-hand-empty">Your cards will appear here after the deal.</div>
         )}
 
-        {groups.map((group) => {
+        {groups.map((group, groupIdx) => {
           const label = GROUP_LABELS[group.groupType] ?? GROUP_LABELS.INVALID;
           const isOver = dropTargetId === group.id;
+
+          const visibleCards = arrivedCardIds
+            ? group.cards.filter((c) => arrivedCardIds.has(c.instanceId))
+            : group.cards;
+
+          // During dealing, only show the first group until secondary groups receive cards
+          if (isDealing && groupIdx > 0 && visibleCards.length === 0) {
+            return null;
+          }
+
           return (
             <div
               key={group.id}
@@ -417,13 +430,32 @@ export const PlayerHand: React.FC<{ arrivingCount?: number }> = ({ arrivingCount
                 }
               >
                 <span>{label.title}</span>
-                <span className="hand-group-count">{group.cards.length}</span>
+                <span className="hand-group-count">{visibleCards.length}</span>
               </div>
-              <div className="hand-group-cards">
-                {group.cards.map((card, idx) => (
+              <div
+                className="hand-group-cards"
+                style={{
+                  minHeight: 'var(--hand-card-h, 72px)',
+                  minWidth: visibleCards.length === 0 ? 'var(--hand-card-w, 48px)' : undefined,
+                }}
+              >
+                {visibleCards.length === 0 && isDealing && (
+                  <div
+                    className="hand-card-slot hand-card-slot--empty-slot"
+                    style={{
+                      width: 'var(--hand-card-w, 48px)',
+                      height: 'var(--hand-card-h, 72px)',
+                      border: '1px dashed rgba(243, 239, 230, 0.22)',
+                      borderRadius: 'calc(var(--hand-card-w, 48px) * 0.12)',
+                      boxSizing: 'border-box',
+                      opacity: 0.6,
+                    }}
+                  />
+                )}
+                {visibleCards.map((card, idx) => (
                   <div
                     key={card.instanceId}
-                    className="hand-card-slot"
+                    className={`hand-card-slot${isDealing ? ' deal-arrive-card' : ''}`}
                     style={{ marginLeft: idx === 0 ? 0 : 'var(--card-overlap)' }}
                     onPointerDown={(e) => handleCardPointerDown(e, card.instanceId)}
                     onPointerUp={(e) => handleCardPointerUp(e, card.instanceId)}
@@ -432,11 +464,11 @@ export const PlayerHand: React.FC<{ arrivingCount?: number }> = ({ arrivingCount
                       card={card}
                       wildJoker={wildJoker}
                       isSelected={selectedCardIds.includes(card.instanceId)}
-                      isDraggable
+                      isDraggable={!dealInProgress}
                       onDragStart={(e) => handleCardDragStart(e, card.instanceId)}
                       onDragEnd={handleCardDragEnd}
                       onClick={() => {
-                        if (suppressClickRef.current) return;
+                        if (suppressClickRef.current || dealInProgress) return;
                         soundEngine.play('select');
                         toggleSelectCard(card.instanceId);
                       }}

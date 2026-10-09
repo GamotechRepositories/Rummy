@@ -3597,14 +3597,12 @@ h1, h2, h3, h4, .font-display {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.casino-table:not(.deal-in-progress) .player-hand-tray .hand-group {
-  animation: dealRevealHand 0.45s ease-out;
+.deal-arrive-card {
+  animation: dealArrive 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-@keyframes dealRevealHand {
-  from { opacity: 0; transform: translateY(12px) scale(0.96); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
+
+
 
 @keyframes spin {
   to { transform: rotate(360deg); }
