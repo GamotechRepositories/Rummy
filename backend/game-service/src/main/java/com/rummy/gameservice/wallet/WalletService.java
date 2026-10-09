@@ -666,7 +666,13 @@ public class WalletService {
         // Credit Winner
         int winnerRejoins = (rejoinCounts != null) ? rejoinCounts.getOrDefault(winnerPlayerId, 0) : 0;
         BigDecimal winnerTotalPaid = isPointsBased ? stakeTier : stakeTier.multiply(BigDecimal.valueOf(1 + winnerRejoins));
-        BigDecimal winnerCreditAmount = isPointsBased ? stakeTier.add(netWinnerPrize) : netWinnerPrize;
+        boolean isBotWinner = winnerPlayerId.startsWith("BOT_");
+        BigDecimal winnerCreditAmount;
+        if (isBotWinner) {
+            winnerCreditAmount = netWinnerPrize;
+        } else {
+            winnerCreditAmount = isPointsBased ? stakeTier.add(netWinnerPrize) : netWinnerPrize;
+        }
         BigDecimal winnerNetDelta = isPointsBased ? netWinnerPrize : netWinnerPrize.subtract(winnerTotalPaid);
 
         if (!winnerPlayerId.startsWith("BOT_")) {

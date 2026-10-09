@@ -1237,11 +1237,13 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                   pRefund = 0;
                 } else if (isPointsBased) {
                   const ptVal = stakeTier / maxPenaltyCap;
-                  const penalty = Math.min(maxPenaltyCap, Math.max(0, p.score));
+                  const penalty = p.score > 0
+                    ? Math.min(maxPenaltyCap, p.score)
+                    : (p.status === 'DROPPED' ? (isRummy21 ? 30 : 20) : maxPenaltyCap);
                   pLoss = Math.min(stakeTier, penalty * ptVal);
                   pRefund = Math.max(0, stakeTier - pLoss);
                 } else {
-                  pLoss = stakeTier;
+                  pLoss = isIntermediateDeal ? 0 : stakeTier;
                   pRefund = 0;
                 }
               }
@@ -1336,9 +1338,17 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                               won ? 'result-row-delta--win' : 'result-row-delta--loss'
                             }`}
                           >
-                            {splitPayouts?.[p.playerId] != null
-                              ? `+₹${Number(splitPayouts[p.playerId]).toFixed(2)}`
-                              : won ? `+₹${Number(displayPrize).toFixed(2)}` : `-₹${Number(pLoss).toFixed(2)}`}
+                            {isIntermediateDeal ? (
+                              isDeals ? (
+                                won ? `+${p.score || 0} chips` : `-${p.score || 0} chips`
+                              ) : (
+                                won ? `0 pts (Deal Won)` : `+${p.score || 0} pts`
+                              )
+                            ) : (
+                              splitPayouts?.[p.playerId] != null
+                                ? `+₹${Number(splitPayouts[p.playerId]).toFixed(2)}`
+                                : won ? `+₹${Number(displayPrize).toFixed(2)}` : `-₹${Number(pLoss).toFixed(2)}`
+                            )}
                           </div>
 
                           <div className="result-row-score-sub">
@@ -1356,12 +1366,12 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                                 )}
                               </>
                             )}
-                            {pRefund !== undefined && pRefund > 0 && !isPool && !isDeals && (
+                            {pRefund !== undefined && pRefund > 0 && !isPool && !isDeals && !isIntermediateDeal && (
                               <span style={{ color: '#34d399', marginLeft: '6px' }}>
                                 (+₹{Number(pRefund).toFixed(2)} refund)
                               </span>
                             )}
-                            {won && (
+                            {won && !isIntermediateDeal && (
                               <span style={{ color: '#34d399', marginLeft: '6px' }}>
                                 (Total Credit: ₹{isPointsBased
                                   ? (Number(playerDetail?.initialStake ?? stakeTier) + Number(displayPrize)).toFixed(2)

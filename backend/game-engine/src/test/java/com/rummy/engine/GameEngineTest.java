@@ -229,6 +229,8 @@ class GameEngineTest {
                 finishCard.getInstanceId(), List.of(g1, g2, g3, g4), now), rules);
 
         assertThat(rDeclare.isSuccess()).isTrue();
+        assertThat(state.getStatus()).isEqualTo(GameStatus.SHOWDOWN);
+        engine.process(state, new ShowdownTimeoutCommand("to1", "G1", now), rules);
         assertThat(state.getStatus()).isEqualTo(GameStatus.COMPLETED);
         assertThat(state.getWinnerPlayerId()).isEqualTo("P1");
         assertThat(p1.getScore()).isEqualTo(0);

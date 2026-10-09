@@ -302,4 +302,36 @@ class WalletServiceTest {
         // Winner had 950 + 85 = 1035
         assertThat(walletService.getOrCreateWallet(winner).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1035.00));
     }
+
+    @Test
+    @DisplayName("Points Rummy with Bot Winner: Treasury gets Rake (15%) + Net Bot Win (85%) = exact human loss (no ghost stake)")
+    void testBotWinnerPointsRummySettlement() {
+        String botWinner = "BOT_ALICE";
+        String humanLoser = "USR_HUMAN_L";
+        fund(humanLoser);
+
+        BigDecimal stakeTier = BigDecimal.valueOf(100);
+        walletService.debit(humanLoser, stakeTier, "GAME_ENTRY_STAKE", "STAKE_BOT_M1_" + humanLoser, "MATCH_BOT_1", "Entry", null);
+
+        // Human loser has penalty 40 pts -> loss 50.00, refund 50.00
+        BigDecimal initialTreasury = walletService.getPlatformTreasuryBalance();
+
+        GameSettlementResult result = walletService.settleMatch(
+                "MATCH_BOT_1", "TBL_BOT_1", "POINTS_13", stakeTier, botWinner,
+                java.util.Map.of(botWinner, 0, humanLoser, 40),
+                List.of(botWinner, humanLoser)
+        );
+
+        assertThat(result).isNotNull();
+        assertThat(result.totalGrossPot()).isEqualByComparingTo(BigDecimal.valueOf(50.00));
+        assertThat(result.platformRakeAmount()).isEqualByComparingTo(BigDecimal.valueOf(7.50));
+        assertThat(result.netWinnerPrize()).isEqualByComparingTo(BigDecimal.valueOf(42.50));
+
+        // Human loser receives 50.00 refund (1000 - 100 + 50 = 950)
+        assertThat(walletService.getOrCreateWallet(humanLoser).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(950.00));
+
+        // Platform Treasury received exactly 7.50 (rake) + 42.50 (bot house win) = 50.00 total
+        BigDecimal finalTreasury = walletService.getPlatformTreasuryBalance();
+        assertThat(finalTreasury.subtract(initialTreasury)).isEqualByComparingTo(BigDecimal.valueOf(50.00));
+    }
 }

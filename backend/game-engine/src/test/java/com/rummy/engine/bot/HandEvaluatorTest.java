@@ -85,14 +85,14 @@ class HandEvaluatorTest {
         CardInstance eightHearts = card(Suit.HEARTS, Rank.EIGHT, "8H");
         CardInstance twoDiamonds = card(Suit.DIAMONDS, Rank.TWO, "2D");
 
-        // Consecutive run: 8♠ with 9♠ -> 18
-        assertThat(HandEvaluator.calculateConnectorScore(eightSpades, List.of(eightSpades, nineSpades), null)).isEqualTo(18);
+        // Consecutive run: 8♠ with 9♠ -> 20 (4 outs * 5)
+        assertThat(HandEvaluator.calculateConnectorScore(eightSpades, List.of(eightSpades, nineSpades), null)).isEqualTo(20);
 
         // One-gap run: 8♠ with 10♠ -> 10
         assertThat(HandEvaluator.calculateConnectorScore(eightSpades, List.of(eightSpades, tenSpades), null)).isEqualTo(10);
 
-        // Same rank pair: 8♠ with 8♥ -> 12
-        assertThat(HandEvaluator.calculateConnectorScore(eightSpades, List.of(eightSpades, eightHearts), null)).isEqualTo(12);
+        // Same rank pair: 8♠ with 8♥ -> 14 (4 outs * 3.5)
+        assertThat(HandEvaluator.calculateConnectorScore(eightSpades, List.of(eightSpades, eightHearts), null)).isEqualTo(14);
 
         // Isolated card: 8♠ with 2♦ -> 0
         assertThat(HandEvaluator.calculateConnectorScore(eightSpades, List.of(eightSpades, twoDiamonds), null)).isEqualTo(0);

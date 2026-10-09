@@ -68,6 +68,9 @@ class BotDropSimulationTest {
                 assertThat(engine.process(state, cmd, rules).isSuccess()).isTrue();
                 actions++;
             }
+            if (state.getStatus() == GameStatus.SHOWDOWN) {
+                engine.process(state, new ShowdownTimeoutCommand("to_" + gameId, gameId, now), rules);
+            }
             if (state.getStatus() != GameStatus.COMPLETED) {
                 continue;
             }
