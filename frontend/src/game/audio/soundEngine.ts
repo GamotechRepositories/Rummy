@@ -19,7 +19,8 @@ type SoundName =
   | 'deal'
   | 'tick'
   | 'modal'
-  | 'join';
+  | 'join'
+  | 'declare';
 
 const MUTE_KEY = 'rummy_sound_muted';
 
@@ -35,6 +36,7 @@ const SOUND_FILES = {
   'slide-1': ['/sounds/card-slide.wav', '/sounds/card-slide.mp3'],
   'slide-2': ['/sounds/card-slide-2.wav', '/sounds/card-slide-2.mp3'],
   'fan': ['/sounds/card-fan.wav', '/sounds/card-fan.mp3'],
+  'declare': ['/sounds/alphix-game-over-417465.mp3'],
 } as const;
 
 class SoundEngine {
@@ -48,8 +50,10 @@ class SoundEngine {
   private coinAudioIndex = 0;
   private winAudio: HTMLAudioElement | null = null;
   private loseAudio: HTMLAudioElement | null = null;
+  private declareAudio: HTMLAudioElement | null = null;
   private lastWinPlay = 0;
   private lastLosePlay = 0;
+  private lastDeclarePlay = 0;
   private lastSoundTimes: Partial<Record<SoundName, number>> = {};
 
   constructor() {
@@ -73,6 +77,8 @@ class SoundEngine {
         this.winAudio.volume = 0.8;
         this.loseAudio = new Audio('/sounds/mixkit-player-losing-or-failing-2042.wav');
         this.loseAudio.volume = 0.75;
+        this.declareAudio = new Audio('/sounds/alphix-game-over-417465.mp3');
+        this.declareAudio.volume = 0.85;
       } catch {
         // ignore
       }
@@ -473,6 +479,41 @@ class SoundEngine {
     }
   }
 
+  /**
+   * Play game over / match declared sound.
+   * Plays when a player declares the match (for both the declaring player and opponents).
+   * Source: /sounds/alphix-game-over-417465.mp3
+   */
+  playDeclare(): void {
+    if (this.muted) return;
+    const now = performance.now();
+    if (now - this.lastDeclarePlay < 3000) return;
+    this.lastDeclarePlay = now;
+
+    const ctx = this.ensureCtx();
+    if (ctx && ctx.state === 'suspended') void ctx.resume();
+
+    const sample = this.sampleBuffers.get('declare');
+    if (sample && ctx) {
+      this.playBuffer(sample, { volume: 0.85, playbackRate: 1.0 });
+      return;
+    }
+
+    if (this.declareAudio) {
+      try {
+        this.declareAudio.currentTime = 0;
+        void this.declareAudio.play().catch(() => {});
+        return;
+      } catch {
+        // fallback
+      }
+    }
+
+    if (ctx) {
+      this.arpeggio(ctx, [523, 659, 784, 1046], 0.08, 0.1);
+    }
+  }
+
   play(name: SoundName): void {
     if (this.muted) return;
     const now = performance.now();
@@ -516,6 +557,9 @@ class SoundEngine {
         break;
       case 'lose':
         this.playLose();
+        break;
+      case 'declare':
+        this.playDeclare();
         break;
       case 'error':
         this.tone(ctx, 180, 0.16, 'sawtooth', 0.06);

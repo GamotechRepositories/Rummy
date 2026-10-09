@@ -101,6 +101,10 @@ export const GameBoard: React.FC = () => {
     prevStatusRef.current = status;
     prevDealNumberRef.current = dealNum;
 
+    if (prev && prev !== 'SHOWDOWN' && status === 'SHOWDOWN') {
+      soundEngine.play('declare');
+    }
+
     if (status === 'WAITING_FOR_PLAYERS') {
       dealPlayedKeyRef.current = null;
       setDealPlaying(false);

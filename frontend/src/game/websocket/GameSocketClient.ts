@@ -183,6 +183,11 @@ class GameSocketClient {
           ) {
             soundEngine.play('turn');
           } else if (
+            prev?.gameStatus !== 'SHOWDOWN' &&
+            next.gameStatus === 'SHOWDOWN'
+          ) {
+            soundEngine.play('declare');
+          } else if (
             prev?.gameStatus === 'IN_PROGRESS' &&
             next.gameStatus === 'COMPLETED'
           ) {
@@ -196,7 +201,13 @@ class GameSocketClient {
         if (msg.payload && typeof msg.payload === 'object' && 'eventType' in msg.payload) {
           const evt = msg.payload as { eventType: string };
           useGameStore.getState().setLastEventMessage(evt.eventType);
-          if (evt.eventType.includes('Started') || evt.eventType === 'GAME_STARTED') {
+          if (evt.eventType === 'ShowdownStartedEvent' || evt.eventType === 'DeclareAcceptedEvent') {
+            soundEngine.play('declare');
+          } else if (
+            evt.eventType === 'GameStartedEvent' ||
+            evt.eventType === 'GAME_STARTED' ||
+            (evt.eventType.includes('Started') && !evt.eventType.includes('Showdown'))
+          ) {
             soundEngine.play('deal');
           }
         }
