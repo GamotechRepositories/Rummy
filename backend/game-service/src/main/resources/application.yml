@@ -142,6 +142,9 @@ rummy:
   game:
     turn-duration-seconds: 30
     auto-drop-missed-turns: 3
+  bot:
+    enabled: ${RUMMY_BOT_ENABLED:true}
+    daily-loss-cap: ${RUMMY_BOT_DAILY_LOSS_CAP:10000}
 
 matchmaking:
   ai-fallback-timeout-ms: ${MATCHMAKING_AI_FALLBACK_MS:15000}

@@ -60,6 +60,12 @@ public class WalletService {
     private OperatorRegistry operators;
     private OperatorWalletClient operatorWallet;
     private OperatorWalletOutbox outbox;
+    private com.rummy.gameservice.matchmaking.BotBudgetService botBudgetService;
+
+    @Autowired(required = false)
+    public void setBotBudgetService(com.rummy.gameservice.matchmaking.BotBudgetService botBudgetService) {
+        this.botBudgetService = botBudgetService;
+    }
 
     private final Map<String, WalletAccountDocument> memoryAccounts = new ConcurrentHashMap<>();
     private final Map<String, WalletTransactionDocument> memoryTransactions = new ConcurrentHashMap<>();
@@ -232,7 +238,7 @@ public class WalletService {
         if (after.signum() < 0 && !PLATFORM_TREASURY.equals(playerId)) {
             throw insufficientBalance(playerId, before, delta.negate());
         }
-        account.setBalance(after);
+        applyBalanceAdjustment(account, delta, type, playerId);
         account.setUpdatedAt(Instant.now());
         accountRepository.save(account);
 
@@ -253,7 +259,7 @@ public class WalletService {
         for (int attempt = 1; attempt <= MAX_WRITE_ATTEMPTS; attempt++) {
             try {
                 WalletAccountDocument account = accountRepository.findByPlayerId(playerId).orElseThrow();
-                account.setBalance(account.getBalance().subtract(delta));
+                applyBalanceAdjustment(account, delta.negate(), "REVERT", playerId);
                 account.setUpdatedAt(Instant.now());
                 accountRepository.save(account);
                 return;
@@ -284,13 +290,85 @@ public class WalletService {
             if (after.signum() < 0 && !PLATFORM_TREASURY.equals(playerId)) {
                 throw insufficientBalance(playerId, before, delta.negate());
             }
-            account.setBalance(after);
+            applyBalanceAdjustment(account, delta, type, playerId);
             account.setUpdatedAt(Instant.now());
             WalletTransactionDocument tx = new WalletTransactionDocument(
                     key, playerId, gameId, type, delta.abs(), before, after, account.getCurrency(), description, meta);
             memoryTransactions.put(key, tx);
             return tx;
         }
+    }
+
+    /**
+     * Segregates deposits, winnings, and bonuses based on RMG compliance:
+     * - "GAME_WIN" & "BOT_HOUSE_WIN" increase winningsBalance.
+     * - "PROMOTIONAL_CREDIT" & "BONUS" increase bonusBalance.
+     * - "DEPOSIT", "GAME_REFUND", or general deposit increases depositBalance.
+     * - "WITHDRAWAL" can only withdraw from winningsBalance.
+     * - Stakes are debited prioritizing Bonus -> Deposit -> Winnings.
+     */
+    private void applyBalanceAdjustment(WalletAccountDocument account, BigDecimal delta, String type, String playerId) {
+        if (PLATFORM_TREASURY.equals(playerId)) {
+            account.setBalance(account.getBalance().add(delta));
+            return;
+        }
+
+        if (delta.signum() >= 0) {
+            BigDecimal amount = delta;
+            if ("GAME_WIN".equalsIgnoreCase(type) || "BOT_HOUSE_WIN".equalsIgnoreCase(type)) {
+                account.setWinningsBalance(account.getWinningsBalance().add(amount));
+            } else if ("PROMOTIONAL_CREDIT".equalsIgnoreCase(type) || (type != null && type.toUpperCase().contains("BONUS"))) {
+                account.setBonusBalance(account.getBonusBalance().add(amount));
+            } else {
+                account.setDepositBalance(account.getDepositBalance().add(amount));
+            }
+        } else {
+            BigDecimal amount = delta.abs();
+            if ("WITHDRAWAL".equalsIgnoreCase(type)) {
+                // In B2B model, operator cashier manages withdrawal permissions.
+                // Withdrawal deducts from winnings first, then deposit balance.
+                BigDecimal remaining = amount;
+                BigDecimal win = account.getWinningsBalance();
+                if (win.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal deductWin = win.min(remaining);
+                    account.setWinningsBalance(win.subtract(deductWin));
+                    remaining = remaining.subtract(deductWin);
+                }
+                if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal dep = account.getDepositBalance();
+                    if (dep.compareTo(BigDecimal.ZERO) > 0) {
+                        BigDecimal deductDep = dep.min(remaining);
+                        account.setDepositBalance(dep.subtract(deductDep));
+                        remaining = remaining.subtract(deductDep);
+                    }
+                }
+                if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal bonus = account.getBonusBalance();
+                    account.setBonusBalance(bonus.subtract(remaining));
+                }
+            } else {
+                BigDecimal remaining = amount;
+                BigDecimal bonus = account.getBonusBalance();
+                if (bonus.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal deductBonus = bonus.min(remaining);
+                    account.setBonusBalance(bonus.subtract(deductBonus));
+                    remaining = remaining.subtract(deductBonus);
+                }
+                if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal dep = account.getDepositBalance();
+                    if (dep.compareTo(BigDecimal.ZERO) > 0) {
+                        BigDecimal deductDep = dep.min(remaining);
+                        account.setDepositBalance(dep.subtract(deductDep));
+                        remaining = remaining.subtract(deductDep);
+                    }
+                }
+                if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal win = account.getWinningsBalance();
+                    account.setWinningsBalance(win.subtract(remaining));
+                }
+            }
+        }
+        account.syncTotalBalance();
     }
 
     private static InsufficientBalanceException insufficientBalance(String playerId, BigDecimal balance, BigDecimal required) {
@@ -543,6 +621,8 @@ public class WalletService {
         Map<String, GameSettlementResult.PlayerSettlementDetail> details = new LinkedHashMap<>();
         List<String> failedPayouts = new ArrayList<>();
         BigDecimal totalGrossPot = BigDecimal.ZERO;
+        BigDecimal humanLoserLosses = BigDecimal.ZERO;
+        BigDecimal botLoserLosses = BigDecimal.ZERO;
 
         if (isPointsBased) {
             // Points Rummy (80 cap for 13 cards, 120 cap for 21 cards). Point value = stakeTier / maxPenaltyCap.
@@ -560,31 +640,22 @@ public class WalletService {
                 BigDecimal refund = stakeTier.subtract(loss).setScale(2, java.math.RoundingMode.HALF_UP);
                 totalGrossPot = totalGrossPot.add(loss);
 
-                // If bot player lost, debit house loss from platform treasury (Method 2: Gross Accounting)
                 if (pId.startsWith("BOT_")) {
-                    if (loss.compareTo(BigDecimal.ZERO) > 0) {
-                        String botLossKey = "BOT_LOSS_" + gameId + "_" + pId;
+                    botLoserLosses = botLoserLosses.add(loss);
+                } else {
+                    humanLoserLosses = humanLoserLosses.add(loss);
+                    if (refund.compareTo(BigDecimal.ZERO) > 0) {
+                        // If human player dropped early, refund their unlost stake
+                        String refundKey = "REFUND_" + gameId + "_" + pId;
                         try {
-                            debit(PLATFORM_TREASURY, loss, "BOT_HOUSE_LOSS", botLossKey, gameId,
-                                    "House Bot loss (" + penalty + " pts) for " + gameId + " (" + rId + ")",
-                                    Map.of("gameId", gameId, "botId", pId, "penalty", penalty, "loss", loss, "variant", rId));
+                            credit(pId, refund, "GAME_REFUND", refundKey, gameId,
+                                    "Unlost stake refund (" + penalty + " pts) for " + gameId + " (" + rId + ")",
+                                    Map.of("gameId", gameId, "penalty", penalty, "refund", refund, "variant", rId));
                         } catch (Exception e) {
-                            log.error("[Wallet] Failed to debit house bot loss {} for bot {} in gameId={}: {}",
-                                    loss, pId, gameId, e.getMessage());
-                            failedPayouts.add(botLossKey);
+                            log.error("[Wallet] Failed to credit refund {} to {} for gameId={}: {}",
+                                    refund, pId, gameId, e.getMessage());
+                            failedPayouts.add(refundKey);
                         }
-                    }
-                } else if (refund.compareTo(BigDecimal.ZERO) > 0) {
-                    // If human player dropped early, refund their unlost stake
-                    String refundKey = "REFUND_" + gameId + "_" + pId;
-                    try {
-                        credit(pId, refund, "GAME_REFUND", refundKey, gameId,
-                                "Unlost stake refund (" + penalty + " pts) for " + gameId + " (" + rId + ")",
-                                Map.of("gameId", gameId, "penalty", penalty, "refund", refund, "variant", rId));
-                    } catch (Exception e) {
-                        log.error("[Wallet] Failed to credit refund {} to {} for gameId={}: {}",
-                                refund, pId, gameId, e.getMessage());
-                        failedPayouts.add(refundKey);
                     }
                 }
 
@@ -600,17 +671,11 @@ public class WalletService {
                 BigDecimal playerContribution = stakeTier.multiply(BigDecimal.valueOf(1 + rejoins));
                 totalGrossPot = totalGrossPot.add(playerContribution);
 
-                // If bot player participated, debit their tournament stake from platform treasury (House Stake)
-                if (pId.startsWith("BOT_") && playerContribution.compareTo(BigDecimal.ZERO) > 0) {
-                    String botLossKey = "BOT_LOSS_" + gameId + "_" + pId;
-                    try {
-                        debit(PLATFORM_TREASURY, playerContribution, "BOT_HOUSE_LOSS", botLossKey, gameId,
-                                "House Bot tournament stake for " + gameId + " (" + rId + ")",
-                                Map.of("gameId", gameId, "botId", pId, "contribution", playerContribution, "variant", rId));
-                    } catch (Exception e) {
-                        log.error("[Wallet] Failed to debit house bot tournament stake {} for bot {} in gameId={}: {}",
-                                playerContribution, pId, gameId, e.getMessage());
-                        failedPayouts.add(botLossKey);
+                if (!pId.equals(winnerPlayerId) && (splitDrops == null || !splitDrops.containsKey(pId))) {
+                    if (pId.startsWith("BOT_")) {
+                        botLoserLosses = botLoserLosses.add(playerContribution);
+                    } else {
+                        humanLoserLosses = humanLoserLosses.add(playerContribution);
                     }
                 }
 
@@ -625,17 +690,69 @@ public class WalletService {
             }
         }
 
-        // Platform Rake (15%)
+        // Platform Rake (15%) for Game display and prize calculation
         BigDecimal platformRake = totalGrossPot.multiply(DEFAULT_RAKE_RATE).setScale(2, java.math.RoundingMode.HALF_UP);
         BigDecimal netWinnerPrize = totalGrossPot.subtract(platformRake).setScale(2, java.math.RoundingMode.HALF_UP);
 
-        // Record Platform Treasury Rake
-        if (platformRake.compareTo(BigDecimal.ZERO) > 0) {
+        boolean isBotWinner = winnerPlayerId.startsWith("BOT_");
+        boolean hasBotLosers = botLoserLosses.compareTo(BigDecimal.ZERO) > 0;
+
+        // REAL RAKE & BOT LOSS SETTLEMENT:
+        // Rule: Only real human funds generate real rake!
+        // When bots lose against humans, NO phantom rake is credited to Treasury.
+        BigDecimal realTreasuryRake = BigDecimal.ZERO;
+        if (!hasBotLosers) {
+            // Pure P2P match between humans: 100% of rake is real revenue
+            realTreasuryRake = platformRake;
+        } else if (isBotWinner) {
+            // Bot won against humans: Rake is genuine from human losses
+            realTreasuryRake = platformRake;
+        } else {
+            // Human won and bot lost:
+            // Rake is NOT credited to Treasury (avoids phantom profit).
+            // Any rake taken from human losers beyond winner prize is real, otherwise zero:
+            if (humanLoserLosses.compareTo(netWinnerPrize) > 0) {
+                realTreasuryRake = humanLoserLosses.subtract(netWinnerPrize).min(platformRake);
+            } else {
+                realTreasuryRake = BigDecimal.ZERO;
+            }
+        }
+
+        // Debit Bot House Loss from Treasury only for the actual net shortfall funded by the house
+        if (hasBotLosers && !isBotWinner) {
+            BigDecimal netHouseLoss;
+            if (humanLoserLosses.compareTo(BigDecimal.ZERO) == 0) {
+                // 1v1 match: Human vs Bot! Human won, Bot lost!
+                netHouseLoss = isPointsBased ? netWinnerPrize : netWinnerPrize.subtract(stakeTier);
+            } else {
+                // Multiplayer: House covers whatever human losers didn't cover
+                netHouseLoss = netWinnerPrize.subtract(humanLoserLosses).max(BigDecimal.ZERO);
+            }
+
+            if (netHouseLoss.compareTo(BigDecimal.ZERO) > 0) {
+                String botLossKey = "BOT_LOSS_" + gameId;
+                try {
+                    debit(PLATFORM_TREASURY, netHouseLoss, "BOT_HOUSE_LOSS", botLossKey, gameId,
+                            "House Bot net loss for " + gameId + " (" + rId + ")",
+                            Map.of("gameId", gameId, "netHouseLoss", netHouseLoss, "variant", rId));
+                    if (botBudgetService != null) {
+                        botBudgetService.recordBotLoss(netHouseLoss);
+                    }
+                } catch (Exception e) {
+                    log.error("[Wallet] Failed to debit net house bot loss {} in gameId={}: {}",
+                            netHouseLoss, gameId, e.getMessage());
+                    failedPayouts.add(botLossKey);
+                }
+            }
+        }
+
+        // Record Platform Treasury Rake (only when positive and real)
+        if (realTreasuryRake.compareTo(BigDecimal.ZERO) > 0) {
             String rakeKey = "RAKE_" + gameId;
             try {
-                credit(PLATFORM_TREASURY, platformRake, "PLATFORM_RAKE", rakeKey, gameId,
+                credit(PLATFORM_TREASURY, realTreasuryRake, "PLATFORM_RAKE", rakeKey, gameId,
                         "Platform commission rake (15%) for " + gameId + " (" + rId + ")",
-                        Map.of("gameId", gameId, "tableId", tableId != null ? tableId : "", "grossPot", totalGrossPot, "rake", platformRake, "variant", rId));
+                        Map.of("gameId", gameId, "tableId", tableId != null ? tableId : "", "grossPot", totalGrossPot, "rake", realTreasuryRake, "variant", rId));
             } catch (Exception e) {
                 log.error("[Wallet] Failed to credit platform rake for gameId={}: {}", gameId, e.getMessage());
                 failedPayouts.add(rakeKey);
@@ -695,7 +812,6 @@ public class WalletService {
         // Credit Winner
         int winnerRejoins = (rejoinCounts != null) ? rejoinCounts.getOrDefault(winnerPlayerId, 0) : 0;
         BigDecimal winnerTotalPaid = isPointsBased ? stakeTier : stakeTier.multiply(BigDecimal.valueOf(1 + winnerRejoins));
-        boolean isBotWinner = winnerPlayerId.startsWith("BOT_");
         BigDecimal winnerCreditAmount;
         if (isBotWinner) {
             winnerCreditAmount = netWinnerPrize;
@@ -722,6 +838,9 @@ public class WalletService {
                 credit(PLATFORM_TREASURY, winnerCreditAmount, "BOT_HOUSE_WIN", botWinKey, gameId,
                         "House Bot win payout for " + gameId,
                         Map.of("gameId", gameId, "botId", winnerPlayerId, "amount", winnerCreditAmount));
+                if (botBudgetService != null) {
+                    botBudgetService.recordBotWin(winnerCreditAmount);
+                }
             } catch (Exception e) {
                 log.error("[Wallet] Failed to credit house bot win for gameId={}: {}", gameId, e.getMessage());
                 failedPayouts.add(botWinKey);

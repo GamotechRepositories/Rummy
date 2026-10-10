@@ -58,6 +58,12 @@ public class MatchmakingService {
     private final Map<String, OpenTable> openByTable = new HashMap<>();
     private NodeDrainState drainState;
     private StakeEscrowService escrows;
+    private BotBudgetService botBudgetService;
+
+    @Autowired(required = false)
+    public void setBotBudgetService(BotBudgetService botBudgetService) {
+        this.botBudgetService = botBudgetService;
+    }
 
     @Autowired
     public MatchmakingService(
@@ -283,6 +289,7 @@ public class MatchmakingService {
             if (!matchedGroup.isEmpty()) {
                 boolean anyTimedOut = matchedGroup.stream().anyMatch(t ->
                         t.isAllowAiFallback()
+                                && (botBudgetService == null || botBudgetService.canSpawnBot(t.getStakeTier()))
                                 && Duration.between(t.getCreatedAt(), Instant.now()).toMillis() >= aiFallbackTimeoutMs
                 );
 
@@ -321,7 +328,8 @@ public class MatchmakingService {
             routingRegistry.registerPlayerTable(ticket.getPlayerId(), tableId);
         }
 
-        if (fillWithAi) {
+        boolean botsPermitted = botBudgetService == null || botBudgetService.canSpawnBot(first.getStakeTier());
+        if (fillWithAi && botsPermitted) {
             int neededBots = Math.max(0, first.getMaxPlayers() - humanTickets.size());
 
             if (neededBots > 0) {

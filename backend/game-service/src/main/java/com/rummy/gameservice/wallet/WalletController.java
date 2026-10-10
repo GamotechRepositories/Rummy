@@ -38,9 +38,14 @@ public class WalletController {
     public ResponseEntity<Map<String, Object>> getBalance(HttpServletRequest request,
                                                           @RequestParam(required = false) String playerId) {
         String owner = AuthenticatedPlayer.resolve(request, playerId);
+        WalletAccountDocument account = walletService.getOrCreateWallet(owner);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("playerId", owner);
         body.put("balance", walletService.balanceOf(owner));
+        body.put("depositBalance", account.getDepositBalance());
+        body.put("winningsBalance", account.getWinningsBalance());
+        body.put("bonusBalance", account.getBonusBalance());
+        body.put("withdrawableBalance", account.getWinningsBalance());
         body.put("currency", WalletAccountDocument.CURRENCY);
         body.put("cashierUrl", cashierUrl(owner));
         return ResponseEntity.ok(body);

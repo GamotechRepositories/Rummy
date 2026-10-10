@@ -336,7 +336,7 @@ class WalletServiceTest {
     }
 
     @Test
-    @DisplayName("Points Rummy with Human Winner: Treasury pays Bot Loss (50) - Rake (7.50) = Net -42.50 (exact human net gain)")
+    @DisplayName("Points Rummy with Human Winner: Treasury pays exact net loss (42.50), NO phantom rake credited to treasury")
     void testHumanWinnerAgainstBotPointsRummySettlement() {
         String humanWinner = "USR_HUMAN_W";
         String botLoser = "BOT_BOB";
@@ -362,17 +362,17 @@ class WalletServiceTest {
         // Human winner receives 100 (stake refund) + 42.50 (prize) = 142.50 (balance: 900 + 142.50 = 1042.50, net gain +42.50)
         assertThat(walletService.getOrCreateWallet(humanWinner).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1042.50));
 
-        // Platform Treasury debited 50.00 (BOT_HOUSE_LOSS) and credited 7.50 (PLATFORM_RAKE) -> net delta = -42.50
+        // Platform Treasury debited exactly 42.50 (net house loss), NO phantom rake is credited -> net delta = -42.50
         BigDecimal finalTreasury = walletService.getPlatformTreasuryBalance();
         assertThat(finalTreasury.subtract(initialTreasury)).isEqualByComparingTo(BigDecimal.valueOf(-42.50));
 
-        // Ledger verify: BOT_HOUSE_LOSS transaction exists
-        assertThat(walletService.hasTransaction("BOT_LOSS_MATCH_BOT_2_" + botLoser)).isTrue();
-        assertThat(walletService.hasTransaction("RAKE_MATCH_BOT_2")).isTrue();
+        // Ledger verify: BOT_HOUSE_LOSS transaction exists, but NO phantom RAKE transaction in treasury
+        assertThat(walletService.hasTransaction("BOT_LOSS_MATCH_BOT_2")).isTrue();
+        assertThat(walletService.hasTransaction("RAKE_MATCH_BOT_2")).isFalse();
     }
 
     @Test
-    @DisplayName("Pool Rummy with Human Winner: Treasury pays Bot Stake (100) - Rake (30) = Net -70.00 (exact human net gain)")
+    @DisplayName("Pool Rummy with Human Winner: Treasury pays exact net prize shortfall (70.00), NO phantom rake credited to treasury")
     void testHumanWinnerAgainstBotPoolRummySettlement() {
         String humanWinner = "USR_HUMAN_POOL_W";
         String botLoser = "BOT_CHARLIE";
@@ -398,11 +398,57 @@ class WalletServiceTest {
         // Human winner receives 170.00 net prize (balance: 900 + 170 = 1070.00, net gain +70.00)
         assertThat(walletService.getOrCreateWallet(humanWinner).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(1070.00));
 
-        // Treasury debited 100.00 (bot tournament stake) and credited 30.00 (rake) -> net delta = -70.00
+        // Treasury debited 70.00 (net house loss), NO phantom rake credited -> net delta = -70.00
         BigDecimal finalTreasury = walletService.getPlatformTreasuryBalance();
         assertThat(finalTreasury.subtract(initialTreasury)).isEqualByComparingTo(BigDecimal.valueOf(-70.00));
 
-        assertThat(walletService.hasTransaction("BOT_LOSS_MATCH_POOL_BOT_1_" + botLoser)).isTrue();
-        assertThat(walletService.hasTransaction("RAKE_MATCH_POOL_BOT_1")).isTrue();
+        assertThat(walletService.hasTransaction("BOT_LOSS_MATCH_POOL_BOT_1")).isTrue();
+        assertThat(walletService.hasTransaction("RAKE_MATCH_POOL_BOT_1")).isFalse();
+    }
+
+    @Test
+    @DisplayName("Segregated Wallets: Deposit, Winnings, and Bonus balances with withdrawal restrictions")
+    void testSegregatedWalletBalances() {
+        String playerId = "USR_SEGREGATED";
+        WalletAccountDocument wallet = walletService.getOrCreateWallet(playerId);
+
+        // 1. Initial credit as Deposit
+        walletService.credit(playerId, BigDecimal.valueOf(500), "DEPOSIT", "DEP_1", null, "Deposit", null);
+        wallet = walletService.getOrCreateWallet(playerId);
+        assertThat(wallet.getDepositBalance()).isEqualByComparingTo(BigDecimal.valueOf(500));
+        assertThat(wallet.getWinningsBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(wallet.getBonusBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(wallet.getBalance()).isEqualByComparingTo(BigDecimal.valueOf(500));
+
+        // 2. In B2B model, withdrawals from player balance are handled by operator cashier
+        walletService.debit(playerId, BigDecimal.valueOf(100), "WITHDRAWAL", "WTH_1", null, "Cashout", null);
+        wallet = walletService.getOrCreateWallet(playerId);
+        assertThat(wallet.getDepositBalance()).isEqualByComparingTo(BigDecimal.valueOf(400));
+        assertThat(wallet.getBalance()).isEqualByComparingTo(BigDecimal.valueOf(400));
+
+        // 3. Add Promotional Bonus and Game Win
+        walletService.credit(playerId, BigDecimal.valueOf(50), "PROMOTIONAL_CREDIT", "BONUS_1", null, "Promo", null);
+        walletService.credit(playerId, BigDecimal.valueOf(200), "GAME_WIN", "WIN_1", null, "Game Win", null);
+        wallet = walletService.getOrCreateWallet(playerId);
+
+        assertThat(wallet.getDepositBalance()).isEqualByComparingTo(BigDecimal.valueOf(400));
+        assertThat(wallet.getBonusBalance()).isEqualByComparingTo(BigDecimal.valueOf(50));
+        assertThat(wallet.getWinningsBalance()).isEqualByComparingTo(BigDecimal.valueOf(200));
+        assertThat(wallet.getBalance()).isEqualByComparingTo(BigDecimal.valueOf(650));
+
+        // 4. Withdrawal deducts from winnings first
+        walletService.debit(playerId, BigDecimal.valueOf(150), "WITHDRAWAL", "WTH_OK", null, "Cashout", null);
+        wallet = walletService.getOrCreateWallet(playerId);
+        assertThat(wallet.getWinningsBalance()).isEqualByComparingTo(BigDecimal.valueOf(50));
+        assertThat(wallet.getBalance()).isEqualByComparingTo(BigDecimal.valueOf(500));
+
+        // 5. Game entry debits prioritize Bonus -> Deposit -> Winnings
+        walletService.debit(playerId, BigDecimal.valueOf(100), "GAME_ENTRY", "ENTRY_1", null, "Game Entry", null);
+        wallet = walletService.getOrCreateWallet(playerId);
+        // Bonus was 50 -> reduced to 0. Remaining 50 taken from Deposit (400 -> 350). Winnings untouched (50).
+        assertThat(wallet.getBonusBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(wallet.getDepositBalance()).isEqualByComparingTo(BigDecimal.valueOf(350));
+        assertThat(wallet.getWinningsBalance()).isEqualByComparingTo(BigDecimal.valueOf(50));
+        assertThat(wallet.getBalance()).isEqualByComparingTo(BigDecimal.valueOf(400));
     }
 }

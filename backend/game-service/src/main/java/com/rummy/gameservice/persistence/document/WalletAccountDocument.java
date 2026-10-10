@@ -27,6 +27,11 @@ public class WalletAccountDocument implements Serializable {
     private String playerId;
 
     private BigDecimal balance;
+    /** Segregated balances: Deposits, Winnings (withdrawable), and Promotional Bonus */
+    private BigDecimal depositBalance;
+    private BigDecimal winningsBalance;
+    private BigDecimal bonusBalance;
+
     /** Pre-INR accounts stored their balance here; read only when {@link #balance} was never written. */
     private BigDecimal freePlayBalance;
     private String currency;
@@ -38,6 +43,9 @@ public class WalletAccountDocument implements Serializable {
 
     public WalletAccountDocument() {
         this.balance = BigDecimal.ZERO;
+        this.depositBalance = BigDecimal.ZERO;
+        this.winningsBalance = BigDecimal.ZERO;
+        this.bonusBalance = BigDecimal.ZERO;
         this.currency = CURRENCY;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
@@ -68,11 +76,45 @@ public class WalletAccountDocument implements Serializable {
         if (balance != null) {
             return balance;
         }
+        if (depositBalance != null || winningsBalance != null || bonusBalance != null) {
+            return getDepositBalance().add(getWinningsBalance()).add(getBonusBalance());
+        }
         return freePlayBalance != null ? freePlayBalance : BigDecimal.ZERO;
     }
 
     public void setBalance(BigDecimal balance) {
         this.balance = balance;
+    }
+
+    public BigDecimal getDepositBalance() {
+        if (depositBalance != null) {
+            return depositBalance;
+        }
+        return balance != null ? balance : BigDecimal.ZERO;
+    }
+
+    public void setDepositBalance(BigDecimal depositBalance) {
+        this.depositBalance = depositBalance;
+    }
+
+    public BigDecimal getWinningsBalance() {
+        return winningsBalance != null ? winningsBalance : BigDecimal.ZERO;
+    }
+
+    public void setWinningsBalance(BigDecimal winningsBalance) {
+        this.winningsBalance = winningsBalance;
+    }
+
+    public BigDecimal getBonusBalance() {
+        return bonusBalance != null ? bonusBalance : BigDecimal.ZERO;
+    }
+
+    public void setBonusBalance(BigDecimal bonusBalance) {
+        this.bonusBalance = bonusBalance;
+    }
+
+    public void syncTotalBalance() {
+        this.balance = getDepositBalance().add(getWinningsBalance()).add(getBonusBalance());
     }
 
     public String getCurrency() {
