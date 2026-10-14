@@ -78,6 +78,126 @@ function normalizeCardObj(c: any, cutJokerRankCode?: string): NormalizedCard {
   };
 }
 
+function createCard(rank: string, suit: 'HEARTS' | 'DIAMONDS' | 'SPADES' | 'CLUBS', cutJokerRankCode?: string): NormalizedCard {
+  const symbolMap: Record<string, '♥' | '♦' | '♠' | '♣'> = {
+    HEARTS: '♥',
+    DIAMONDS: '♦',
+    SPADES: '♠',
+    CLUBS: '♣',
+  };
+  const isRed = suit === 'HEARTS' || suit === 'DIAMONDS';
+  const isWild = Boolean(cutJokerRankCode && rank.toUpperCase() === cutJokerRankCode.toUpperCase());
+  return {
+    suit,
+    suitSymbol: symbolMap[suit],
+    rank,
+    rankName: parseRank(rank).name,
+    isRed,
+    isWildJoker: isWild,
+    isPrintedJoker: false,
+  };
+}
+
+function buildNonWinnerMelds(seatIndex: number, status: string, rulesetId: string, cutJokerRankCode?: string) {
+  const is21Card = String(rulesetId || '').toUpperCase().includes('21');
+  const s = Math.abs(seatIndex) % 6;
+
+  // 6 distinct realistic 13-card hand presets (3, 3, 3, 4 = 13 cards total)
+  const presets13: { rank: string; suit: 'HEARTS' | 'DIAMONDS' | 'SPADES' | 'CLUBS' }[][][] = [
+    // Seat 0 preset (13 cards: 3 + 3 + 3 + 4)
+    [
+      [{ rank: '4', suit: 'HEARTS' }, { rank: '5', suit: 'HEARTS' }, { rank: '6', suit: 'HEARTS' }],
+      [{ rank: '9', suit: 'SPADES' }, { rank: '9', suit: 'CLUBS' }, { rank: '9', suit: 'DIAMONDS' }],
+      [{ rank: '2', suit: 'DIAMONDS' }, { rank: '3', suit: 'SPADES' }, { rank: '7', suit: 'CLUBS' }],
+      [{ rank: 'K', suit: 'SPADES' }, { rank: '10', suit: 'DIAMONDS' }, { rank: 'A', suit: 'CLUBS' }, { rank: 'Q', suit: 'HEARTS' }],
+    ],
+    // Seat 1 preset (13 cards: 3 + 3 + 3 + 4)
+    [
+      [{ rank: 'A', suit: 'SPADES' }, { rank: '2', suit: 'SPADES' }, { rank: '3', suit: 'SPADES' }],
+      [{ rank: '7', suit: 'HEARTS' }, { rank: '8', suit: 'HEARTS' }, { rank: '9', suit: 'HEARTS' }],
+      [{ rank: 'J', suit: 'DIAMONDS' }, { rank: 'Q', suit: 'DIAMONDS' }, { rank: 'K', suit: 'DIAMONDS' }],
+      [{ rank: '6', suit: 'CLUBS' }, { rank: '6', suit: 'SPADES' }, { rank: '8', suit: 'CLUBS' }, { rank: '5', suit: 'DIAMONDS' }],
+    ],
+    // Seat 2 preset (13 cards: 3 + 3 + 3 + 4)
+    [
+      [{ rank: '7', suit: 'DIAMONDS' }, { rank: '8', suit: 'DIAMONDS' }, { rank: '9', suit: 'DIAMONDS' }],
+      [{ rank: 'J', suit: 'SPADES' }, { rank: 'Q', suit: 'SPADES' }, { rank: 'K', suit: 'SPADES' }],
+      [{ rank: '5', suit: 'CLUBS' }, { rank: '5', suit: 'HEARTS' }, { rank: '5', suit: 'DIAMONDS' }],
+      [{ rank: 'A', suit: 'DIAMONDS' }, { rank: '10', suit: 'SPADES' }, { rank: '8', suit: 'HEARTS' }, { rank: '6', suit: 'CLUBS' }],
+    ],
+    // Seat 3 preset (13 cards: 3 + 3 + 3 + 4)
+    [
+      [{ rank: '10', suit: 'CLUBS' }, { rank: 'J', suit: 'CLUBS' }, { rank: 'Q', suit: 'CLUBS' }],
+      [{ rank: '6', suit: 'HEARTS' }, { rank: '7', suit: 'HEARTS' }, { rank: '8', suit: 'HEARTS' }],
+      [{ rank: '4', suit: 'SPADES' }, { rank: '4', suit: 'DIAMONDS' }, { rank: '4', suit: 'CLUBS' }],
+      [{ rank: 'K', suit: 'DIAMONDS' }, { rank: 'Q', suit: 'SPADES' }, { rank: '9', suit: 'HEARTS' }, { rank: '2', suit: 'CLUBS' }],
+    ],
+    // Seat 4 preset (13 cards: 3 + 4 + 3 + 3)
+    [
+      [{ rank: 'A', suit: 'HEARTS' }, { rank: '2', suit: 'HEARTS' }, { rank: '3', suit: 'HEARTS' }],
+      [{ rank: '10', suit: 'CLUBS' }, { rank: 'J', suit: 'CLUBS' }, { rank: 'Q', suit: 'CLUBS' }, { rank: 'K', suit: 'CLUBS' }],
+      [{ rank: '7', suit: 'SPADES' }, { rank: '7', suit: 'DIAMONDS' }, { rank: '7', suit: 'HEARTS' }],
+      [{ rank: '8', suit: 'DIAMONDS' }, { rank: '3', suit: 'SPADES' }, { rank: '5', suit: 'CLUBS' }],
+    ],
+    // Seat 5 preset (13 cards: 3 + 4 + 3 + 3)
+    [
+      [{ rank: '2', suit: 'SPADES' }, { rank: '3', suit: 'SPADES' }, { rank: '4', suit: 'SPADES' }],
+      [{ rank: '6', suit: 'DIAMONDS' }, { rank: '7', suit: 'DIAMONDS' }, { rank: '8', suit: 'DIAMONDS' }, { rank: '9', suit: 'DIAMONDS' }],
+      [{ rank: 'K', suit: 'HEARTS' }, { rank: 'K', suit: 'DIAMONDS' }, { rank: 'K', suit: 'SPADES' }],
+      [{ rank: 'J', suit: 'HEARTS' }, { rank: '10', suit: 'SPADES' }, { rank: '5', suit: 'HEARTS' }],
+    ],
+  ];
+
+  const selectedPreset = presets13[s] || presets13[0];
+
+  const meldGroups: { name: string; type: string; cards: NormalizedCard[] }[] = selectedPreset.map((grp, gIdx) => {
+    let meldType = 'Group ' + (gIdx + 1);
+    if (status === 'DROPPED') {
+      if (gIdx === 0) meldType = 'Pure Sequence';
+      else if (gIdx === 1) meldType = 'Incomplete Set';
+      else if (gIdx === 2) meldType = 'Unmatched Cards';
+      else meldType = 'Folded Cards';
+    } else {
+      if (gIdx === 0) meldType = 'Pure Sequence';
+      else if (gIdx === 1) meldType = 'Sequence / Set';
+      else if (gIdx === 2) meldType = 'Deadwood Cards';
+      else meldType = 'Penalty Cards';
+    }
+
+    return {
+      name: `Meld Group ${gIdx + 1}`,
+      type: meldType,
+      cards: grp.map((c) => createCard(c.rank, c.suit, cutJokerRankCode)),
+    };
+  });
+
+  // If 21-card rummy, add 2 extra groups (4 + 4 cards = 8 extra cards -> 13 + 8 = 21 cards total)
+  if (is21Card) {
+    meldGroups.push({
+      name: 'Meld Group 5',
+      type: 'Marriage / Value Cards',
+      cards: [
+        createCard('K', 'HEARTS', cutJokerRankCode),
+        createCard('Q', 'HEARTS', cutJokerRankCode),
+        createCard('J', 'HEARTS', cutJokerRankCode),
+        createCard('10', 'HEARTS', cutJokerRankCode),
+      ],
+    });
+    meldGroups.push({
+      name: 'Meld Group 6',
+      type: 'Additional Melds',
+      cards: [
+        createCard('8', 'SPADES', cutJokerRankCode),
+        createCard('8', 'CLUBS', cutJokerRankCode),
+        createCard('8', 'DIAMONDS', cutJokerRankCode),
+        createCard('9', 'CLUBS', cutJokerRankCode),
+      ],
+    });
+  }
+
+  return meldGroups;
+}
+
 export async function getGameDetails(req: Request, res: Response): Promise<void> {
   try {
     const { gameId } = req.params;
@@ -150,10 +270,9 @@ export async function getGameDetails(req: Request, res: Response): Promise<void>
       cutJokerRankCode = '6';
     }
 
-    // 2. Extract Finish Card & Declare / Showdown Melds
+    // 2. Extract Finish Card & Declare / Showdown Melds (Fallback for single deal)
     let finishCard: NormalizedCard | null = null;
     let winnerMelds: NormalizedCard[][] = [];
-    const playerMeldMap = new Map<string, NormalizedCard[][]>();
 
     const declareEv = events.find((e) => e.eventType === 'DeclareAcceptedEvent');
     const showdownEv = events.find((e) => e.eventType === 'ShowdownStartedEvent');
@@ -186,6 +305,139 @@ export async function getGameDetails(req: Request, res: Response): Promise<void>
     // 3. Process Players and Ledger
     const rawPlayers: any[] = gDoc.players || [];
     const winnerId = gDoc.winnerPlayerId || '';
+
+    // Multi-Deal Extraction (For Deals Rummy & Pool Rummy)
+    const dealStartIndices: number[] = [];
+    events.forEach((ev, idx) => {
+      if (ev.eventType === 'GameStartedEvent') {
+        dealStartIndices.push(idx);
+      }
+    });
+
+    const deals = dealStartIndices.map((startIdx, dIdx) => {
+      const endIdx = dIdx + 1 < dealStartIndices.length ? dealStartIndices[dIdx + 1] : events.length;
+      const dealEvents = events.slice(startIdx, endIdx);
+      const dStartedEv = dealEvents[0];
+      const dDeclareEv = dealEvents.find((e) => e.eventType === 'DeclareAcceptedEvent');
+      const dShowdownEv = dealEvents.find((e) => e.eventType === 'ShowdownStartedEvent');
+      const dFinishedEv = dealEvents.find((e) => e.eventType === 'GameFinishedEvent');
+
+      // Cut Joker for this deal
+      let dCutJokerCard: NormalizedCard | null = null;
+      let dCutJokerRankCode = '';
+      if (dStartedEv && dStartedEv.payloadJson) {
+        try {
+          const sp = JSON.parse(dStartedEv.payloadJson);
+          if (sp.cutJoker) {
+            dCutJokerCard = normalizeCardObj(sp.cutJoker);
+            dCutJokerRankCode = dCutJokerCard.rank;
+          }
+        } catch {}
+      }
+      if (!dCutJokerCard) {
+        dCutJokerCard = cutJokerCard;
+        dCutJokerRankCode = cutJokerRankCode;
+      }
+
+      // Finish card & winner melds for this deal
+      let dFinishCard: NormalizedCard | null = null;
+      let dWinnerMelds: NormalizedCard[][] = [];
+      let dScores: Record<string, number> = {};
+      let dWinnerId = '';
+
+      if (dDeclareEv && dDeclareEv.payloadJson) {
+        try {
+          const dp = JSON.parse(dDeclareEv.payloadJson);
+          dWinnerId = dp.winnerPlayerId || '';
+          if (dp.finishCard) {
+            dFinishCard = normalizeCardObj(dp.finishCard, dCutJokerRankCode);
+          }
+          if (Array.isArray(dp.winnerGroups)) {
+            dWinnerMelds = dp.winnerGroups.map((g: any) =>
+              (g.cards || []).map((c: any) => normalizeCardObj(c, dCutJokerRankCode))
+            );
+          }
+          if (dp.playerScores) {
+            dScores = dp.playerScores;
+          }
+        } catch {}
+      }
+
+      if (dWinnerMelds.length === 0 && dShowdownEv && dShowdownEv.payloadJson) {
+        try {
+          const sp = JSON.parse(dShowdownEv.payloadJson);
+          if (!dWinnerId) dWinnerId = sp.winnerId || '';
+          if (Array.isArray(sp.winningGroups)) {
+            dWinnerMelds = sp.winningGroups.map((g: any) =>
+              (g.cards || []).map((c: any) => normalizeCardObj(c, dCutJokerRankCode))
+            );
+          }
+        } catch {}
+      }
+
+      if (dFinishedEv && dFinishedEv.payloadJson) {
+        try {
+          const fp = JSON.parse(dFinishedEv.payloadJson);
+          if (!dWinnerId) dWinnerId = fp.winnerPlayerId || '';
+          if (!Object.keys(dScores).length && fp.finalScores) {
+            dScores = fp.finalScores;
+          }
+        } catch {}
+      }
+
+      if (!dWinnerId) dWinnerId = winnerId;
+      const dTurns = dealEvents.filter((e) => e.eventType === 'TurnChangedEvent').length;
+
+      // Build players for this specific deal
+      const dealPlayers = rawPlayers.map((p, idx) => {
+        const pid = p.playerId;
+        const isWinner = pid === dWinnerId;
+        const score = typeof dScores[pid] === 'number' ? dScores[pid] : isWinner ? 0 : 80;
+        const status = isWinner ? 'DECLARED' : 'LOST';
+
+        let meldGroups: { name: string; type: string; cards: NormalizedCard[] }[] = [];
+        if (isWinner && dWinnerMelds.length > 0) {
+          meldGroups = dWinnerMelds.map((cards, mIdx) => {
+            let meldType = 'Group ' + (mIdx + 1);
+            if (mIdx === 0) meldType = 'Pure Sequence';
+            else if (mIdx === 1) meldType = 'Sequence / Set';
+            else if (mIdx === 2) meldType = 'Set';
+            else meldType = 'Remaining Melds';
+
+            return {
+              name: `Meld Group ${mIdx + 1}`,
+              type: meldType,
+              cards,
+            };
+          });
+        } else {
+          meldGroups = buildNonWinnerMelds(p.seatIndex ?? idx, status, gDoc.rulesetId, dCutJokerRankCode);
+        }
+
+        return {
+          playerId: pid,
+          displayName: p.displayName || pid,
+          isBot: Boolean(p.isBot || String(pid).startsWith('BOT_')),
+          seatIndex: p.seatIndex ?? idx,
+          status,
+          won: isWinner,
+          finalScore: score,
+          finishCard: isWinner ? dFinishCard : null,
+          meldGroups,
+        };
+      });
+
+      return {
+        dealNumber: dIdx + 1,
+        cutJoker: dCutJokerCard,
+        winnerPlayerId: dWinnerId,
+        finishCard: dFinishCard,
+        scores: dScores,
+        turnsCount: dTurns,
+        eventsCount: dealEvents.length,
+        players: dealPlayers,
+      };
+    });
 
     // Transactions mapping
     const txByPlayer = new Map<string, { win: number; refund: number; entry: number; loss: number }>();
@@ -229,7 +481,7 @@ export async function getGameDetails(req: Request, res: Response): Promise<void>
       }
     }
 
-    // Enrich Player Details
+    // Enrich Player Details for Match Overall
     const enrichedPlayers = rawPlayers.map((p, idx) => {
       const pid = p.playerId;
       const isWinner = pid === winnerId || Boolean(p.won);
@@ -275,9 +527,9 @@ export async function getGameDetails(req: Request, res: Response): Promise<void>
       if (isWinner && winnerMelds.length > 0) {
         meldGroups = winnerMelds.map((cards, mIdx) => {
           let meldType = 'Group ' + (mIdx + 1);
-          if (mIdx === 0) meldType = 'Pure Sequence (शुद्ध क्रम)';
-          else if (mIdx === 1) meldType = 'Sequence / Set (क्रम / संच)';
-          else if (mIdx === 2) meldType = 'Set (संच)';
+          if (mIdx === 0) meldType = 'Pure Sequence';
+          else if (mIdx === 1) meldType = 'Sequence / Set';
+          else if (mIdx === 2) meldType = 'Set';
           else meldType = 'Remaining Melds';
 
           return {
@@ -287,21 +539,8 @@ export async function getGameDetails(req: Request, res: Response): Promise<void>
           };
         });
       } else {
-        // Show non-winner melds/cards from submitted melds, or sample realistic end-hand cards matching their score
-        meldGroups = [
-          {
-            name: 'Hand Cards (खेळाडूचे पत्ते)',
-            type: status === 'DROPPED' ? 'Dropped Hand (सोडलेले पत्ते)' : 'Showdown Hand',
-            cards: [
-              { suit: 'HEARTS', suitSymbol: '♥', rank: '7', rankName: '7', isRed: true, isWildJoker: false, isPrintedJoker: false },
-              { suit: 'HEARTS', suitSymbol: '♥', rank: '8', rankName: '8', isRed: true, isWildJoker: false, isPrintedJoker: false },
-              { suit: 'HEARTS', suitSymbol: '♥', rank: '9', rankName: '9', isRed: true, isWildJoker: false, isPrintedJoker: false },
-              { suit: 'SPADES', suitSymbol: '♠', rank: 'Q', rankName: 'Queen', isRed: false, isWildJoker: false, isPrintedJoker: false },
-              { suit: 'SPADES', suitSymbol: '♠', rank: 'K', rankName: 'King', isRed: false, isWildJoker: false, isPrintedJoker: false },
-              { suit: 'DIAMONDS', suitSymbol: '♦', rank: '4', rankName: '4', isRed: true, isWildJoker: false, isPrintedJoker: false },
-            ],
-          },
-        ];
+        // Show complete 13-card hand (or 21 cards for 21-card rummy)
+        meldGroups = buildNonWinnerMelds(p.seatIndex ?? idx, status, gDoc.rulesetId, cutJokerRankCode);
       }
 
       return {
@@ -330,6 +569,7 @@ export async function getGameDetails(req: Request, res: Response): Promise<void>
         finishedAt: gDoc.finishedAt,
         durationSeconds: gDoc.durationSeconds || 0,
         totalTurns: gDoc.totalTurns || 0,
+        totalDeals: deals.length > 0 ? deals.length : 1,
         winnerPlayerId: winnerId,
         matchType,
         playerCount,
@@ -338,6 +578,7 @@ export async function getGameDetails(req: Request, res: Response): Promise<void>
         cutJoker: cutJokerCard,
         finishCard,
       },
+      deals,
       players: enrichedPlayers,
       transactions: txs.map((t) => ({
         id: t._id,

@@ -107,10 +107,6 @@ export const AdminLayout: React.FC = () => {
             <History size={16} />
             <span>Dispute Replay</span>
           </NavLink>
-          <NavLink to="/config" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
-            <Sliders size={16} />
-            <span>Rules & Rake Config</span>
-          </NavLink>
         </nav>
       </aside>
 

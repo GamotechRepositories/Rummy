@@ -15,6 +15,10 @@ export async function getVariantMetrics(req: Request, res: Response): Promise<vo
     let filterRegex: RegExp;
     if (vId.includes('POINT')) {
       filterRegex = /POINT/i;
+    } else if (vId.includes('DEALS_3') || vId.includes('3_DEAL') || vId.includes('240')) {
+      filterRegex = /DEALS_3|3_DEAL/i;
+    } else if (vId.includes('DEALS_2') || vId.includes('2_DEAL') || vId.includes('160')) {
+      filterRegex = /DEALS_2|2_DEAL|DEALS_RUMMY|^DEAL$/i;
     } else if (vId.includes('DEAL')) {
       filterRegex = /DEAL/i;
     } else if (vId.includes('201')) {
@@ -29,10 +33,17 @@ export async function getVariantMetrics(req: Request, res: Response): Promise<vo
       filterRegex = new RegExp(vId, 'i');
     }
 
+    const now = new Date();
+    const istOffsetMs = 5.5 * 60 * 60 * 1000;
+    const istNow = new Date(now.getTime() + istOffsetMs);
+    const todayStart = new Date(
+      Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate(), 0, 0, 0, 0) - istOffsetMs
+    );
     const past24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // 1. Matches played
-    const [total24h, totalAllTime, allVariantGames] = await Promise.all([
+    const [totalToday, total24h, totalAllTime, allVariantGames] = await Promise.all([
+      Game.countDocuments({ rulesetId: filterRegex, startedAt: { $gte: todayStart } }),
       Game.countDocuments({ rulesetId: filterRegex, startedAt: { $gte: past24h } }),
       Game.countDocuments({ rulesetId: filterRegex }),
       Game.find({ rulesetId: filterRegex }).sort({ startedAt: -1 }).lean(),
@@ -216,6 +227,7 @@ export async function getVariantMetrics(req: Request, res: Response): Promise<vo
         totalMatchesCount: allVariantGames.length,
       },
       metrics: {
+        totalToday,
         total24h,
         totalAllTime,
         avgDurationSeconds: avgDuration,

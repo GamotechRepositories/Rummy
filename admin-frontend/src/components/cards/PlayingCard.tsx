@@ -13,7 +13,7 @@ export interface CardData {
 
 interface PlayingCardProps {
   card: CardData;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   isCutJoker?: boolean;
   label?: string;
 }
@@ -29,16 +29,21 @@ export const PlayingCard: React.FC<PlayingCardProps> = ({
   const isWild = card.isWildJoker;
 
   // Dimensions based on size
-  let width = 56;
-  let height = 80;
-  let fontSize = 14;
-  let centerSymbolSize = 24;
+  let width = 54;
+  let height = 76;
+  let fontSize = 13;
+  let centerSymbolSize = 22;
 
-  if (size === 'sm') {
-    width = 44;
-    height = 64;
-    fontSize = 11;
-    centerSymbolSize = 18;
+  if (size === 'xs') {
+    width = 34;
+    height = 48;
+    fontSize = 9.5;
+    centerSymbolSize = 14;
+  } else if (size === 'sm') {
+    width = 40;
+    height = 56;
+    fontSize = 10.5;
+    centerSymbolSize = 16;
   } else if (size === 'lg') {
     width = 72;
     height = 104;
@@ -49,13 +54,13 @@ export const PlayingCard: React.FC<PlayingCardProps> = ({
   const color = isJoker ? '#8b5cf6' : isRed ? '#dc2626' : '#0f172a';
 
   return (
-    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
       <div
         style={{
           width: `${width}px`,
           height: `${height}px`,
           backgroundColor: '#ffffff',
-          borderRadius: size === 'sm' ? '5px' : '7px',
+          borderRadius: (size === 'sm' || size === 'xs') ? '4px' : '7px',
           border: isWild || isCutJoker
             ? '2px solid #fbbf24'
             : isJoker
@@ -130,12 +135,13 @@ export const PlayingCard: React.FC<PlayingCardProps> = ({
               right: 0,
               background: 'linear-gradient(90deg, #d97706, #fbbf24)',
               color: '#000',
-              fontSize: size === 'sm' ? '7px' : '8.5px',
+              fontSize: size === 'xs' ? '6.5px' : size === 'sm' ? '7.5px' : '8.5px',
               fontWeight: 800,
               textAlign: 'center',
               textTransform: 'uppercase',
-              letterSpacing: '0.3px',
-              padding: '1px 0',
+              letterSpacing: '0.2px',
+              padding: size === 'xs' ? '0' : '1px 0',
+              lineHeight: 1.1,
             }}
           >
             {isCutJoker ? 'CUT JOKER' : 'WILD'}

@@ -362,6 +362,15 @@ body {
 .btn-gold:hover {
   background: #f59e0b;
 }
+.btn-cyan {
+  background: #0891b2;
+  border-color: #06b6d4;
+  color: #fff;
+  font-weight: 600;
+}
+.btn-cyan:hover {
+  background: #06b6d4;
+}
 .btn-danger {
   background: rgba(244, 63, 94, 0.18);
   border-color: rgba(244, 63, 94, 0.4);

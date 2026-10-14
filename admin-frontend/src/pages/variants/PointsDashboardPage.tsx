@@ -70,17 +70,6 @@ export const PointsDashboardPage: React.FC = () => {
         </button>
       </div>
 
-      {/* PROFIT & LOSS ANALYTICS + MATCHES DRILL-DOWN SECTION */}
-      <VariantProfitSection
-        financials={financials}
-        matches={recent}
-        matchType={matchType}
-        onMatchTypeChange={setMatchType}
-        playerCount={playerCount}
-        onPlayerCountChange={setPlayerCount}
-        variantThemeColor="var(--accent-emerald)"
-      />
-
       {/* Operational KPI Cards */}
       <div style={{ marginBottom: '10px' }}>
         <h2 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -88,13 +77,13 @@ export const PointsDashboardPage: React.FC = () => {
         </h2>
       </div>
 
-      <div className="grid-kpis">
+      <div className="grid-kpis" style={{ marginBottom: '22px' }}>
         <div className="kpi-card" style={{ borderTop: '2px solid var(--accent-emerald)' }}>
           <div className="kpi-card-header">
-            <span className="kpi-card-title">24h Points Matches</span>
+            <span className="kpi-card-title">Today's Points Matches</span>
             <Coins size={16} color="var(--accent-emerald)" />
           </div>
-          <div className="kpi-card-value font-mono">{metrics.total24h ?? 0}</div>
+          <div className="kpi-card-value font-mono">{metrics.totalToday ?? 0}</div>
           <div className="kpi-card-delta" style={{ color: 'var(--text-dim)' }}>
             All-Time: {metrics.totalAllTime ?? 0}
           </div>
@@ -138,37 +127,16 @@ export const PointsDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Rules Tuning Info */}
-      <div className="table-panel">
-        <div className="table-panel-header">
-          <span className="table-panel-title">Active Points Rummy Rules & Parameters</span>
-          <Link to="/config" className="btn" style={{ fontSize: '11px', padding: '3px 8px' }}>
-            Modify Rules Config →
-          </Link>
-        </div>
-        <div style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', fontSize: '12px' }}>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Turn Timer</div>
-            <strong className="font-mono" style={{ color: '#fff', fontSize: '14px' }}>15s + 10s Extra</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Declare Timer</div>
-            <strong className="font-mono" style={{ color: '#fff', fontSize: '14px' }}>30s Showdown</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>First Drop Penalty</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-amber)', fontSize: '14px' }}>20 Points</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Middle Drop Penalty</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-amber)', fontSize: '14px' }}>40 Points</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Full Count / Wrong Declare</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-rose)', fontSize: '14px' }}>80 Points</strong>
-          </div>
-        </div>
-      </div>
+      {/* PROFIT & LOSS ANALYTICS + MATCHES DRILL-DOWN SECTION */}
+      <VariantProfitSection
+        financials={financials}
+        matches={recent}
+        matchType={matchType}
+        onMatchTypeChange={setMatchType}
+        playerCount={playerCount}
+        onPlayerCountChange={setPlayerCount}
+        variantThemeColor="var(--accent-emerald)"
+      />
     </div>
   );
 };

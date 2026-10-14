@@ -31,12 +31,17 @@ export async function getOverviewMetrics(req: Request, res: Response): Promise<v
       // Fallback if game service is unreachable or restarting
     }
 
-    // 2. Compute 24-hour analytics from MongoDB
-    const past24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // 2. Compute Today's (from IST midnight 00:00:00) analytics from MongoDB
+    const now = new Date();
+    const istOffsetMs = 5.5 * 60 * 60 * 1000;
+    const istNow = new Date(now.getTime() + istOffsetMs);
+    const todayStart = new Date(
+      Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate(), 0, 0, 0, 0) - istOffsetMs
+    );
 
-    // Total games in 24h & total all-time
-    const [totalGames24h, totalGamesAllTime, allGames, allTxs] = await Promise.all([
-      Game.countDocuments({ startedAt: { $gte: past24h } }),
+    // Total games today (from midnight) & total all-time
+    const [totalGamesToday, totalGamesAllTime, allGames, allTxs] = await Promise.all([
+      Game.countDocuments({ startedAt: { $gte: todayStart } }),
       Game.countDocuments(),
       Game.find().sort({ startedAt: -1 }).lean(),
       WalletTransaction.find({
@@ -44,30 +49,41 @@ export async function getOverviewMetrics(req: Request, res: Response): Promise<v
       }).lean(),
     ]);
 
-    // Financial volume & rake from wallet_transactions
-    const financialAgg = await WalletTransaction.aggregate([
-      { $match: { createdAt: { $gte: past24h }, status: 'SUCCESS' } },
-      {
-        $group: {
-          _id: '$transactionType',
-          totalAmount: { $sum: '$amount' },
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+    // Financial volume & rake from wallet_transactions for Today
+    const todayTxs = await WalletTransaction.find({
+      createdAt: { $gte: todayStart },
+      status: 'SUCCESS',
+    }).lean();
 
-    let totalWagers24h = 0;
-    let totalPayouts24h = 0;
-    financialAgg.forEach((item) => {
-      if (item._id === 'GAME_ENTRY' || item._id === 'GAME_ENTRY_STAKE' || item._id === 'DEBIT') {
-        totalWagers24h += Math.abs(parseFloat(String(item.totalAmount || 0)));
-      } else if (item._id === 'GAME_WIN' || item._id === 'CREDIT') {
-        totalPayouts24h += Math.abs(parseFloat(String(item.totalAmount || 0)));
+    let totalWagersToday = 0;
+    let totalPayoutsToday = 0;
+    const variantWagersToday = {
+      POINTS_13: 0,
+      DEALS_RUMMY: 0,
+      POOL_101: 0,
+      POOL_201: 0,
+      RUMMY_21: 0,
+    };
+
+    todayTxs.forEach((item: any) => {
+      const type = item.transactionType;
+      const amt = Math.abs(parseFloat(String(item.amount || 0)) || 0);
+      const desc = String(item.description || '').toUpperCase();
+
+      if (type === 'GAME_ENTRY' || type === 'GAME_ENTRY_STAKE' || type === 'DEBIT') {
+        totalWagersToday += amt;
+        if (desc.includes('POINT')) variantWagersToday.POINTS_13 += amt;
+        else if (desc.includes('DEAL')) variantWagersToday.DEALS_RUMMY += amt;
+        else if (desc.includes('201')) variantWagersToday.POOL_201 += amt;
+        else if (desc.includes('POOL') || desc.includes('101')) variantWagersToday.POOL_101 += amt;
+        else if (desc.includes('21')) variantWagersToday.RUMMY_21 += amt;
+      } else if (type === 'GAME_WIN' || type === 'CREDIT') {
+        totalPayoutsToday += amt;
       }
     });
 
-    const grossGamingRevenue = Math.max(0, totalWagers24h - totalPayouts24h);
-    const platformRake = grossGamingRevenue;
+    const grossGamingRevenueToday = Math.max(0, totalWagersToday - totalPayoutsToday);
+    const platformRakeToday = grossGamingRevenueToday;
 
     // Map transactions by gameId
     const txMap = new Map<string, { rake: number; botWin: number; botLoss: number }>();
@@ -133,15 +149,25 @@ export async function getOverviewMetrics(req: Request, res: Response): Promise<v
 
     const globalTotalProfit = globalRvrProfit + globalRvbProfit;
 
-    // 3. Variant traffic breakdown (Points vs Deals vs Pool vs 21-Card)
-    const variantAgg = await Game.aggregate([
-      { $match: { startedAt: { $gte: past24h } } },
-      {
-        $group: {
-          _id: '$rulesetId',
-          count: { $sum: 1 },
+    // 3. Variant traffic breakdown (both today and all-time)
+    const [variantAggToday, variantAggAllTime] = await Promise.all([
+      Game.aggregate([
+        { $match: { startedAt: { $gte: todayStart } } },
+        {
+          $group: {
+            _id: '$rulesetId',
+            count: { $sum: 1 },
+          },
         },
-      },
+      ]),
+      Game.aggregate([
+        {
+          $group: {
+            _id: '$rulesetId',
+            count: { $sum: 1 },
+          },
+        },
+      ]),
     ]);
 
     const variantDistribution = {
@@ -152,13 +178,30 @@ export async function getOverviewMetrics(req: Request, res: Response): Promise<v
       RUMMY_21: 0,
     };
 
-    variantAgg.forEach((v) => {
+    variantAggToday.forEach((v) => {
       const id = (v._id || '').toUpperCase();
       if (id.includes('POINT')) variantDistribution.POINTS_13 += v.count;
       else if (id.includes('DEAL')) variantDistribution.DEALS_RUMMY += v.count;
       else if (id.includes('201')) variantDistribution.POOL_201 += v.count;
       else if (id.includes('POOL') || id.includes('101')) variantDistribution.POOL_101 += v.count;
       else if (id.includes('21')) variantDistribution.RUMMY_21 += v.count;
+    });
+
+    const variantAllTime = {
+      POINTS_13: 0,
+      DEALS_RUMMY: 0,
+      POOL_101: 0,
+      POOL_201: 0,
+      RUMMY_21: 0,
+    };
+
+    variantAggAllTime.forEach((v) => {
+      const id = (v._id || '').toUpperCase();
+      if (id.includes('POINT')) variantAllTime.POINTS_13 += v.count;
+      else if (id.includes('DEAL')) variantAllTime.DEALS_RUMMY += v.count;
+      else if (id.includes('201')) variantAllTime.POOL_201 += v.count;
+      else if (id.includes('POOL') || id.includes('101')) variantAllTime.POOL_101 += v.count;
+      else if (id.includes('21')) variantAllTime.RUMMY_21 += v.count;
     });
 
     // 4. Recent completed matches feed (enriched with P&L)
@@ -178,12 +221,15 @@ export async function getOverviewMetrics(req: Request, res: Response): Promise<v
         serverInstanceId: systemDiagnostics.serverInstanceId || 'game-node-1',
       },
       kpis: {
-        totalGames24h,
+        totalGamesToday,
+        totalGames24h: totalGamesToday,
         totalGamesAllTime,
-        totalWagers24h: Number(totalWagers24h.toFixed(2)),
-        totalPayouts24h: Number(totalPayouts24h.toFixed(2)),
-        grossGamingRevenue: Number(grossGamingRevenue.toFixed(2)),
-        platformRake: Number(platformRake.toFixed(2)),
+        totalWagersToday: Number(totalWagersToday.toFixed(2)),
+        totalWagers24h: Number(totalWagersToday.toFixed(2)),
+        totalPayoutsToday: Number(totalPayoutsToday.toFixed(2)),
+        totalPayouts24h: Number(totalPayoutsToday.toFixed(2)),
+        grossGamingRevenue: Number(grossGamingRevenueToday.toFixed(2)),
+        platformRake: Number(platformRakeToday.toFixed(2)),
         totalProfit: Number(globalTotalProfit.toFixed(2)),
         realVsRealProfit: Number(globalRvrProfit.toFixed(2)),
         realVsBotProfit: Number(globalRvbProfit.toFixed(2)),
@@ -191,6 +237,9 @@ export async function getOverviewMetrics(req: Request, res: Response): Promise<v
         realVsBotMatchesCount: globalRvbCount,
       },
       variantDistribution,
+      variantAllTime,
+      variantWagersToday,
+      variantWagers24h: variantWagersToday,
       recentGames,
     });
   } catch (err: any) {

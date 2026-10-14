@@ -72,7 +72,7 @@ export const VariantProfitSection: React.FC<VariantProfitSectionProps> = ({
       {/* 1. FINANCIAL KPI CARDS (PROFIT / LOSS) */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
         <h2 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Profit & Revenue Analytics (नफा आणि महसूल विश्लेषण)
+          Profit & Revenue Analytics
         </h2>
         <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
           Click card to drill-down into matches
@@ -99,7 +99,7 @@ export const VariantProfitSection: React.FC<VariantProfitSectionProps> = ({
           <div className="kpi-card-header">
             <span className="kpi-card-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <DollarSign size={14} color="var(--accent-gold)" />
-              Total Net Profit (एकूण नफा)
+              Total Net Profit
             </span>
             {isAllActive && <span className="badge badge-amber" style={{ fontSize: '9.5px' }}>All Matches</span>}
           </div>
@@ -118,7 +118,7 @@ export const VariantProfitSection: React.FC<VariantProfitSectionProps> = ({
 
           <div className="kpi-card-delta" style={{ color: 'var(--text-muted)', justifyContent: 'space-between', marginTop: '6px' }}>
             <span>Combined: P2P Rake + Bot P&L</span>
-            <strong className="font-mono" style={{ color: '#fff' }}>{fin.totalMatchesCount} सामने</strong>
+            <strong className="font-mono" style={{ color: '#fff' }}>{fin.totalMatchesCount} Matches</strong>
           </div>
         </div>
 
@@ -141,7 +141,7 @@ export const VariantProfitSection: React.FC<VariantProfitSectionProps> = ({
           <div className="kpi-card-header">
             <span className="kpi-card-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Users size={14} color="var(--accent-emerald)" />
-              Profit: Real vs Real (P2P नफा)
+              Profit: Real vs Real (P2P Rake)
             </span>
             <span className={`badge ${isRvrActive ? 'badge-emerald' : ''}`} style={{ fontSize: '9.5px' }}>
               {isRvrActive ? '✓ FILTER ACTIVE' : 'CLICK TO VIEW'}
@@ -158,7 +158,7 @@ export const VariantProfitSection: React.FC<VariantProfitSectionProps> = ({
           <div className="kpi-card-delta" style={{ color: 'var(--text-muted)', justifyContent: 'space-between', marginTop: '6px' }}>
             <span>15% Platform Commission Rake</span>
             <span className="badge badge-emerald" style={{ fontSize: '10px' }}>
-              {fin.realVsRealMatchesCount} सामने
+              {fin.realVsRealMatchesCount} Matches
             </span>
           </div>
         </div>
@@ -182,7 +182,7 @@ export const VariantProfitSection: React.FC<VariantProfitSectionProps> = ({
           <div className="kpi-card-header">
             <span className="kpi-card-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Bot size={14} color="var(--accent-cyan)" />
-              Profit: Real vs Bot (बॉट नफा/तोटा)
+              Profit: Real vs Bot (Bot Net)
             </span>
             <span className={`badge ${isRvbActive ? 'badge-cyan' : ''}`} style={{ fontSize: '9.5px' }}>
               {isRvbActive ? '✓ FILTER ACTIVE' : 'CLICK TO VIEW'}
@@ -204,7 +204,7 @@ export const VariantProfitSection: React.FC<VariantProfitSectionProps> = ({
           <div className="kpi-card-delta" style={{ color: 'var(--text-muted)', justifyContent: 'space-between', marginTop: '6px' }}>
             <span>Bot Wins minus Bot Losses</span>
             <span className="badge badge-cyan" style={{ fontSize: '10px' }}>
-              {fin.realVsBotMatchesCount} सामने
+              {fin.realVsBotMatchesCount} Matches
             </span>
           </div>
         </div>
@@ -312,7 +312,7 @@ export const VariantProfitSection: React.FC<VariantProfitSectionProps> = ({
                   fontWeight: playerCount === '2' ? 600 : 400,
                 }}
               >
-                २ खेळाडू (2P) ({fin.twoPlayerMatchesCount})
+                2 Players (2P) ({fin.twoPlayerMatchesCount})
               </button>
               <button
                 onClick={() => onPlayerCountChange('6')}
@@ -326,7 +326,7 @@ export const VariantProfitSection: React.FC<VariantProfitSectionProps> = ({
                   fontWeight: playerCount === '6' ? 600 : 400,
                 }}
               >
-                ६ खेळाडू (6P) ({fin.sixPlayerMatchesCount})
+                6 Players (6P) ({fin.sixPlayerMatchesCount})
               </button>
             </div>
 
@@ -354,13 +354,13 @@ export const VariantProfitSection: React.FC<VariantProfitSectionProps> = ({
             <thead>
               <tr>
                 <th>Game ID</th>
-                <th>Type (प्रकार)</th>
+                <th>Type</th>
                 <th>Table Size</th>
                 <th>Table ID</th>
                 <th>Started</th>
                 <th>Duration</th>
-                <th>Winner (विजेता)</th>
-                <th>Platform Profit / P&L (नफा/तोटा)</th>
+                <th>Winner</th>
+                <th>Platform Profit / P&L</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -480,7 +480,7 @@ export const VariantProfitSection: React.FC<VariantProfitSectionProps> = ({
                             style={{ fontSize: '10.5px', padding: '3px 8px' }}
                             title="View full match details, player cards & results"
                           >
-                            <Eye size={12} /> तपशील (Details)
+                            <Eye size={12} /> Details
                           </Link>
                           <Link
                             to={`/replay?gameId=${g.gameId}`}

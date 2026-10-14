@@ -6,6 +6,7 @@ import { VariantProfitSection } from '../../components/variant/VariantProfitSect
 
 export const DealsDashboardPage: React.FC = () => {
   const [data, setData] = useState<any>(null);
+  const [selectedDeal, setSelectedDeal] = useState<'ALL_DEALS' | 'DEALS_2' | 'DEALS_3'>('ALL_DEALS');
   const [loading, setLoading] = useState(true);
   const [matchType, setMatchType] = useState<'ALL' | 'REAL_VS_REAL' | 'REAL_VS_BOT'>('ALL');
   const [playerCount, setPlayerCount] = useState<'ALL' | '2' | '6'>('ALL');
@@ -17,7 +18,7 @@ export const DealsDashboardPage: React.FC = () => {
       if (playerCount !== 'ALL') params.append('playerCount', playerCount);
       const queryStr = params.toString() ? `?${params.toString()}` : '';
 
-      const res = await api.get(`/variants/DEALS_2/metrics${queryStr}`);
+      const res = await api.get(`/variants/${selectedDeal}/metrics${queryStr}`);
       if (res.data?.success) {
         setData(res.data);
       }
@@ -32,7 +33,7 @@ export const DealsDashboardPage: React.FC = () => {
     fetchMetrics();
     const interval = setInterval(fetchMetrics, 7000);
     return () => clearInterval(interval);
-  }, [matchType, playerCount]);
+  }, [selectedDeal, matchType, playerCount]);
 
   const metrics = data?.metrics || {};
   const financials = data?.financials || {
@@ -54,32 +55,47 @@ export const DealsDashboardPage: React.FC = () => {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className="badge badge-cyan" style={{ fontSize: '12px' }}>DEALS_RUMMY</span>
+            <span className="badge badge-cyan" style={{ fontSize: '12px' }}>{selectedDeal}</span>
             <h1 style={{ fontSize: '18px', fontWeight: 700, color: '#fff' }}>
               Deals Rummy Dedicated Dashboard
             </h1>
           </div>
           <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-            Fixed-deal tournaments (Best of 2 / 3 Deals) profit analytics, P2P rake & chip-swing metrics
+            {selectedDeal === 'ALL_DEALS'
+              ? 'All Deals tournaments (Best of 2 & 3 Deals) profit analytics, P2P rake & chip-swing metrics'
+              : selectedDeal === 'DEALS_2'
+              ? 'Best of 2 Deals (160 Chips per seat) profit analytics, P2P rake & chip-swing metrics'
+              : 'Best of 3 Deals (240 Chips per seat) profit analytics, P2P rake & chip-swing metrics'}
           </p>
         </div>
 
-        <button onClick={fetchMetrics} className="btn" style={{ fontSize: '11.5px', padding: '5px 10px' }}>
-          <RefreshCw size={13} />
-          <span>Refresh</span>
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            onClick={() => setSelectedDeal('ALL_DEALS')}
+            className={`btn ${selectedDeal === 'ALL_DEALS' ? 'btn-cyan' : ''}`}
+            style={{ fontSize: '11px', padding: '5px 12px' }}
+          >
+            All Deals
+          </button>
+          <button
+            onClick={() => setSelectedDeal('DEALS_2')}
+            className={`btn ${selectedDeal === 'DEALS_2' ? 'btn-cyan' : ''}`}
+            style={{ fontSize: '11px', padding: '5px 12px' }}
+          >
+            2 Deals (160 Chips)
+          </button>
+          <button
+            onClick={() => setSelectedDeal('DEALS_3')}
+            className={`btn ${selectedDeal === 'DEALS_3' ? 'btn-cyan' : ''}`}
+            style={{ fontSize: '11px', padding: '5px 12px' }}
+          >
+            3 Deals (240 Chips)
+          </button>
+          <button onClick={fetchMetrics} className="btn" style={{ fontSize: '11.5px', padding: '5px 10px' }} title="Refresh">
+            <RefreshCw size={13} />
+          </button>
+        </div>
       </div>
-
-      {/* PROFIT & LOSS ANALYTICS + MATCHES DRILL-DOWN SECTION */}
-      <VariantProfitSection
-        financials={financials}
-        matches={recent}
-        matchType={matchType}
-        onMatchTypeChange={setMatchType}
-        playerCount={playerCount}
-        onPlayerCountChange={setPlayerCount}
-        variantThemeColor="var(--accent-cyan)"
-      />
 
       {/* Operational KPI Cards */}
       <div style={{ marginBottom: '10px' }}>
@@ -88,13 +104,15 @@ export const DealsDashboardPage: React.FC = () => {
         </h2>
       </div>
 
-      <div className="grid-kpis">
+      <div className="grid-kpis" style={{ marginBottom: '22px' }}>
         <div className="kpi-card" style={{ borderTop: '2px solid var(--accent-cyan)' }}>
           <div className="kpi-card-header">
-            <span className="kpi-card-title">24h Deals Matches</span>
+            <span className="kpi-card-title">
+              Today's {selectedDeal === 'ALL_DEALS' ? 'Deals' : selectedDeal === 'DEALS_2' ? '2-Deal' : '3-Deal'} Matches
+            </span>
             <Layers size={16} color="var(--accent-cyan)" />
           </div>
-          <div className="kpi-card-value font-mono">{metrics.total24h ?? 0}</div>
+          <div className="kpi-card-value font-mono">{metrics.totalToday ?? 0}</div>
           <div className="kpi-card-delta" style={{ color: 'var(--text-dim)' }}>
             All-Time: {metrics.totalAllTime ?? 0}
           </div>
@@ -138,37 +156,16 @@ export const DealsDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Rules Tuning Info */}
-      <div className="table-panel">
-        <div className="table-panel-header">
-          <span className="table-panel-title">Active Deals Rummy Rules & Parameters</span>
-          <Link to="/config" className="btn" style={{ fontSize: '11px', padding: '3px 8px' }}>
-            Modify Rules Config →
-          </Link>
-        </div>
-        <div style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', fontSize: '12px' }}>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Available Modes</div>
-            <strong className="font-mono" style={{ color: '#fff', fontSize: '14px' }}>Best of 2 & Best of 3</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Inter-Deal Break</div>
-            <strong className="font-mono" style={{ color: '#fff', fontSize: '14px' }}>5s Countdown</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>First Drop Penalty</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-amber)', fontSize: '14px' }}>20 Chips</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Middle Drop Penalty</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-amber)', fontSize: '14px' }}>40 Chips</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Max Penalty</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-rose)', fontSize: '14px' }}>80 Chips</strong>
-          </div>
-        </div>
-      </div>
+      {/* PROFIT & LOSS ANALYTICS + MATCHES DRILL-DOWN SECTION */}
+      <VariantProfitSection
+        financials={financials}
+        matches={recent}
+        matchType={matchType}
+        onMatchTypeChange={setMatchType}
+        playerCount={playerCount}
+        onPlayerCountChange={setPlayerCount}
+        variantThemeColor="var(--accent-cyan)"
+      />
     </div>
   );
 };

@@ -69,17 +69,6 @@ export const TwentyOneDashboardPage: React.FC = () => {
         </button>
       </div>
 
-      {/* PROFIT & LOSS ANALYTICS + MATCHES DRILL-DOWN SECTION */}
-      <VariantProfitSection
-        financials={financials}
-        matches={recent}
-        matchType={matchType}
-        onMatchTypeChange={setMatchType}
-        playerCount={playerCount}
-        onPlayerCountChange={setPlayerCount}
-        variantThemeColor="var(--accent-violet)"
-      />
-
       {/* Operational KPI Cards */}
       <div style={{ marginBottom: '10px' }}>
         <h2 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -87,13 +76,13 @@ export const TwentyOneDashboardPage: React.FC = () => {
         </h2>
       </div>
 
-      <div className="grid-kpis">
+      <div className="grid-kpis" style={{ marginBottom: '22px' }}>
         <div className="kpi-card" style={{ borderTop: '2px solid var(--accent-violet)' }}>
           <div className="kpi-card-header">
-            <span className="kpi-card-title">24h 21-Card Matches</span>
+            <span className="kpi-card-title">Today's 21-Card Matches</span>
             <Sparkles size={16} color="var(--accent-violet)" />
           </div>
-          <div className="kpi-card-value font-mono">{metrics.total24h ?? 0}</div>
+          <div className="kpi-card-value font-mono">{metrics.totalToday ?? 0}</div>
           <div className="kpi-card-delta" style={{ color: 'var(--text-dim)' }}>
             All-Time: {metrics.totalAllTime ?? 0}
           </div>
@@ -137,37 +126,16 @@ export const TwentyOneDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Rules Tuning Info */}
-      <div className="table-panel">
-        <div className="table-panel-header">
-          <span className="table-panel-title">Active 21-Card Rules & Melds</span>
-          <Link to="/config" className="btn" style={{ fontSize: '11px', padding: '3px 8px' }}>
-            Modify Rules Config →
-          </Link>
-        </div>
-        <div style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', fontSize: '12px' }}>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Deck Structure</div>
-            <strong className="font-mono" style={{ color: '#fff', fontSize: '14px' }}>3 Decks (156 Cards)</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Hand Size</div>
-            <strong className="font-mono" style={{ color: '#fff', fontSize: '14px' }}>21 Cards Per Seat</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>First Drop Penalty</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-amber)', fontSize: '14px' }}>30 Points</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Middle Drop Penalty</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-amber)', fontSize: '14px' }}>60 Points</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Wrong Declare Penalty</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-rose)', fontSize: '14px' }}>120 Points</strong>
-          </div>
-        </div>
-      </div>
+      {/* PROFIT & LOSS ANALYTICS + MATCHES DRILL-DOWN SECTION */}
+      <VariantProfitSection
+        financials={financials}
+        matches={recent}
+        matchType={matchType}
+        onMatchTypeChange={setMatchType}
+        playerCount={playerCount}
+        onPlayerCountChange={setPlayerCount}
+        variantThemeColor="var(--accent-violet)"
+      />
     </div>
   );
 };

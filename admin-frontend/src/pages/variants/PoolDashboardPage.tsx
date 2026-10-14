@@ -6,7 +6,7 @@ import { VariantProfitSection } from '../../components/variant/VariantProfitSect
 
 export const PoolDashboardPage: React.FC = () => {
   const [data, setData] = useState<any>(null);
-  const [selectedPool, setSelectedPool] = useState<'POOL_101' | 'POOL_201'>('POOL_101');
+  const [selectedPool, setSelectedPool] = useState<'ALL_POOL' | 'POOL_101' | 'POOL_201'>('ALL_POOL');
   const [loading, setLoading] = useState(true);
   const [matchType, setMatchType] = useState<'ALL' | 'REAL_VS_REAL' | 'REAL_VS_BOT'>('ALL');
   const [playerCount, setPlayerCount] = useState<'ALL' | '2' | '6'>('ALL');
@@ -61,11 +61,22 @@ export const PoolDashboardPage: React.FC = () => {
             </h1>
           </div>
           <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-            Elimination Rummy (101 Pool & 201 Pool) profit analytics, P2P rake & cumulative score curves
+            {selectedPool === 'ALL_POOL'
+              ? 'Elimination Rummy (All 101 & 201 Pool) profit analytics, P2P rake & cumulative score curves'
+              : selectedPool === 'POOL_101'
+              ? '101 Pool Elimination Rummy profit analytics, P2P rake & cumulative score curves'
+              : '201 Pool Elimination Rummy profit analytics, P2P rake & cumulative score curves'}
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            onClick={() => setSelectedPool('ALL_POOL')}
+            className={`btn ${selectedPool === 'ALL_POOL' ? 'btn-gold' : ''}`}
+            style={{ fontSize: '11px', padding: '5px 12px' }}
+          >
+            All Pool
+          </button>
           <button
             onClick={() => setSelectedPool('POOL_101')}
             className={`btn ${selectedPool === 'POOL_101' ? 'btn-gold' : ''}`}
@@ -80,22 +91,11 @@ export const PoolDashboardPage: React.FC = () => {
           >
             201 Pool
           </button>
-          <button onClick={fetchMetrics} className="btn" style={{ fontSize: '11.5px', padding: '5px 10px' }}>
+          <button onClick={fetchMetrics} className="btn" style={{ fontSize: '11.5px', padding: '5px 10px' }} title="Refresh">
             <RefreshCw size={13} />
           </button>
         </div>
       </div>
-
-      {/* PROFIT & LOSS ANALYTICS + MATCHES DRILL-DOWN SECTION */}
-      <VariantProfitSection
-        financials={financials}
-        matches={recent}
-        matchType={matchType}
-        onMatchTypeChange={setMatchType}
-        playerCount={playerCount}
-        onPlayerCountChange={setPlayerCount}
-        variantThemeColor="var(--accent-amber)"
-      />
 
       {/* Operational KPI Cards */}
       <div style={{ marginBottom: '10px' }}>
@@ -104,13 +104,15 @@ export const PoolDashboardPage: React.FC = () => {
         </h2>
       </div>
 
-      <div className="grid-kpis">
+      <div className="grid-kpis" style={{ marginBottom: '22px' }}>
         <div className="kpi-card" style={{ borderTop: '2px solid var(--accent-amber)' }}>
           <div className="kpi-card-header">
-            <span className="kpi-card-title">24h Pool Matches</span>
+            <span className="kpi-card-title">
+              Today's {selectedPool === 'ALL_POOL' ? 'Pool' : selectedPool === 'POOL_101' ? '101 Pool' : '201 Pool'} Matches
+            </span>
             <Flame size={16} color="var(--accent-amber)" />
           </div>
-          <div className="kpi-card-value font-mono">{metrics.total24h ?? 0}</div>
+          <div className="kpi-card-value font-mono">{metrics.totalToday ?? 0}</div>
           <div className="kpi-card-delta" style={{ color: 'var(--text-dim)' }}>
             All-Time: {metrics.totalAllTime ?? 0}
           </div>
@@ -154,45 +156,16 @@ export const PoolDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Rules Tuning Info */}
-      <div className="table-panel">
-        <div className="table-panel-header">
-          <span className="table-panel-title">Active {selectedPool} Rules & Parameters</span>
-          <Link to="/config" className="btn" style={{ fontSize: '11px', padding: '3px 8px' }}>
-            Modify Rules Config →
-          </Link>
-        </div>
-        <div style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', fontSize: '12px' }}>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Elimination Threshold</div>
-            <strong className="font-mono" style={{ color: '#fff', fontSize: '14px' }}>
-              {selectedPool === 'POOL_101' ? '101 Points' : '201 Points'}
-            </strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>First Drop Penalty</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-amber)', fontSize: '14px' }}>
-              {selectedPool === 'POOL_101' ? '20 Points' : '25 Points'}
-            </strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Middle Drop Penalty</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-amber)', fontSize: '14px' }}>
-              {selectedPool === 'POOL_101' ? '40 Points' : '50 Points'}
-            </strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Full Count Penalty</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-rose)', fontSize: '14px' }}>80 Points</strong>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase' }}>Rejoin Max Score Limit</div>
-            <strong className="font-mono" style={{ color: 'var(--accent-cyan)', fontSize: '14px' }}>
-              {selectedPool === 'POOL_101' ? '79 Points' : '174 Points'}
-            </strong>
-          </div>
-        </div>
-      </div>
+      {/* PROFIT & LOSS ANALYTICS + MATCHES DRILL-DOWN SECTION */}
+      <VariantProfitSection
+        financials={financials}
+        matches={recent}
+        matchType={matchType}
+        onMatchTypeChange={setMatchType}
+        playerCount={playerCount}
+        onPlayerCountChange={setPlayerCount}
+        variantThemeColor="var(--accent-amber)"
+      />
     </div>
   );
 };
