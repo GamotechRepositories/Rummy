@@ -350,7 +350,7 @@ export const GameDetailPage: React.FC = () => {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
-        {activePlayers.map((p, idx) => {
+        {activePlayers.map((p: any, idx: number) => {
           const isWinner = Boolean(p.won);
           const isPos = (p.netDelta ?? 0) > 0;
           const isNeg = (p.netDelta ?? 0) < 0;

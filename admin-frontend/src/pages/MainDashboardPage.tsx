@@ -307,6 +307,27 @@ export const MainDashboardPage: React.FC = () => {
         </h2>
       </div>
       <div className="grid-kpis" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', marginBottom: '16px' }}>
+        {/* Card 1: Today's Total Matches */}
+        <div className="kpi-card" style={{ borderTop: '3px solid var(--accent-emerald)' }}>
+          <div className="kpi-card-header">
+            <span className="kpi-card-title">Today's Total Matches</span>
+            <Gamepad2 size={16} color="var(--accent-emerald)" />
+          </div>
+          <div className="kpi-card-value font-mono" style={{ color: 'var(--accent-emerald)' }}>
+            {totalGamesToday}
+          </div>
+          <div className="kpi-card-delta" style={{ color: 'var(--text-muted)', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <TrendingUp size={12} color="var(--accent-emerald)" />
+              <span>Across All Variants</span>
+            </div>
+            <span className="badge badge-emerald" style={{ fontSize: '10px' }}>
+              All-Time: {kpis.totalGamesAllTime ?? 0}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 2: Today's Total Wagers */}
         <div className="kpi-card" style={{ borderTop: '3px solid var(--accent-cyan)' }}>
           <div className="kpi-card-header">
             <span className="kpi-card-title">Today's Total Wagers</span>
@@ -324,6 +345,7 @@ export const MainDashboardPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Card 3: Today's Gross Gaming Revenue */}
         <div className="kpi-card" style={{ borderTop: '3px solid var(--accent-gold)' }}>
           <div className="kpi-card-header">
             <span className="kpi-card-title">Today's Gross Gaming Revenue</span>
