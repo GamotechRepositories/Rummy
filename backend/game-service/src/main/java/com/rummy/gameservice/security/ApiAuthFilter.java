@@ -33,6 +33,7 @@ public class ApiAuthFilter extends OncePerRequestFilter {
     private static final List<String> PUBLIC_PATHS = List.of(
             "/api/auth/refresh",
             "/api/auth/verify",
+            "/api/auth/config",
             "/api/operator/launch",
             "/api/operator/session"
     );

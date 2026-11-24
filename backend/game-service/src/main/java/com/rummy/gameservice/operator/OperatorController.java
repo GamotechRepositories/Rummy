@@ -77,7 +77,7 @@ public class OperatorController {
 
     @PostMapping("/session")
     public ResponseEntity<Map<String, Object>> session(@RequestBody(required = false) Map<String, String> body) {
-        String code = body != null ? body.get("code") : null;
+        String code = body != null ? (body.get("sessionToken") != null ? body.get("sessionToken") : body.get("code")) : null;
         return launches.redeem(code)
                 .<ResponseEntity<Map<String, Object>>>map(session -> ResponseEntity.ok(Map.of(
                         "token", session.token(),

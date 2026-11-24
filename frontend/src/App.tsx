@@ -25,7 +25,8 @@ type SessionProblem = 'none' | 'expired-link';
 
 function hasLaunchCodeInUrl(): boolean {
   try {
-    return new URLSearchParams(window.location.search).has('launch');
+    const params = new URLSearchParams(window.location.search);
+    return params.has('sessionToken') || params.has('launch');
   } catch {
     return false;
   }
@@ -81,6 +82,18 @@ export function App() {
     return false;
   });
   const [noSession, setNoSession] = useState<SessionProblem | null>(null);
+  const [mockEnabled, setMockEnabled] = useState(false);
+
+  useEffect(() => {
+    fetch(`${getApiBaseUrl()}/api/auth/config`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.mockOperatorEnabled) {
+          setMockEnabled(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     installSoundUnlock();
@@ -184,12 +197,14 @@ export function App() {
               ? 'Game links work once and only for a short time. Go back to your gaming account and open the game again.'
               : 'Royal Rummy is played through your gaming account. Sign in there and choose Rummy to start playing.'}
           </p>
-          <a
-            href={`${getApiBaseUrl()}/mock-operator/`}
-            style={{ display: 'inline-block', marginTop: 18, color: '#facc15', fontSize: 14 }}
-          >
-            Test login (test money)
-          </a>
+          {mockEnabled && (
+            <a
+              href={`${getApiBaseUrl()}/mock-operator/`}
+              style={{ display: 'inline-block', marginTop: 18, color: '#facc15', fontSize: 14 }}
+            >
+              Test login (test money)
+            </a>
+          )}
         </div>
       </div>
     );

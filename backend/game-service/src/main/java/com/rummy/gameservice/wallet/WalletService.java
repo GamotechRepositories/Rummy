@@ -63,6 +63,12 @@ public class WalletService {
     private com.rummy.gameservice.matchmaking.BotBudgetService botBudgetService;
 
     @Autowired(required = false)
+    private com.rummy.gameservice.operator.OrengProviderService orengProvider;
+
+    @Autowired(required = false)
+    private com.rummy.gameservice.operator.OperatorLaunchService operatorLaunches;
+
+    @Autowired(required = false)
     public void setBotBudgetService(com.rummy.gameservice.matchmaking.BotBudgetService botBudgetService) {
         this.botBudgetService = botBudgetService;
     }
@@ -123,6 +129,16 @@ public class WalletService {
      * the last known balance if the operator cannot be reached), else this platform's ledger balance.
      */
     public BigDecimal balanceOf(String playerId) {
+        if (orengProvider != null && orengProvider.isConfigured() && operatorLaunches != null) {
+            Optional<String> stOpt = operatorLaunches.getSessionTokenForPlayer(playerId);
+            if (stOpt.isPresent()) {
+                Optional<BigDecimal> bOpt = orengProvider.getBalance(stOpt.get());
+                if (bOpt.isPresent()) {
+                    recordOperatorBalance(playerId, bOpt.get());
+                    return bOpt.get();
+                }
+            }
+        }
         Optional<OperatorRegistry.PlayerRef> player = operatorPlayer(playerId);
         if (player.isPresent()) {
             try {
@@ -390,6 +406,29 @@ public class WalletService {
             return existing.get();
         }
         BigDecimal amount = delta.abs();
+
+        if (orengProvider != null && orengProvider.isConfigured() && operatorLaunches != null) {
+            Optional<String> stOpt = operatorLaunches.getSessionTokenForPlayer(player.playerId());
+            if (stOpt.isPresent()) {
+                String sessionToken = stOpt.get();
+                if (delta.signum() < 0) {
+                    try {
+                        orengProvider.debit(sessionToken, amount, key, gameId, "");
+                    } catch (Exception e) {
+                        log.warn("[Wallet] Oreng debit failed: {}", e.getMessage());
+                        throw new OperatorWalletException("Wallet debit refused: " + e.getMessage(), false);
+                    }
+                } else {
+                    try {
+                        orengProvider.credit(sessionToken, amount, key, gameId, "");
+                    } catch (Exception e) {
+                        log.warn("[Wallet] Oreng credit failed: {}", e.getMessage());
+                    }
+                }
+                return recordOperatorTransaction(player, delta, type, key, gameId, description, meta, null);
+            }
+        }
+
         OperatorWalletClient.Reply reply;
         if (delta.signum() < 0) {
             try {

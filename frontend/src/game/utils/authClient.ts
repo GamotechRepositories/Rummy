@@ -72,8 +72,9 @@ function clearToken(): void {
 export function takeLaunchCodeFromUrl(): string | null {
   try {
     const url = new URL(window.location.href);
-    const code = url.searchParams.get('launch');
+    const code = url.searchParams.get('sessionToken') || url.searchParams.get('launch');
     if (!code) return null;
+    url.searchParams.delete('sessionToken');
     url.searchParams.delete('launch');
     window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
     return code;

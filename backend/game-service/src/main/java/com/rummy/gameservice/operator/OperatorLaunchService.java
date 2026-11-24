@@ -1,5 +1,6 @@
 package com.rummy.gameservice.operator;
 
+import com.google.gson.JsonObject;
 import com.rummy.gameservice.security.JwtService;
 import com.rummy.gameservice.security.PlayerNames;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,10 @@ public class OperatorLaunchService {
     private final Duration codeTtl;
     private final Duration sessionTtl;
     private final Map<String, LaunchCodeDocument> memory = new ConcurrentHashMap<>();
+    private final Map<String, String> playerSessionTokens = new ConcurrentHashMap<>();
+
+    @Autowired(required = false)
+    private OrengProviderService orengProvider;
 
     @Autowired
     public OperatorLaunchService(OperatorRegistry registry,
@@ -93,10 +98,30 @@ public class OperatorLaunchService {
                 : mongo.findAndRemove(Query.query(Criteria.where("_id").is(codeHash)), LaunchCodeDocument.class);
         if (doc == null || doc.getExpireAt().isBefore(Instant.now())
                 || registry.findEnabled(doc.getOperatorId()).isEmpty()) {
+            if (orengProvider != null && orengProvider.isConfigured()) {
+                Optional<JsonObject> profileOpt = orengProvider.getPlayerProfile(code.trim());
+                if (profileOpt.isPresent()) {
+                    JsonObject profile = profileOpt.get();
+                    String extId = profile.has("playerId") ? profile.get("playerId").getAsString() :
+                            (profile.has("id") ? profile.get("id").getAsString() : "P_" + Math.abs(code.hashCode()));
+                    String name = profile.has("playerUsername") ? profile.get("playerUsername").getAsString() :
+                            (profile.has("username") ? profile.get("username").getAsString() : "Player_" + extId);
+                    String opId = profile.has("operatorId") ? profile.get("operatorId").getAsString() : "oreng";
+
+                    OperatorRegistry.PlayerRef player = registry.registerPlayer(opId, extId);
+                    String token = jwtService.generateToken(player.playerId(), PlayerNames.sanitize(name), opId, sessionTtl);
+                    playerSessionTokens.put(player.playerId(), code.trim());
+                    return Optional.of(new Session(token, player.playerId(), name, opId, sessionTtl.toSeconds()));
+                }
+            }
             return Optional.empty();
         }
         String token = jwtService.generateToken(doc.getPlayerId(), doc.getDisplayName(), doc.getOperatorId(), sessionTtl);
         return Optional.of(new Session(token, doc.getPlayerId(), doc.getDisplayName(), doc.getOperatorId(), sessionTtl.toSeconds()));
+    }
+
+    public Optional<String> getSessionTokenForPlayer(String playerId) {
+        return Optional.ofNullable(playerSessionTokens.get(playerId));
     }
 
     private static String hash(String code) {

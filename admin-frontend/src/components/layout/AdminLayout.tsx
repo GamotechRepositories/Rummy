@@ -14,6 +14,7 @@ import {
   Users,
   Radio,
   PowerOff,
+  Building2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
@@ -106,6 +107,10 @@ export const AdminLayout: React.FC = () => {
           <NavLink to="/replay" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
             <History size={16} />
             <span>Dispute Replay</span>
+          </NavLink>
+          <NavLink to="/config" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
+            <Sliders size={16} color="var(--accent-cyan)" />
+            <span>Rules & Rake</span>
           </NavLink>
         </nav>
       </aside>

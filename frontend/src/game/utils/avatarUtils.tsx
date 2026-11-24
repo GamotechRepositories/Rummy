@@ -298,11 +298,11 @@ export const AVATAR_CHARACTERS: AvatarProfile[] = [
 
 const BOY_PHOTOS = Array.from(
   { length: 15 },
-  (_, i) => `/avatars/boys/boy-${String(i + 1).padStart(2, '0')}.png`
+  (_, i) => `/avatars/boys/boy-${String(i + 1).padStart(2, '0')}.webp`
 );
 const GIRL_PHOTOS = Array.from(
   { length: 15 },
-  (_, i) => `/avatars/girls/girl-${String(i + 1).padStart(2, '0')}.png`
+  (_, i) => `/avatars/girls/girl-${String(i + 1).padStart(2, '0')}.webp`
 );
 
 const BOY_FIRST = new Set([
@@ -337,7 +337,7 @@ function characterList(group: 'boy' | 'girl'): PlayerCharacter[] {
   return Array.from({ length: 15 }, (_, i) => {
     const n = String(i + 1).padStart(2, '0');
     const id = `${prefix}-${n}`;
-    return { id, photo: `/avatars/${folder}/${id}.png`, group };
+    return { id, photo: `/avatars/${folder}/${id}.webp`, group };
   });
 }
 

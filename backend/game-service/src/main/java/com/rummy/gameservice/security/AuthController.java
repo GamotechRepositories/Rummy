@@ -23,12 +23,23 @@ public class AuthController {
 
     private final JwtService jwtService;
     private final Duration sessionTtl;
+    private final boolean mockOperatorEnabled;
 
     @Autowired
     public AuthController(JwtService jwtService,
-                          @Value("${rummy.operator.session-ttl-hours:12}") long sessionTtlHours) {
+                          @Value("${rummy.operator.session-ttl-hours:12}") long sessionTtlHours,
+                          @Value("${rummy.operator.mock.enabled:false}") boolean mockOperatorEnabled) {
         this.jwtService = Objects.requireNonNull(jwtService);
         this.sessionTtl = Duration.ofHours(sessionTtlHours);
+        this.mockOperatorEnabled = mockOperatorEnabled;
+    }
+
+    /** Public configuration for frontend features (e.g. test login visibility). */
+    @GetMapping("/config")
+    public ResponseEntity<Map<String, Object>> publicConfig() {
+        return ResponseEntity.ok(Map.of(
+                "mockOperatorEnabled", mockOperatorEnabled
+        ));
     }
 
     /** Re-issues a token for the same operator player. Requires a currently valid token. */
