@@ -12,6 +12,10 @@ import { LiveTablesPage } from './pages/LiveTablesPage';
 import { HandReplayPage } from './pages/HandReplayPage';
 import { GameDetailPage } from './pages/GameDetailPage';
 import { RulesConfigPage } from './pages/RulesConfigPage';
+import { TournamentManagementPage } from './pages/TournamentManagementPage';
+import { TournamentDetailPage } from './pages/TournamentDetailPage';
+import { PrivateRoomsPage } from './pages/PrivateRoomsPage';
+import { PrivateRoomDetailPage } from './pages/PrivateRoomDetailPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -51,6 +55,10 @@ export const App: React.FC = () => {
             <Route path="games/:gameId" element={<GameDetailPage />} />
             <Route path="replay" element={<HandReplayPage />} />
             <Route path="config" element={<RulesConfigPage />} />
+            <Route path="tournaments" element={<TournamentManagementPage />} />
+            <Route path="tournaments/:tournamentId" element={<TournamentDetailPage />} />
+            <Route path="private-rooms" element={<PrivateRoomsPage />} />
+            <Route path="private-rooms/:roomCode" element={<PrivateRoomDetailPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

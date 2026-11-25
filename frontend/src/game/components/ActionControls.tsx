@@ -204,7 +204,9 @@ export const ActionControls: React.FC = () => {
   const viewerChips = gameState.viewerChipBalance;
 
   const isWaitingForNextDeal =
+    (isPool || isDeals) &&
     gameStatus === 'IN_PROGRESS' &&
+    !viewerIsDropped &&
     (gameState?.viewerStatus === 'READY' || (gameState?.viewerStatus !== 'ACTIVE' && (gameState?.hand?.length ?? 0) === 0));
 
   const droppedOut =
@@ -423,22 +425,9 @@ export const ActionControls: React.FC = () => {
           )}
 
           {isWaitingForNextDeal && !viewerIsEliminated && (
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 14px',
-                borderRadius: '8px',
-                background: 'rgba(16, 185, 129, 0.15)',
-                border: '1px solid rgba(16, 185, 129, 0.4)',
-                color: '#6ee7b7',
-                fontSize: '12px',
-                fontWeight: 700,
-              }}
-            >
-              <Sparkles size={14} />
-              Rejoined table · Waiting for Deal {(gameState.dealNumber ?? 1) + 1}
+            <div className="bcb-rejoined-pill">
+              <Sparkles size={13} style={{ flexShrink: 0 }} />
+              <span>Rejoined table · Waiting for Deal {(gameState.dealNumber ?? 1) + 1}</span>
             </div>
           )}
 

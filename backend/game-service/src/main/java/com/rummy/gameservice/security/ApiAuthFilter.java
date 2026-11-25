@@ -35,7 +35,9 @@ public class ApiAuthFilter extends OncePerRequestFilter {
             "/api/auth/verify",
             "/api/auth/config",
             "/api/operator/launch",
-            "/api/operator/session"
+            "/api/operator/session",
+            "/api/tournaments",
+            "/api/rooms"
     );
 
     private static final List<String> ADMIN_PREFIXES = List.of(

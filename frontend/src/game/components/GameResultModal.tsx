@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
+import { getApiBaseUrl } from '../utils/apiConfig';
+import { authFetch } from '../utils/authClient';
 import { SoundToggle } from './SoundToggle';
 import { FullscreenToggle } from './FullscreenToggle';
 import { CardView } from './CardView';
@@ -288,6 +290,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
   const {
     gameState,
     gameSettlement,
+    tableId,
     playerId,
     displayName,
     avatarId,
@@ -295,6 +298,8 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
     lastKnownHand,
     lastGameConfig,
     leaveTable,
+    setSession,
+    setWalletBalance,
     setAutoMatchmakePending,
     setLastGameConfig,
     clearSelection,
@@ -302,6 +307,25 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
 
   const [expandedPlayerIds, setExpandedPlayerIds] = useState<Record<string, boolean>>({});
   const [showAllCards, setShowAllCards] = useState<boolean>(true);
+  const [trnResult, setTrnResult] = useState<{
+    tournamentId: string;
+    title: string;
+    status: string;
+    fixedPrizeRs: number;
+    roundNumber: number;
+    totalRounds: number;
+    isFinalTable?: boolean;
+    finishedTables?: number;
+    totalTablesInRound?: number;
+    roundDone: boolean;
+    qualified: boolean;
+    nextTableId: string | null;
+    finalRankings: Array<{ rank: number; playerId: string; displayName: string; prizeRs: number }>;
+    myRank: number | null;
+    myPrizeRs: number;
+  } | null>(null);
+
+  const isScheduledTournament = Boolean(tableId && tableId.startsWith('TBL_TRN_'));
 
   const isCompleted = gameState?.gameStatus === 'COMPLETED';
   const winnerId = gameState?.winnerId;
@@ -333,6 +357,50 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
     }, 1000);
     return () => clearInterval(interval);
   }, [isOpen, isIntermediateDeal]);
+
+  // Poll tournament status & prize payouts when playing a scheduled tournament table
+  useEffect(() => {
+    if (!isOpen || !isScheduledTournament || isIntermediateDeal || !tableId || !playerId) return;
+    let cancelled = false;
+
+    const pollTournament = async () => {
+      try {
+        const res = await authFetch(
+          `${getApiBaseUrl()}/api/tournaments/by-table/${encodeURIComponent(tableId)}?playerId=${encodeURIComponent(playerId)}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !data.success) return;
+        setTrnResult(data);
+
+        // If player qualified and next round table is ready, auto-seat into next round
+        if (data.nextTableId && data.nextTableId !== tableId) {
+          soundEngine.play('deal');
+          setSession(data.nextTableId, playerId, displayName || playerId);
+          socketClient.joinTable(0);
+          return;
+        }
+
+        // Refresh wallet balance once tournament completes & prizes are credited
+        if (data.status === 'COMPLETED' && Number(data.myPrizeRs ?? 0) > 0) {
+          const balRes = await authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${encodeURIComponent(playerId)}`);
+          if (balRes.ok) {
+            const balData = await balRes.json();
+            setWalletBalance(Number(balData.balance ?? 0));
+          }
+        }
+      } catch {
+        // silent retry
+      }
+    };
+
+    pollTournament();
+    const id = setInterval(pollTournament, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [isOpen, isScheduledTournament, isIntermediateDeal, tableId, playerId, displayName, setSession, setWalletBalance]);
 
   useEffect(() => {
     if (!isOpen || !isCompleted) return;
@@ -622,7 +690,27 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
         <section className="result-hero-banner">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
             <h1 className="result-hero-title">
-              {isTournamentWinner ? (
+              {isScheduledTournament && isTournamentWinner && trnResult && !trnResult.isFinalTable ? (
+                gameState.tournamentWinnerId === playerId || trnResult.qualified ? (
+                  <>
+                    <Sparkles size={22} color="#fbbf24" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
+                    Qualified for Next Round!
+                  </>
+                ) : trnResult.roundDone ? (
+                  'Eliminated from Tournament'
+                ) : (
+                  `Round ${trnResult.roundNumber} Complete`
+                )
+              ) : isScheduledTournament && trnResult?.status === 'COMPLETED' ? (
+                (trnResult.myPrizeRs ?? 0) > 0 ? (
+                  <>
+                    <Sparkles size={22} color="#fbbf24" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
+                    You Won {trnResult.title}!
+                  </>
+                ) : (
+                  `${trnResult.title} — Tournament Ended`
+                )
+              ) : isTournamentWinner ? (
                 gameState.tournamentWinnerId === playerId ? (
                   <>
                     <Sparkles size={22} color="#fbbf24" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
@@ -650,7 +738,17 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
               )}
             </h1>
             <p className="result-hero-subtitle">
-              {isTournamentWinner
+              {isScheduledTournament && isTournamentWinner && trnResult && !trnResult.isFinalTable
+                ? (gameState.tournamentWinnerId === playerId || trnResult.qualified
+                    ? `You won your table! Waiting for other tables to finish (${trnResult.finishedTables ?? 1}/${trnResult.totalTablesInRound ?? 1})…`
+                    : trnResult.roundDone
+                    ? 'You are not eligible for the next round. Better luck next time!'
+                    : `Checking qualification across remaining tables (${trnResult.finishedTables ?? 1}/${trnResult.totalTablesInRound ?? 1})…`)
+                : isScheduledTournament && trnResult?.status === 'COMPLETED'
+                ? ((trnResult.myPrizeRs ?? 0) > 0
+                    ? `🏆 Congratulations! You are the Tournament Champion — ₹${Number(trnResult.myPrizeRs).toLocaleString()} has been credited to your wallet!`
+                    : `You finished Rank #${trnResult.myRank ?? '-'} in ${trnResult.title}. Better luck next time!`)
+                : isTournamentWinner
                 ? (gameState.tournamentWinnerId === playerId
                     ? (isDeals
                         ? (isTieBreaker
@@ -925,6 +1023,59 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                   </div>
                 </>
               )
+            ) : isScheduledTournament ? (
+              trnResult?.status === 'COMPLETED' ? (
+                <>
+                  <div className="result-pot-strip-item">
+                    <span className="result-pot-strip-label">Fixed Prize Pool</span>
+                    <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>
+                      ₹{Number(trnResult.fixedPrizeRs ?? 0).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="result-pot-strip-divider" />
+
+                  <div className="result-pot-strip-item">
+                    <span className="result-pot-strip-label">Your Final Rank</span>
+                    <span className="result-pot-strip-val">
+                      {trnResult.myRank ? `#${trnResult.myRank}` : '—'}
+                    </span>
+                  </div>
+
+                  <div className="result-pot-strip-divider" />
+
+                  <div className="result-pot-strip-item val-winner">
+                    <span className="result-pot-strip-label" style={{ color: (trnResult.myPrizeRs ?? 0) > 0 ? '#86efac' : '#94a3b8' }}>
+                      {(trnResult.myPrizeRs ?? 0) > 0 ? 'Prize Credited' : 'Your Prize'}
+                    </span>
+                    <span className={`result-pot-strip-val ${(trnResult.myPrizeRs ?? 0) > 0 ? 'val-green' : ''}`}>
+                      {(trnResult.myPrizeRs ?? 0) > 0
+                        ? `+₹${Number(trnResult.myPrizeRs).toLocaleString()}`
+                        : '₹0.00'}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="result-pot-strip-item">
+                    <span className="result-pot-strip-label">Tournament</span>
+                    <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>
+                      {trnResult?.title || 'Tournament'}
+                    </span>
+                  </div>
+
+                  <div className="result-pot-strip-divider" />
+
+                  <div className="result-pot-strip-item val-winner">
+                    <span className="result-pot-strip-label" style={{ color: '#86efac' }}>Round Status</span>
+                    <span className="result-pot-strip-val" style={{ fontSize: '13px', color: '#fde047' }}>
+                      {trnResult?.roundDone
+                        ? (trnResult.qualified ? '🎉 Qualified! Moving to Next Round…' : '❌ Eliminated')
+                        : '⏳ Waiting for other tables to finish…'}
+                    </span>
+                  </div>
+                </>
+              )
             ) : (
               <>
                 <div className="result-pot-strip-item">
@@ -961,6 +1112,67 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
             )}
           </div>
         </section>
+
+        {/* Final Tournament Rankings & Payouts */}
+        {isScheduledTournament && trnResult?.status === 'COMPLETED' && trnResult.finalRankings.length > 0 && (
+          <section className="result-multi-deal-card" aria-label="Tournament Final Payouts">
+            <div className="result-multi-deal-header">
+              <div className="result-multi-deal-title">
+                <Trophy size={16} color="#fbbf24" />
+                <span>FINAL TOURNAMENT PAYOUTS ({trnResult.title})</span>
+              </div>
+              <span className="result-multi-deal-chip-tag">
+                Fixed Prize: ₹{Number(trnResult.fixedPrizeRs).toLocaleString()}
+              </span>
+            </div>
+            <div className="result-multi-deal-scroll">
+              <table className="result-multi-deal-table" style={{ width: '100%', tableLayout: 'auto' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '10px 16px', width: '70px' }}>RANK</th>
+                    <th style={{ textAlign: 'left', padding: '10px 16px' }}>PLAYER</th>
+                    <th style={{ textAlign: 'center', padding: '10px 16px' }}>STATUS</th>
+                    <th style={{ textAlign: 'right', padding: '10px 16px', width: '150px' }}>PRIZE CREDITED</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trnResult.finalRankings.map((fr) => {
+                    const isChamp = fr.prizeRs > 0;
+                    const isMe = fr.playerId === playerId;
+                    return (
+                      <tr
+                        key={fr.rank}
+                        className={isMe ? 'is-me' : ''}
+                        style={isChamp ? { background: 'rgba(16, 185, 129, 0.12)' } : undefined}
+                      >
+                        <td style={{ padding: '11px 16px', fontWeight: 900, color: fr.rank === 1 ? '#fbbf24' : '#94a3b8' }}>
+                          {fr.rank === 1 ? '🥇 #1' : `#${fr.rank}`}
+                        </td>
+                        <td style={{ padding: '11px 16px', fontWeight: 700, color: '#fff' }}>
+                          {fr.displayName || fr.playerId} {isMe ? '(You)' : ''}
+                        </td>
+                        <td style={{ padding: '11px 16px', textAlign: 'center' }}>
+                          {isChamp ? (
+                            <span style={{ color: '#fbbf24', fontWeight: 900, fontSize: '11px', background: 'rgba(251, 191, 36, 0.16)', border: '1px solid rgba(251, 191, 36, 0.45)', borderRadius: '999px', padding: '3px 10px', whiteSpace: 'nowrap' }}>
+                              👑 TOURNAMENT WINNER
+                            </span>
+                          ) : (
+                            <span style={{ color: '#94a3b8', fontSize: '11.5px', fontWeight: 600 }}>
+                              Runner-up
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '11px 16px', textAlign: 'right', fontWeight: 900, fontSize: '14px', color: isChamp ? '#4ade80' : '#64748b' }}>
+                          {isChamp ? `+₹${Number(fr.prizeRs).toLocaleString()}` : '₹0.00'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
         {/* Multi-Deal Scoreboard Breakdown Table */}
         {isMultiDealGame && (
@@ -1002,7 +1214,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                     <th style={{ textAlign: 'center', minWidth: '110px' }}>
                       {isDeals ? 'Chips Balance' : 'Total Points'}
                     </th>
-                    {!isIntermediateDeal && (
+                    {!isIntermediateDeal && !isScheduledTournament && (
                       <th style={{ textAlign: 'center', minWidth: '100px' }}>Net Payout</th>
                     )}
                     <th style={{ textAlign: 'right', minWidth: '95px' }}>Rank & Status</th>
@@ -1102,8 +1314,8 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                           )}
                         </td>
 
-                        {/* Net Payout */}
-                        {!isIntermediateDeal && (
+                        {/* Net Payout (hidden for scheduled tournaments — prize is fixed winner-takes-all) */}
+                        {!isIntermediateDeal && !isScheduledTournament && (
                           <td style={{ textAlign: 'center' }}>
                             {isTournamentChamp ? (
                               <span style={{ color: '#34d399', fontWeight: 900, fontSize: '13px' }}>
@@ -1175,7 +1387,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
 
           <div className="result-sheet-table-head">
             <span>PLAYER & STATUS</span>
-            <span style={{ textAlign: 'right' }}>POINTS & NET PAYOUT</span>
+            <span style={{ textAlign: 'right' }}>{isScheduledTournament ? 'POINTS & CHIPS' : 'POINTS & NET PAYOUT'}</span>
           </div>
 
           <div className="result-sheet-rows-list">
@@ -1442,6 +1654,19 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
             Leave Table
           </button>
 
+          {tableId?.startsWith('TBL_PRV_') && !isIntermediateDeal && (
+            <button
+              type="button"
+              className="result-btn-next"
+              onClick={() => {
+                try { sessionStorage.setItem('rummy_open_private_tab', '1'); } catch { /* ignore */ }
+                handleLeave();
+              }}
+            >
+              Rematch / Private Room
+            </button>
+          )}
+
           {isPool && gameState?.canRejoin && (
             <button
               type="button"
@@ -1514,7 +1739,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
               <RotateCcw size={16} style={{ animation: 'spin 3s linear infinite' }} />
               Next Deal Starting ({dealCountdown}s)
             </div>
-          ) : (
+          ) : !isScheduledTournament ? (
             <button
               type="button"
               className="result-btn-rematch"
@@ -1523,7 +1748,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
               <RotateCcw size={17} />
               Rematch Same Stake
             </button>
-          )}
+          ) : null}
         </footer>
       </main>
     </div>

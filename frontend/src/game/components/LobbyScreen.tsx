@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { WalletModal } from './WalletModal';
+import { TournamentLobby } from './TournamentLobby';
+import { PrivateRoomLobby } from './PrivateRoomLobby';
 import {
   Coins,
   Play,
@@ -160,6 +162,22 @@ export const LobbyScreen: React.FC = () => {
 
   // 2-PAGE FLOW: Page 1 = 'SELECT_VARIANT', Page 2 = 'CONFIGURE_TABLE'
   const [currentPage, setCurrentPage] = useState<'SELECT_VARIANT' | 'CONFIGURE_TABLE'>('SELECT_VARIANT');
+
+  // ── LOBBY TABS: Cash Games vs Tournaments vs Private Room ───────────────────
+  const [lobbyTab, setLobbyTab] = useState<'CASH' | 'TOURNAMENTS' | 'PRIVATE'>(() => {
+    try {
+      if (sessionStorage.getItem('rummy_open_private_tab') === '1') {
+        sessionStorage.removeItem('rummy_open_private_tab');
+        return 'PRIVATE';
+      }
+    } catch { /* ignore */ }
+    return 'CASH';
+  });
+  const [waitingTournamentId, setWaitingTournamentId] = useState<string | null>(null);
+  const [activePrivateRoomCode, setActivePrivateRoomCode] = useState<string | null>(null);
+  const inWaitingLobby =
+    (lobbyTab === 'TOURNAMENTS' && waitingTournamentId !== null) ||
+    (lobbyTab === 'PRIVATE' && activePrivateRoomCode !== null);
 
   // Variant & Mode selection
   const [selectedVariant, setSelectedVariant] = useState<VariantType>('POINTS');
@@ -451,15 +469,15 @@ export const LobbyScreen: React.FC = () => {
 
   return (
     <LandscapeGate
-      enabled={currentPage !== 'SELECT_VARIANT' || isMatchmaking}
-      hideFloatingBadge={currentPage === 'CONFIGURE_TABLE'}
+      enabled={currentPage !== 'SELECT_VARIANT' || isMatchmaking || inWaitingLobby}
+      hideFloatingBadge={currentPage === 'CONFIGURE_TABLE' || inWaitingLobby}
     >
     <div
-      className={`lobby-frame${currentPage === 'CONFIGURE_TABLE' ? ' lobby-frame--stake' : ''}`}
+      className={`lobby-frame${currentPage === 'CONFIGURE_TABLE' || inWaitingLobby ? ' lobby-frame--stake' : ''}`}
       style={{ color: '#f8fafc' }}
     >
       {/* Top Header Bar */}
-      <header className="lobby-topbar" style={{ display: currentPage === 'CONFIGURE_TABLE' ? 'none' : undefined }}>
+      <header className="lobby-topbar" style={{ display: currentPage === 'CONFIGURE_TABLE' || inWaitingLobby ? 'none' : undefined }}>
         <div className="lobby-brand" title="Royal Rummy">
           <img
             src="/image.webp"
@@ -518,7 +536,7 @@ export const LobbyScreen: React.FC = () => {
 
       {/* Main Container */}
       <main
-        className={`lobby-main${currentPage === 'SELECT_VARIANT' ? ' lobby-main--variants' : ''}`}
+        className={`lobby-main${currentPage === 'SELECT_VARIANT' && !inWaitingLobby ? ' lobby-main--variants' : ''}`}
       >
         {rematchNotice && isMatchmaking && (
           <div
@@ -544,32 +562,83 @@ export const LobbyScreen: React.FC = () => {
         {/* ========================================================= */}
         {currentPage === 'SELECT_VARIANT' && (
           <div className="lobby-variant-hub">
-            <div className="lobby-choose-heading">
-              <span className="lobby-choose-eyebrow">Select a game</span>
-              <h1 className="lobby-choose-title">
-                Choose Your <em>Rummy</em>
-              </h1>
-              <span className="lobby-choose-ornament" aria-hidden>
-                <i />
-                <span>♠</span>
-                <i />
-              </span>
-            </div>
-
-            <div className="variant-cards-row">
-              {VARIANT_BANNERS.map((v) => (
+            {/* ── Lobby Mode Tabs: Cash Games vs Tournaments (hidden inside Waiting Lobby) ── */}
+            {!inWaitingLobby && (
+              <div className="lobby-mode-tabs">
                 <button
-                  key={v.id}
-                  id={v.cardId}
                   type="button"
-                  className="variant-banner"
-                  aria-label={v.label}
-                  onClick={() => handleSelectVariant(v.id)}
+                  className={`lobby-mode-tab ${lobbyTab === 'CASH' ? 'active' : ''}`}
+                  onClick={() => setLobbyTab('CASH')}
                 >
-                  <img src={v.src} alt={v.label} decoding="async" />
+                  Cash Games
                 </button>
-              ))}
-            </div>
+                <button
+                  type="button"
+                  className={`lobby-mode-tab ${lobbyTab === 'TOURNAMENTS' ? 'active' : ''}`}
+                  onClick={() => setLobbyTab('TOURNAMENTS')}
+                >
+                  Tournaments
+                </button>
+                <button
+                  type="button"
+                  className={`lobby-mode-tab ${lobbyTab === 'PRIVATE' ? 'active' : ''}`}
+                  onClick={() => setLobbyTab('PRIVATE')}
+                >
+                  Private Room
+                </button>
+              </div>
+            )}
+
+            {/* ── Cash Games tab ── */}
+            {lobbyTab === 'CASH' && (
+              <>
+                <div className="lobby-choose-heading">
+                  <span className="lobby-choose-eyebrow">Select a game</span>
+                  <h1 className="lobby-choose-title">
+                    Choose Your <em>Rummy</em>
+                  </h1>
+                  <span className="lobby-choose-ornament" aria-hidden>
+                    <i />
+                    <span>♠</span>
+                    <i />
+                  </span>
+                </div>
+
+                <div className="variant-cards-row">
+                  {VARIANT_BANNERS.map((v) => (
+                    <button
+                      key={v.id}
+                      id={v.cardId}
+                      type="button"
+                      className="variant-banner"
+                      aria-label={v.label}
+                      onClick={() => handleSelectVariant(v.id)}
+                    >
+                      <img src={v.src} alt={v.label} decoding="async" />
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* ── Tournaments tab ── */}
+            {lobbyTab === 'TOURNAMENTS' && (
+              <TournamentLobby
+                playerId={playerId ?? undefined}
+                operatorId={undefined}
+                activeWaitingId={waitingTournamentId}
+                onSelectWaitingId={setWaitingTournamentId}
+              />
+            )}
+
+            {/* ── Private Room tab ── */}
+            {lobbyTab === 'PRIVATE' && (
+              <PrivateRoomLobby
+                playerId={playerId ?? undefined}
+                activeRoomCode={activePrivateRoomCode}
+                onSelectRoomCode={setActivePrivateRoomCode}
+              />
+            )}
           </div>
         )}
 
@@ -1115,7 +1184,7 @@ export const LobbyScreen: React.FC = () => {
       )}
 
       {/* Floating Character Selection Button (Chatbot Widget Style) */}
-      {currentPage === 'SELECT_VARIANT' && !isMatchmaking && (
+      {currentPage === 'SELECT_VARIANT' && !isMatchmaking && !inWaitingLobby && (
         <button
           type="button"
           id="btn-floating-character"

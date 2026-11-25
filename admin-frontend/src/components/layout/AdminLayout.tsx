@@ -14,7 +14,8 @@ import {
   Users,
   Radio,
   PowerOff,
-  Building2,
+  Trophy,
+  DoorOpen,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
@@ -111,6 +112,14 @@ export const AdminLayout: React.FC = () => {
           <NavLink to="/config" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
             <Sliders size={16} color="var(--accent-cyan)" />
             <span>Rules & Rake</span>
+          </NavLink>
+          <NavLink to="/tournaments" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
+            <Trophy size={16} color="var(--accent-gold)" />
+            <span>Tournaments</span>
+          </NavLink>
+          <NavLink to="/private-rooms" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
+            <DoorOpen size={16} color="var(--accent-emerald)" />
+            <span>Private Rooms</span>
           </NavLink>
         </nav>
       </aside>
