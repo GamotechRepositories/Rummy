@@ -34,7 +34,7 @@ export interface ITournamentPrize {
 export interface ITournament extends Document {
   tournamentId: string;
   title: string;
-  variant: 'DEALS_3';          // only DEALS_3 for now
+  variant: 'DEALS_3' | 'POINTS_13';
   tableSizePerRound: 6;        // always 6
   minPlayers: number;          // admin-configurable, default 36 (must be multiple of 6)
   maxPlayers: number;          // admin-configurable, default 120 (must be multiple of 6)

@@ -7,7 +7,7 @@ import { PlayerHand } from './PlayerHand';
 import { ActionControls } from './ActionControls';
 import { DealAnimation, type DealTarget } from './DealAnimation';
 import { DeclareModal } from './DeclareModal';
-import { LogOut, Wifi, AlertCircle, Menu, X, ShieldAlert, RotateCw } from 'lucide-react';
+import { LogOut, Wifi, AlertCircle, Menu, X, RotateCw } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { FullscreenToggle } from './FullscreenToggle';
 import { soundEngine } from '../audio/soundEngine';
@@ -656,31 +656,23 @@ export const GameBoard: React.FC = () => {
                   <span>Table ID</span>
                   <span className="table-menu-id">{gameState?.tableId ?? 'T1'}</span>
                 </div>
-                <div className="table-menu-row">
-                  <span>Display mode</span>
-                  <FullscreenToggle compact showLabel style={{ padding: '3px 8px', fontSize: '11px' }} />
-                </div>
+                {(gameState?.gameStatus === 'IN_PROGRESS' || gameState?.gameStatus === 'SHOWDOWN') && gameState?.viewerStatus === 'ACTIVE' && (
+                  <div className="table-menu-row">
+                    <div className="table-menu-penalty-copy">
+                      <span className="table-menu-penalty-title">
+                        {leaveCountsAsDrop ? 'Drop Penalty' : 'Forfeit Penalty'}
+                      </span>
+                      <span className="table-menu-penalty-sub">
+                        {leaveCountsAsDrop
+                          ? (leaveOnFirstTurn ? 'First drop points will apply' : 'Middle drop points will apply')
+                          : 'Max penalty points will apply'}
+                        {leaveRupees !== null && ` · You lose ₹${leaveRupees}`}
+                      </span>
+                    </div>
+                    <span className="table-menu-value--penalty">+{leavePenalty} PTS</span>
+                  </div>
+                )}
               </div>
-
-              {(gameState?.gameStatus === 'IN_PROGRESS' || gameState?.gameStatus === 'SHOWDOWN') && gameState?.viewerStatus === 'ACTIVE' && (
-                <div className="royal-dialog-penalty-box">
-                  <div className="royal-dialog-penalty-label">
-                    <span className="royal-dialog-penalty-tag">
-                      <ShieldAlert size={13} />
-                      {leaveCountsAsDrop ? 'Drop Penalty' : 'Forfeit Penalty'}
-                    </span>
-                    <span className="royal-dialog-penalty-desc">
-                      {leaveCountsAsDrop
-                        ? (leaveOnFirstTurn ? 'First drop points will apply' : 'Middle drop points will apply')
-                        : 'Max penalty points will apply'}
-                      {leaveRupees !== null && ` · You lose ₹${leaveRupees}`}
-                    </span>
-                  </div>
-                  <div className="royal-dialog-penalty-badge">
-                    +{leavePenalty} PTS
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="royal-dialog-actions">

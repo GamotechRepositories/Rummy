@@ -897,6 +897,11 @@ public final class TableActor {
                     }
                 } else {
                     // Non-pool game (e.g. Points Rummy)
+                    if (tableId != null && tableId.startsWith("TBL_TRN_")) {
+                        this.tournamentWinnerId = finishedEvent.winnerPlayerId();
+                        log.info("[TableActor:{}] POINTS TOURNAMENT MATCH COMPLETED! Winner is {}",
+                                tableId, finishedEvent.winnerPlayerId());
+                    }
                     if (persistenceService != null) {
                         persistenceService.recordGameFinished(state, tableId);
                     }
@@ -1359,6 +1364,9 @@ public final class TableActor {
             return;
         }
         this.lastSettlement = result;
+        if (persistenceService != null) {
+            persistenceService.recordGameSettlement(result);
+        }
         if (!destroyed) {
             broadcastMessage(WsServerMessage.of("GAME_SETTLEMENT", requestId, tableId, state.getSequence(), result));
         }

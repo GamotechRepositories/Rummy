@@ -636,19 +636,19 @@ export const ActionControls: React.FC = () => {
                 onTouchStart={modalScroll.onTouchStart}
                 onTouchMove={modalScroll.onTouchMove}
               >
-                <div className="royal-dialog-penalty-box">
-                  <div className="royal-dialog-penalty-label">
-                    <span className="royal-dialog-penalty-tag">
-                      {isFirstTurn ? 'FIRST DROP PENALTY' : 'MIDDLE DROP PENALTY'}
-                    </span>
-                    <span className="royal-dialog-penalty-desc">
-                      {dropRupees !== null
-                        ? `You lose ₹${dropRupees.toFixed(2)}`
-                        : 'Will be added to your score'}
-                    </span>
-                  </div>
-                  <div className="royal-dialog-penalty-badge">
-                    +{dropPenaltyPoints} PTS
+                <div className="table-menu-rows" style={{ textAlign: 'left' }}>
+                  <div className="table-menu-row">
+                    <div className="table-menu-penalty-copy">
+                      <span className="table-menu-penalty-title">
+                        {isFirstTurn ? 'First Drop Penalty' : 'Middle Drop Penalty'}
+                      </span>
+                      <span className="table-menu-penalty-sub">
+                        {dropRupees !== null
+                          ? `You lose ₹${dropRupees.toFixed(2)}`
+                          : 'Will be added to your score'}
+                      </span>
+                    </div>
+                    <span className="table-menu-value--penalty">+{dropPenaltyPoints} PTS</span>
                   </div>
                 </div>
               </div>
@@ -715,30 +715,17 @@ export const ActionControls: React.FC = () => {
                 onTouchStart={modalScroll.onTouchStart}
                 onTouchMove={modalScroll.onTouchMove}
               >
-                <div
-                  className="royal-dialog-penalty-box"
-                  style={{
-                    background: 'rgba(16, 185, 129, 0.12)',
-                    border: '1px solid rgba(52, 211, 153, 0.35)',
-                  }}
-                >
-                  <div className="royal-dialog-penalty-label">
-                    <span className="royal-dialog-penalty-tag" style={{ color: '#6ee7b7' }}>
-                      ENTRY FEE: ₹{gameState.rejoinFee || gameState.stakeTier || lastGameConfig?.entryFee || 0}
-                    </span>
-                    <span className="royal-dialog-penalty-desc">
-                      Starting Score: <strong>{gameState.rejoinScore} pts</strong> (Leader + 1)
-                    </span>
-                  </div>
-                  <div
-                    className="royal-dialog-penalty-badge"
-                    style={{
-                      color: '#34d399',
-                      background: 'rgba(52, 211, 153, 0.15)',
-                      border: '1px solid rgba(52, 211, 153, 0.4)',
-                    }}
-                  >
-                    {gameState.rejoinScore} PTS
+                <div className="table-menu-rows" style={{ textAlign: 'left' }}>
+                  <div className="table-menu-row">
+                    <div className="table-menu-penalty-copy">
+                      <span className="table-menu-penalty-title" style={{ color: '#6ee7b7' }}>
+                        Entry Fee: ₹{gameState.rejoinFee || gameState.stakeTier || lastGameConfig?.entryFee || 0}
+                      </span>
+                      <span className="table-menu-penalty-sub">
+                        Starting Score: <strong>{gameState.rejoinScore} pts</strong> (Leader + 1)
+                      </span>
+                    </div>
+                    <span className="table-menu-value--emerald">{gameState.rejoinScore} PTS</span>
                   </div>
                 </div>
               </div>

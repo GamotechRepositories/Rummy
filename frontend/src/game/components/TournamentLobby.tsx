@@ -6,6 +6,7 @@ import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import { soundEngine } from '../audio/soundEngine';
 import { tryLockLandscape } from '../hooks/useRequiresLandscape';
+import { InsufficientBalanceModal, type InsufficientBalanceInfo } from './InsufficientBalanceModal';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 interface PublicTournament {
@@ -83,6 +84,7 @@ export const TournamentLobby: React.FC<{
   const [confirmTarget, setConfirmTarget] = useState<PublicTournament | null>(null);
   const [confirmedModal, setConfirmedModal] = useState<{ title: string; registered: number; maxPlayers: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [insufficientBalance, setInsufficientBalance] = useState<InsufficientBalanceInfo | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const enteredTableRef = useRef<string | null>(null);
 
@@ -228,6 +230,25 @@ export const TournamentLobby: React.FC<{
         } catch {
           // ignore silent balance refresh error
         }
+      } else if (res.status === 402 || data.error === 'INSUFFICIENT_BALANCE') {
+        let latestBal: number | null = useGameStore.getState().walletBalance;
+        try {
+          const balRes = await authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${encodeURIComponent(playerId)}`);
+          if (balRes.ok) {
+            const balData = await balRes.json();
+            if (typeof balData.balance === 'number') {
+              latestBal = balData.balance;
+              setWalletBalance(balData.balance);
+            }
+          }
+        } catch {
+          // ignore silent balance refresh error
+        }
+        setInsufficientBalance({
+          requiredAmount: t.entryFeeRs > 0 ? t.entryFeeRs : undefined,
+          currentBalance: latestBal,
+          contextLabel: 'register for this tournament',
+        });
       } else {
         notify(data.message || data.error || `Registration failed (HTTP ${res.status}).`, true);
       }
@@ -621,6 +642,11 @@ export const TournamentLobby: React.FC<{
           </div>
         </div>
       )}
+
+      <InsufficientBalanceModal
+        info={insufficientBalance}
+        onClose={() => setInsufficientBalance(null)}
+      />
     </div>
   );
 };

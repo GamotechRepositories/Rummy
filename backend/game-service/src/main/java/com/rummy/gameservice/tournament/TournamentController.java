@@ -29,9 +29,20 @@ public class TournamentController {
     @GetMapping
     public ResponseEntity<Map<String, Object>> listTournaments(
             HttpServletRequest request,
-            @RequestParam(required = false) String playerId) {
+            @RequestParam(required = false) String playerId,
+            @RequestParam(required = false) String variant) {
         String resolvedId = AuthenticatedPlayer.resolve(request, playerId);
-        List<Map<String, Object>> list = tournamentService.listPublicTournaments(resolvedId);
+        List<Map<String, Object>> list = tournamentService.listPublicTournaments(resolvedId, variant);
+        return ResponseEntity.ok(Map.of("success", true, "tournaments", list));
+    }
+
+    @GetMapping("/my")
+    public ResponseEntity<Map<String, Object>> myTournaments(
+            HttpServletRequest request,
+            @RequestParam(required = false) String playerId,
+            @RequestParam(required = false) String variants) {
+        String resolvedId = AuthenticatedPlayer.resolve(request, playerId);
+        List<Map<String, Object>> list = tournamentService.listMyTournaments(resolvedId, variants);
         return ResponseEntity.ok(Map.of("success", true, "tournaments", list));
     }
 

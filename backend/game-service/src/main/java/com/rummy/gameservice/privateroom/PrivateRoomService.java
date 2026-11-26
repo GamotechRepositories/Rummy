@@ -118,9 +118,29 @@ public class PrivateRoomService {
     }
 
     public synchronized Map<String, Object> joinRoom(String rawCode, String playerId, String displayName) {
+        return joinRoom(rawCode, playerId, displayName, null);
+    }
+
+    public synchronized Map<String, Object> joinRoom(
+            String rawCode, String playerId, String displayName, Collection<String> allowedRulesets) {
         String roomCode = normalizeCode(rawCode);
         PrivateRoomDocument doc = roomRepo.findByRoomCode(roomCode)
                 .orElseThrow(() -> new IllegalArgumentException("Room not found: " + roomCode));
+
+        if (allowedRulesets != null && !allowedRulesets.isEmpty()) {
+            Set<String> allowedUpper = new HashSet<>();
+            for (String rs : allowedRulesets) {
+                if (rs != null && !rs.isBlank()) {
+                    allowedUpper.add(rs.trim().toUpperCase(Locale.ROOT));
+                }
+            }
+            String roomRuleset = doc.getRulesetId() != null ? doc.getRulesetId().toUpperCase(Locale.ROOT) : "";
+            if (!allowedUpper.isEmpty() && !allowedUpper.contains(roomRuleset)) {
+                throw new IllegalArgumentException(
+                        "Room " + roomCode + " is for " + friendlyVariantName(roomRuleset)
+                                + ". Please join it from the " + friendlyVariantName(roomRuleset) + " lobby.");
+            }
+        }
 
         if (!"WAITING".equals(doc.getStatus())) {
             throw new IllegalStateException("Room " + roomCode + " is no longer accepting players (" + doc.getStatus() + ").");
@@ -301,7 +321,23 @@ public class PrivateRoomService {
     }
 
     public List<Map<String, Object>> listMyRooms(String playerId) {
+        return listMyRooms(playerId, null);
+    }
+
+    public List<Map<String, Object>> listMyRooms(String playerId, String rulesetsCsv) {
+        Set<String> allowedRulesets = null;
+        if (rulesetsCsv != null && !rulesetsCsv.isBlank()) {
+            allowedRulesets = new HashSet<>();
+            for (String token : rulesetsCsv.split(",")) {
+                String trimmed = token.trim().toUpperCase(Locale.ROOT);
+                if (!trimmed.isEmpty()) {
+                    allowedRulesets.add(trimmed);
+                }
+            }
+        }
+        Set<String> filterSet = allowedRulesets;
         return roomRepo.findByPlayersPlayerIdOrderByCreatedAtDesc(playerId).stream()
+                .filter(d -> filterSet == null || filterSet.isEmpty() || (d.getRulesetId() != null && filterSet.contains(d.getRulesetId().toUpperCase(Locale.ROOT))))
                 .limit(20)
                 .map(d -> toView(d, playerId))
                 .toList();
@@ -465,6 +501,16 @@ public class PrivateRoomService {
             if (escrows != null) escrows.reopen(key);
             log.error("[PrivateRoom] Failed refund for {} in room {}: {}", rp.getPlayerId(), doc.getRoomCode(), e.getMessage());
         }
+    }
+
+    private static String friendlyVariantName(String rulesetId) {
+        return switch (rulesetId) {
+            case "POINTS_13" -> "Point Rummy";
+            case "POOL_101", "POOL_201" -> "Pool Rummy";
+            case "DEALS_2", "DEALS_3" -> "Deals Rummy";
+            case "RUMMY_21" -> "21-Card Rummy";
+            default -> rulesetId;
+        };
     }
 
     private String generateUniqueCode() {

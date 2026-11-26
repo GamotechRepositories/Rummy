@@ -113,9 +113,13 @@ export const AdminLayout: React.FC = () => {
             <Sliders size={16} color="var(--accent-cyan)" />
             <span>Rules & Rake</span>
           </NavLink>
-          <NavLink to="/tournaments" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
+          <NavLink to="/tournaments/points" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
+            <Trophy size={16} color="var(--accent-emerald)" />
+            <span>Point Tournaments</span>
+          </NavLink>
+          <NavLink to="/tournaments/deals" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
             <Trophy size={16} color="var(--accent-gold)" />
-            <span>Tournaments</span>
+            <span>Deals Tournaments</span>
           </NavLink>
           <NavLink to="/private-rooms" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
             <DoorOpen size={16} color="var(--accent-emerald)" />

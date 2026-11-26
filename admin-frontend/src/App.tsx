@@ -55,7 +55,9 @@ export const App: React.FC = () => {
             <Route path="games/:gameId" element={<GameDetailPage />} />
             <Route path="replay" element={<HandReplayPage />} />
             <Route path="config" element={<RulesConfigPage />} />
-            <Route path="tournaments" element={<TournamentManagementPage />} />
+            <Route path="tournaments" element={<Navigate to="/tournaments/points" replace />} />
+            <Route path="tournaments/points" element={<TournamentManagementPage key="POINTS_13" variant="POINTS_13" />} />
+            <Route path="tournaments/deals" element={<TournamentManagementPage key="DEALS_3" variant="DEALS_3" />} />
             <Route path="tournaments/:tournamentId" element={<TournamentDetailPage />} />
             <Route path="private-rooms" element={<PrivateRoomsPage />} />
             <Route path="private-rooms/:roomCode" element={<PrivateRoomDetailPage />} />

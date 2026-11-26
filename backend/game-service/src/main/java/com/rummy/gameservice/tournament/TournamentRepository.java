@@ -14,4 +14,6 @@ public interface TournamentRepository extends MongoRepository<TournamentDocument
     List<TournamentDocument> findByStatusInOrderByStartsAtAsc(List<String> statuses);
 
     List<TournamentDocument> findByStatus(String status);
+
+    List<TournamentDocument> findByRegistrationsPlayerIdOrderByStartsAtDesc(String playerId);
 }

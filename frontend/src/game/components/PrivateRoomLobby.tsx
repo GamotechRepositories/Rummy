@@ -6,6 +6,7 @@ import { getApiBaseUrl } from '../utils/apiConfig';
 import { socketClient } from '../websocket/GameSocketClient';
 import { soundEngine } from '../audio/soundEngine';
 import { tryLockLandscape } from '../hooks/useRequiresLandscape';
+import { InsufficientBalanceModal, type InsufficientBalanceInfo } from './InsufficientBalanceModal';
 
 interface RoomPlayer {
   playerId: string;
@@ -77,6 +78,7 @@ export const PrivateRoomLobby: React.FC<{
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [insufficientBalance, setInsufficientBalance] = useState<InsufficientBalanceInfo | null>(null);
 
   const activeVariant = VARIANTS.find((v) => v.id === rulesetId) || VARIANTS[0];
   const isTwoPlayerOnly = rulesetId === 'DEALS_2';
@@ -190,6 +192,15 @@ export const PrivateRoomLobby: React.FC<{
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
+        if (res.status === 402 || data.error === 'INSUFFICIENT_BALANCE') {
+          await refreshWallet();
+          setInsufficientBalance({
+            requiredAmount: stakeTier > 0 ? stakeTier : undefined,
+            currentBalance: useGameStore.getState().walletBalance,
+            contextLabel: 'create this private room',
+          });
+          return;
+        }
         notifyErr(data.message || 'Could not create room.');
         return;
       }
@@ -218,6 +229,14 @@ export const PrivateRoomLobby: React.FC<{
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
+        if (res.status === 402 || data.error === 'INSUFFICIENT_BALANCE') {
+          await refreshWallet();
+          setInsufficientBalance({
+            currentBalance: useGameStore.getState().walletBalance,
+            contextLabel: 'join this private room',
+          });
+          return;
+        }
         notifyErr(data.message || 'Could not join room.');
         return;
       }
@@ -580,6 +599,11 @@ export const PrivateRoomLobby: React.FC<{
           </div>
         </div>
       )}
+
+      <InsufficientBalanceModal
+        info={insufficientBalance}
+        onClose={() => setInsufficientBalance(null)}
+      />
     </div>
   );
 };

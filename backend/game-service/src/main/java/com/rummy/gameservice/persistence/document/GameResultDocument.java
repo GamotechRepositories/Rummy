@@ -34,6 +34,10 @@ public class GameResultDocument {
 
     private String status;
 
+    private String rulesetId;
+
+    private Double netAmountRs;
+
     private Instant createdAt;
 
     public GameResultDocument() {}
@@ -79,6 +83,12 @@ public class GameResultDocument {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public String getRulesetId() { return rulesetId; }
+    public void setRulesetId(String rulesetId) { this.rulesetId = rulesetId; }
+
+    public Double getNetAmountRs() { return netAmountRs; }
+    public void setNetAmountRs(Double netAmountRs) { this.netAmountRs = netAmountRs; }
 
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

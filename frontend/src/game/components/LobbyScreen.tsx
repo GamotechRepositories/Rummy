@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
-import { WalletModal } from './WalletModal';
+import { InsufficientBalanceModal, type InsufficientBalanceInfo } from './InsufficientBalanceModal';
 import { TournamentLobby } from './TournamentLobby';
 import { PrivateRoomLobby } from './PrivateRoomLobby';
+import { HistoryPage, type HistoryVariantFilter } from './HistoryPage';
 import {
   Coins,
   Play,
@@ -17,9 +18,16 @@ import {
   Target,
   Sparkles,
   RotateCw,
+  Menu,
+  History,
+  Volume2,
+  VolumeX,
+  Maximize2,
+  Minimize2,
+  Home,
 } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
-import { FullscreenToggle } from './FullscreenToggle';
+import { FullscreenToggle, toggleFullscreen } from './FullscreenToggle';
 import { LandscapeGate, useLandscapeGate } from './LandscapeGate';
 import { soundEngine } from '../audio/soundEngine';
 import { getApiBaseUrl } from '../utils/apiConfig';
@@ -150,7 +158,7 @@ export const LobbyScreen: React.FC = () => {
   const [localName, setLocalName] = useState(displayName);
   const [isEditingName, setIsEditingName] = useState(false);
   const [characterOpen, setCharacterOpen] = useState(false);
-  const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [insufficientBalance, setInsufficientBalance] = useState<InsufficientBalanceInfo | null>(null);
   const [rematchNotice, setRematchNotice] = useState(false);
 
   const commitDisplayName = () => {
@@ -160,8 +168,30 @@ export const LobbyScreen: React.FC = () => {
     setIsEditingName(false);
   };
 
-  // 2-PAGE FLOW: Page 1 = 'SELECT_VARIANT', Page 2 = 'CONFIGURE_TABLE'
-  const [currentPage, setCurrentPage] = useState<'SELECT_VARIANT' | 'CONFIGURE_TABLE'>('SELECT_VARIANT');
+  // 3-PAGE FLOW: Page 1 = 'SELECT_VARIANT', Page 2 = 'CONFIGURE_TABLE', Page 3 = 'HISTORY'
+  const [currentPage, setCurrentPage] = useState<'SELECT_VARIANT' | 'CONFIGURE_TABLE' | 'HISTORY'>('SELECT_VARIANT');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [soundMuted, setSoundMuted] = useState(() => soundEngine.isMuted());
+  const [isFullscreen, setIsFullscreen] = useState(
+    () => typeof document !== 'undefined' && Boolean(document.fullscreenElement)
+  );
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    };
+    const onFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    window.addEventListener('keydown', onKeyDown);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('fullscreenchange', onFsChange);
+    };
+  }, []);
 
   // ── LOBBY TABS: Cash Games vs Tournaments vs Private Room ───────────────────
   const [lobbyTab, setLobbyTab] = useState<'CASH' | 'TOURNAMENTS' | 'PRIVATE'>(() => {
@@ -331,10 +361,11 @@ export const LobbyScreen: React.FC = () => {
     }
 
     if (currentBal !== null && currentBal < eFee) {
-      setErrorMsg(
-        `Insufficient Balance: You need ₹ ${eFee} to join this table. Use 'Add Cash' to top up your account.`
-      );
-      setIsWalletOpen(true);
+      setInsufficientBalance({
+        requiredAmount: eFee,
+        currentBalance: currentBal,
+        contextLabel: 'join this table',
+      });
       isEnqueuingRef.current = false;
       return;
     }
@@ -396,6 +427,14 @@ export const LobbyScreen: React.FC = () => {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        if (errData.error === 'INSUFFICIENT_BALANCE') {
+          setInsufficientBalance({
+            requiredAmount: typeof errData.requiredStake === 'number' ? errData.requiredStake : eFee,
+            currentBalance: typeof errData.currentBalance === 'number' ? errData.currentBalance : currentBal,
+            contextLabel: 'join this table',
+          });
+          return;
+        }
         throw new Error(errData.message || 'Could not start matchmaking');
       }
 
@@ -469,16 +508,26 @@ export const LobbyScreen: React.FC = () => {
 
   return (
     <LandscapeGate
-      enabled={currentPage !== 'SELECT_VARIANT' || isMatchmaking || inWaitingLobby}
+      enabled={currentPage === 'CONFIGURE_TABLE' || isMatchmaking || inWaitingLobby}
       hideFloatingBadge={currentPage === 'CONFIGURE_TABLE' || inWaitingLobby}
     >
     <div
-      className={`lobby-frame${currentPage === 'CONFIGURE_TABLE' || inWaitingLobby ? ' lobby-frame--stake' : ''}`}
+      className={`lobby-frame${currentPage === 'CONFIGURE_TABLE' ? ' lobby-frame--stake' : inWaitingLobby || currentPage === 'HISTORY' ? ' lobby-frame--waiting' : ''}`}
       style={{ color: '#f8fafc' }}
     >
       {/* Top Header Bar */}
       <header className="lobby-topbar" style={{ display: currentPage === 'CONFIGURE_TABLE' || inWaitingLobby ? 'none' : undefined }}>
-        <div className="lobby-brand" title="Royal Rummy">
+        <div
+          className="lobby-brand"
+          title="Royal Rummy"
+          style={{ cursor: currentPage === 'HISTORY' ? 'pointer' : undefined }}
+          onClick={() => {
+            if (currentPage === 'HISTORY') {
+              soundEngine.play('click');
+              setCurrentPage('SELECT_VARIANT');
+            }
+          }}
+        >
           <img
             src="/image.webp"
             alt="Royal Rummy"
@@ -488,55 +537,31 @@ export const LobbyScreen: React.FC = () => {
         </div>
 
         <div className="lobby-top-actions">
-          <SoundToggle compact />
-          <FullscreenToggle compact />
-
-          {isEditingName ? (
-            <input
-              type="text"
-              value={localName}
-              onChange={(e) => setLocalName(e.target.value)}
-              onBlur={commitDisplayName}
-              onKeyDown={(e) => e.key === 'Enter' && commitDisplayName()}
-              autoFocus
-              maxLength={16}
-              aria-label="Your name"
-              className="lobby-name-input"
-            />
-          ) : (
-            <button
-              type="button"
-              className="lobby-link-btn"
-              onClick={() => {
-                soundEngine.play('click');
-                setIsEditingName(true);
-              }}
-            >
-              {localName || 'Player'}
-              <Pencil size={12} strokeWidth={2} />
-            </button>
-          )}
-
-          <div className="lobby-balance">
+          <div className="lobby-balance" title="Available Balance">
             <Coins size={14} />
             <span>₹ {(walletBalance ?? 0).toLocaleString()}</span>
-            <button
-              type="button"
-              className="lobby-add-btn"
-              onClick={() => {
-                soundEngine.play('click');
-                setIsWalletOpen(true);
-              }}
-            >
-              Add Cash
-            </button>
           </div>
+
+          <button
+            type="button"
+            id="btn-lobby-menu"
+            className={`lobby-hamburger-btn${menuOpen ? ' open' : ''}`}
+            aria-label="Open menu"
+            aria-expanded={menuOpen}
+            onClick={() => {
+              soundEngine.play('click');
+              setSoundMuted(soundEngine.isMuted());
+              setMenuOpen((prev) => !prev);
+            }}
+          >
+            <Menu size={19} strokeWidth={2.2} />
+          </button>
         </div>
       </header>
 
       {/* Main Container */}
       <main
-        className={`lobby-main${currentPage === 'SELECT_VARIANT' && !inWaitingLobby ? ' lobby-main--variants' : ''}`}
+        className={`lobby-main${currentPage === 'SELECT_VARIANT' && !inWaitingLobby ? ' lobby-main--variants' : currentPage === 'HISTORY' ? ' lobby-main--history' : ''}`}
       >
         {rematchNotice && isMatchmaking && (
           <div
@@ -1081,6 +1106,20 @@ export const LobbyScreen: React.FC = () => {
             </div>
           </div>
         )}
+
+        {currentPage === 'HISTORY' && (
+          <HistoryPage
+            onBack={() => setCurrentPage('SELECT_VARIANT')}
+            allowedRulesets={[]}
+            variantFilters={([
+              { id: 'ALL', label: 'All', rulesets: [] },
+              { id: 'POINTS', label: 'Points', rulesets: ['POINTS_13'] },
+              { id: 'POOL', label: 'Pool', rulesets: ['POOL_101', 'POOL_201'] },
+              { id: 'DEALS', label: 'Deals', rulesets: ['DEALS_2', 'DEALS_3'] },
+              { id: 'RUMMY_21', label: '21-Card', rulesets: ['RUMMY_21'] },
+            ] satisfies HistoryVariantFilter[])}
+          />
+        )}
       </main>
 
       {/* Matchmaking Overlay — Step 2 stake-card style */}
@@ -1252,14 +1291,152 @@ export const LobbyScreen: React.FC = () => {
         </div>
       )}
 
-      {/* Wallet Modal */}
-      <WalletModal
-        isOpen={isWalletOpen}
-        onClose={() => {
-          setIsWalletOpen(false);
-          fetchBalance();
-        }}
+      {/* Insufficient Balance Modal */}
+      <InsufficientBalanceModal
+        info={insufficientBalance}
+        onClose={() => setInsufficientBalance(null)}
       />
+
+      {/* Slide-out Header Hamburger Menu */}
+      {menuOpen && (
+        <div
+          className="lobby-drawer-backdrop"
+          onClick={() => setMenuOpen(false)}
+        >
+          <aside
+            className="lobby-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="lobby-drawer-head">
+              <div className="lobby-drawer-profile">
+                <img
+                  src={photoForCharacter(avatarId)}
+                  alt=""
+                  className="lobby-drawer-avatar"
+                  draggable={false}
+                />
+                <div className="lobby-drawer-name-wrap">
+                  {isEditingName ? (
+                    <input
+                      type="text"
+                      value={localName}
+                      onChange={(e) => setLocalName(e.target.value)}
+                      onBlur={commitDisplayName}
+                      onKeyDown={(e) => e.key === 'Enter' && commitDisplayName()}
+                      autoFocus
+                      maxLength={16}
+                      aria-label="Your name"
+                      className="lobby-name-input"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="lobby-drawer-name-btn"
+                      onClick={() => {
+                        soundEngine.play('click');
+                        setIsEditingName(true);
+                      }}
+                    >
+                      <span>{localName || 'Player'}</span>
+                      <Pencil size={13} strokeWidth={2} />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="lobby-drawer-close"
+                onClick={() => {
+                  soundEngine.play('click');
+                  setMenuOpen(false);
+                }}
+                aria-label="Close menu"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <nav className="lobby-drawer-nav" aria-label="Primary navigation">
+              <button
+                type="button"
+                id="btn-menu-lobby"
+                className={`lobby-drawer-item${currentPage === 'SELECT_VARIANT' ? ' active' : ''}`}
+                onClick={() => {
+                  soundEngine.play('click');
+                  setCurrentPage('SELECT_VARIANT');
+                  setLobbyTab('CASH');
+                  setMenuOpen(false);
+                }}
+              >
+                <Home size={16} />
+                <span>Lobby</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-menu-history"
+                className={`lobby-drawer-item${currentPage === 'HISTORY' ? ' active' : ''}`}
+                onClick={() => {
+                  soundEngine.play('click');
+                  setCurrentPage('HISTORY');
+                  setMenuOpen(false);
+                }}
+              >
+                <History size={16} />
+                <span>History</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-menu-character"
+                className="lobby-drawer-item"
+                onClick={() => {
+                  soundEngine.play('click');
+                  setMenuOpen(false);
+                  setCharacterOpen(true);
+                }}
+              >
+                <UsersRound size={16} />
+                <span>Choose Character</span>
+              </button>
+
+            </nav>
+
+            <div className="lobby-drawer-controls">
+              <button
+                type="button"
+                id="btn-menu-sound"
+                className="lobby-drawer-item"
+                onClick={() => {
+                  soundEngine.unlock();
+                  setSoundMuted(soundEngine.toggleMute());
+                }}
+              >
+                {soundMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                <span>Sound</span>
+                <span className="lobby-drawer-pill">{soundMuted ? 'Muted' : 'On'}</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-menu-fullscreen"
+                className="lobby-drawer-item"
+                onClick={() => {
+                  soundEngine.play('click');
+                  void toggleFullscreen().then(setIsFullscreen);
+                }}
+              >
+                {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                <span>Fullscreen</span>
+                <span className="lobby-drawer-pill">{isFullscreen ? 'On' : 'Off'}</span>
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
     </LandscapeGate>
   );

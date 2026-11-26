@@ -56,7 +56,11 @@ public class PrivateRoomController {
             String reqPlayerId = (body != null && body.get("playerId") != null) ? String.valueOf(body.get("playerId")) : null;
             String playerId = AuthenticatedPlayer.resolve(request, reqPlayerId);
             String displayName = (body != null && body.get("displayName") != null) ? String.valueOf(body.get("displayName")) : playerId;
-            return ResponseEntity.ok(roomService.joinRoom(roomCode, playerId, displayName));
+            java.util.List<String> allowedRulesets = null;
+            if (body != null && body.get("allowedRulesets") instanceof java.util.Collection<?> rawList) {
+                allowedRulesets = rawList.stream().map(String::valueOf).toList();
+            }
+            return ResponseEntity.ok(roomService.joinRoom(roomCode, playerId, displayName, allowedRulesets));
         } catch (InsufficientBalanceException e) {
             return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED).body(Map.of(
                     "success", false,
@@ -117,9 +121,12 @@ public class PrivateRoomController {
     }
 
     @GetMapping("/my")
-    public ResponseEntity<?> myRooms(HttpServletRequest request, @RequestParam(required = false) String playerId) {
+    public ResponseEntity<?> myRooms(
+            HttpServletRequest request,
+            @RequestParam(required = false) String playerId,
+            @RequestParam(required = false) String rulesets) {
         String resolved = AuthenticatedPlayer.resolve(request, playerId);
-        return ResponseEntity.ok(Map.of("success", true, "rooms", roomService.listMyRooms(resolved)));
+        return ResponseEntity.ok(Map.of("success", true, "rooms", roomService.listMyRooms(resolved, rulesets)));
     }
 
     @GetMapping("/{roomCode}")

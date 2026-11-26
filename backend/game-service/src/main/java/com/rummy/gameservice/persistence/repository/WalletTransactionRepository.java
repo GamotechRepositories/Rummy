@@ -18,4 +18,6 @@ public interface WalletTransactionRepository extends MongoRepository<WalletTrans
     List<WalletTransactionDocument> findByPlayerIdOrderByCreatedAtDesc(String playerId, Pageable pageable);
 
     List<WalletTransactionDocument> findByGameId(String gameId);
+
+    List<WalletTransactionDocument> findByGameIdIn(java.util.Collection<String> gameIds);
 }

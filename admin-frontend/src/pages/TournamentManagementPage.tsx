@@ -41,6 +41,7 @@ interface Tournament {
 
 interface CreateForm {
   title: string;
+  variant: 'DEALS_3' | 'POINTS_13';
   minPlayers: number;
   maxPlayers: number;
   entryFeeRs: number;
@@ -82,21 +83,50 @@ function defaultRegCloseISO() {
   return isoLocal(d);
 }
 
-const EMPTY_FORM: CreateForm = {
-  title: '',
-  minPlayers: 36,
-  maxPlayers: 120,
-  entryFeeRs: 100,
-  fixedPrizeRs: 5000,
-  checkInWindowMinutes: 5,
-  registrationStartsAt: defaultRegOpenISO(),
-  registrationEndsAt: defaultRegCloseISO(),
-  startsAt: defaultStartISO(),
-  operatorScope: 'ALL',
+type TournamentVariant = 'POINTS_13' | 'DEALS_3';
+
+const VARIANT_META: Record<TournamentVariant, {
+  title: string;
+  subtitle: string;
+  listTitle: string;
+  placeholder: string;
+  badgeLabel: string;
+}> = {
+  POINTS_13: {
+    title: 'Point Rummy Tournaments',
+    subtitle: 'Create, manage and monitor Point Rummy (1 Deal · 6 Players) tournaments.',
+    listTitle: 'Point Rummy Tournaments',
+    placeholder: 'e.g. Evening Point Mania',
+    badgeLabel: 'Point Rummy (1 Deal · 6P)',
+  },
+  DEALS_3: {
+    title: 'Deals Rummy Tournaments',
+    subtitle: 'Create, manage and monitor Deals Rummy (3 Deals · 6 Players) tournaments.',
+    listTitle: 'Deals Rummy Tournaments',
+    placeholder: 'e.g. Evening Deals Mania',
+    badgeLabel: 'Deals Rummy (3 Deals · 6P)',
+  },
 };
 
+function makeEmptyForm(variant: TournamentVariant): CreateForm {
+  return {
+    title: '',
+    variant,
+    minPlayers: 36,
+    maxPlayers: 120,
+    entryFeeRs: 100,
+    fixedPrizeRs: 5000,
+    checkInWindowMinutes: 5,
+    registrationStartsAt: defaultRegOpenISO(),
+    registrationEndsAt: defaultRegCloseISO(),
+    startsAt: defaultStartISO(),
+    operatorScope: 'ALL',
+  };
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
-export const TournamentManagementPage: React.FC = () => {
+export const TournamentManagementPage: React.FC<{ variant?: TournamentVariant }> = ({ variant = 'DEALS_3' }) => {
+  const meta = VARIANT_META[variant];
   const navigate = useNavigate();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,7 +134,7 @@ export const TournamentManagementPage: React.FC = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
+  const [form, setForm] = useState<CreateForm>(() => makeEmptyForm(variant));
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -121,18 +151,20 @@ export const TournamentManagementPage: React.FC = () => {
   const fetchTournaments = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/tournaments');
-      const list: Tournament[] = (res.data.tournaments || []).map((t: Tournament) => ({
-        ...t,
-        registered: t.registrations?.length ?? 0,
-      }));
+      const res = await api.get('/tournaments', { params: { variant } });
+      const list: Tournament[] = (res.data.tournaments || [])
+        .filter((t: Tournament) => (t.variant || 'DEALS_3') === variant)
+        .map((t: Tournament) => ({
+          ...t,
+          registered: t.registrations?.length ?? 0,
+        }));
       setTournaments(list);
     } catch {
       setTournaments([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [variant]);
 
   useEffect(() => { fetchTournaments(); }, [fetchTournaments]);
 
@@ -143,6 +175,7 @@ export const TournamentManagementPage: React.FC = () => {
     setShowCreate(true);
     setForm({
       title: t.title,
+      variant: t.variant === 'POINTS_13' ? 'POINTS_13' : 'DEALS_3',
       minPlayers: t.minPlayers,
       maxPlayers: t.maxPlayers,
       entryFeeRs: t.entryFeeRs,
@@ -176,7 +209,7 @@ export const TournamentManagementPage: React.FC = () => {
       }
       setShowCreate(false);
       setEditingId(null);
-      setForm(EMPTY_FORM);
+      setForm(makeEmptyForm(variant));
       await fetchTournaments();
     } catch (err: any) {
       notify(err.response?.data?.message || err.message, true);
@@ -239,10 +272,10 @@ export const TournamentManagementPage: React.FC = () => {
         <div>
           <h1 className="admin-page-title">
             <Trophy size={22} style={{ color: 'var(--accent-gold)', marginRight: 8 }} />
-            Tournament Management
+            {meta.title}
           </h1>
           <p className="admin-page-subtitle">
-            Create, manage and monitor Deals Rummy (3 Deals · 6 Players) tournaments.
+            {meta.subtitle}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -250,7 +283,7 @@ export const TournamentManagementPage: React.FC = () => {
             <RefreshCw size={14} />
             Refresh
           </button>
-          <button className="btn btn-primary" onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setShowCreate(true); setSelectedId(null); }}>
+          <button className="btn btn-primary" onClick={() => { setEditingId(null); setForm(makeEmptyForm(variant)); setShowCreate(true); setSelectedId(null); }}>
             <Plus size={14} />
             Create Tournament
           </button>
@@ -323,7 +356,7 @@ export const TournamentManagementPage: React.FC = () => {
         <div className="table-panel">
           <div className="table-panel-header" style={{ flexWrap: 'wrap', gap: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="table-panel-title">All Tournaments</span>
+              <span className="table-panel-title">{meta.listTitle}</span>
               <span className="badge badge-dim">{filteredTournaments.length}</span>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -483,9 +516,18 @@ export const TournamentManagementPage: React.FC = () => {
                     <input
                       className="admin-input"
                       required
-                      placeholder="e.g. Evening Deals Mania"
+                      placeholder={meta.placeholder}
                       value={form.title}
                       onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                    />
+                  </label>
+
+                  <label className="admin-field-label">
+                    Game Variant
+                    <input
+                      className="admin-input"
+                      value={meta.badgeLabel}
+                      disabled
                     />
                   </label>
 

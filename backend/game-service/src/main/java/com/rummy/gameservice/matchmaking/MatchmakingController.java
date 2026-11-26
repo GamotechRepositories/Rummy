@@ -129,7 +129,7 @@ public class MatchmakingController {
         return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
                 "error", "INSUFFICIENT_BALANCE",
-                "message", "Insufficient balance. You have ₹" + balance + " but this table needs ₹" + required + ". Add cash from your account.",
+                "message", "Insufficient balance. You have ₹" + balance + " but this table needs ₹" + required + ". Please add funds in your gaming account.",
                 "currentBalance", balance,
                 "requiredStake", required
         ));

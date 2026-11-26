@@ -142,7 +142,7 @@ export const TournamentDetailPage: React.FC = () => {
   if (error || !tournament) {
     return (
       <div className="admin-page-root">
-        <button className="btn" onClick={() => navigate('/tournaments')} style={{ alignSelf: 'flex-start' }}>
+        <button className="btn" onClick={() => navigate(-1)} style={{ alignSelf: 'flex-start' }}>
           <ArrowLeft size={14} /> Back to Tournaments
         </button>
         <div className="admin-alert admin-alert-error">{error || 'Tournament not found'}</div>
@@ -175,7 +175,10 @@ export const TournamentDetailPage: React.FC = () => {
       {/* Header */}
       <div className="admin-page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button className="btn" onClick={() => navigate('/tournaments')}>
+          <button
+            className="btn"
+            onClick={() => navigate(tournament.variant === 'POINTS_13' ? '/tournaments/points' : '/tournaments/deals')}
+          >
             <ArrowLeft size={14} /> Back
           </button>
           <div>
@@ -188,7 +191,7 @@ export const TournamentDetailPage: React.FC = () => {
               <code style={{ fontSize: 11, color: 'var(--text-dim)' }}>{tournament.tournamentId}</code>
             </div>
             <p className="admin-page-subtitle" style={{ marginTop: 4 }}>
-              Deals Rummy (3 Deals · 6 Players) · Min {tournament.minPlayers} / Max {tournament.maxPlayers} · Check-In Window: {tournament.checkInWindowMinutes ?? 5} mins
+              {tournament.variant === 'POINTS_13' ? 'Point Rummy (1 Deal · 6 Players)' : 'Deals Rummy (3 Deals · 6 Players)'} · Min {tournament.minPlayers} / Max {tournament.maxPlayers} · Check-In Window: {tournament.checkInWindowMinutes ?? 5} mins
             </p>
           </div>
         </div>

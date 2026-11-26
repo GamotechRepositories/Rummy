@@ -4,6 +4,7 @@ import com.rummy.engine.command.JoinCommand;
 import com.rummy.engine.command.ReadyCommand;
 import com.rummy.engine.model.PlayerState;
 import com.rummy.engine.rules.DealsRummyRules;
+import com.rummy.engine.rules.PointsRummyRules;
 import com.rummy.engine.rules.RulesetRegistry;
 import com.rummy.engine.rules.RummyRules;
 import com.rummy.gameservice.actor.TableActor;
@@ -58,6 +59,10 @@ public class TournamentService {
     // ── Public Query ──────────────────────────────────────────────────────────
 
     public List<Map<String, Object>> listPublicTournaments(String playerId) {
+        return listPublicTournaments(playerId, null);
+    }
+
+    public List<Map<String, Object>> listPublicTournaments(String playerId, String variant) {
         List<TournamentDocument> docs = tournamentRepository.findByStatusInOrderByStartsAtAsc(
                 List.of("REGISTERING", "STARTING", "RUNNING", "COMPLETED", "CANCELLED")
         );
@@ -65,6 +70,10 @@ public class TournamentService {
         Instant cutoff = Instant.now().minus(7, ChronoUnit.DAYS);
         List<Map<String, Object>> result = new ArrayList<>();
         for (TournamentDocument t : docs) {
+            String docVariant = (t.getVariant() != null && !t.getVariant().isBlank()) ? t.getVariant() : "DEALS_3";
+            if (variant != null && !variant.isBlank() && !variant.equalsIgnoreCase(docVariant)) {
+                continue;
+            }
             boolean isRegistered = playerId != null && t.getRegistrations().stream()
                     .anyMatch(r -> playerId.equals(r.getPlayerId()));
             if ("CANCELLED".equals(t.getStatus()) || "COMPLETED".equals(t.getStatus())) {
@@ -122,6 +131,92 @@ public class TournamentService {
             result.add(item);
         }
         return result;
+    }
+
+    /**
+     * Player-scoped tournament history across all statuses (no 7-day cutoff),
+     * optionally filtered by comma-separated variant ruleset IDs.
+     */
+    public List<Map<String, Object>> listMyTournaments(String playerId, String variantsCsv) {
+        if (playerId == null || playerId.isBlank()) {
+            return List.of();
+        }
+        Set<String> allowedVariants = new HashSet<>();
+        if (variantsCsv != null && !variantsCsv.isBlank()) {
+            for (String token : variantsCsv.split(",")) {
+                String trimmed = token.trim().toUpperCase(Locale.ROOT);
+                if (!trimmed.isEmpty()) {
+                    allowedVariants.add(trimmed);
+                }
+            }
+        }
+
+        List<TournamentDocument> docs = tournamentRepository.findByRegistrationsPlayerIdOrderByStartsAtDesc(playerId);
+        if (docs == null) {
+            docs = tournamentRepository.findByStatusInOrderByStartsAtAsc(
+                    List.of("REGISTERING", "STARTING", "RUNNING", "COMPLETED", "CANCELLED")
+            );
+        }
+
+        return docs.stream()
+                .filter(t -> t.getRegistrations().stream().anyMatch(r -> playerId.equals(r.getPlayerId())))
+                .filter(t -> {
+                    if (allowedVariants.isEmpty()) return true;
+                    String docVariant = (t.getVariant() != null && !t.getVariant().isBlank())
+                            ? t.getVariant().trim().toUpperCase(Locale.ROOT)
+                            : "DEALS_3";
+                    return allowedVariants.contains(docVariant);
+                })
+                .sorted((a, b) -> {
+                    Instant ia = a.getStartsAt() != null ? a.getStartsAt() : Instant.EPOCH;
+                    Instant ib = b.getStartsAt() != null ? b.getStartsAt() : Instant.EPOCH;
+                    return ib.compareTo(ia);
+                })
+                .limit(50)
+                .map(t -> {
+                    String docVariant = (t.getVariant() != null && !t.getVariant().isBlank())
+                            ? t.getVariant()
+                            : "DEALS_3";
+                    Integer myRank = null;
+                    double myPrizeRs = 0.0;
+                    String winnerName = null;
+                    if (t.getFinalRankings() != null && !t.getFinalRankings().isEmpty()) {
+                        for (TournamentDocument.FinalRanking fr : t.getFinalRankings()) {
+                            if (fr.getRank() == 1 && winnerName == null) {
+                                winnerName = fr.getDisplayName();
+                            }
+                            if (playerId.equals(fr.getPlayerId())) {
+                                myRank = fr.getRank();
+                                myPrizeRs = fr.getPrizeRs();
+                            }
+                        }
+                    }
+
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("tournamentId", t.getTournamentId());
+                    item.put("title", t.getTitle());
+                    item.put("variant", docVariant);
+                    item.put("status", t.getStatus());
+                    item.put("entryFeeRs", t.getEntryFeeRs());
+                    item.put("prizePoolRs", t.getFixedPrizeRs());
+                    item.put("startsAt", t.getStartsAt());
+                    item.put("registered", t.getRegistrations().size());
+                    item.put("maxPlayers", t.getMaxPlayers());
+                    item.put("isCheckedIn", t.getCheckedInPlayerIds().contains(playerId));
+                    item.put("roundsCount", t.getRounds() != null ? t.getRounds().size() : 0);
+                    if (myRank != null) {
+                        item.put("myRank", myRank);
+                    }
+                    item.put("myPrizeRs", myPrizeRs);
+                    if (winnerName != null) {
+                        item.put("winnerDisplayName", winnerName);
+                    }
+                    if (t.getCancelledReason() != null) {
+                        item.put("cancelledReason", t.getCancelledReason());
+                    }
+                    return item;
+                })
+                .toList();
     }
 
     public Map<String, Object> getTournamentStatusByTable(String tableId, String playerId) {
@@ -441,7 +536,11 @@ public class TournamentService {
             displayNames.put(reg.getPlayerId(), reg.getDisplayName());
         }
 
-        RummyRules rules = RulesetRegistry.getRuleset("DEALS_3").orElseGet(() -> new DealsRummyRules(3));
+        String variant = (t.getVariant() != null && !t.getVariant().isBlank()) ? t.getVariant() : "DEALS_3";
+        RummyRules rules = RulesetRegistry.getRuleset(variant)
+                .orElseGet(() -> "POINTS_13".equalsIgnoreCase(variant)
+                        ? new PointsRummyRules()
+                        : new DealsRummyRules(3));
         List<String> tableIds = new ArrayList<>();
         int idx = 0;
 
@@ -512,6 +611,7 @@ public class TournamentService {
         List<String> tableWinners = new ArrayList<>();
         List<PlayerScore> runnersUp = new ArrayList<>();
 
+        boolean isPoints = "POINTS_13".equalsIgnoreCase(t.getVariant());
         for (String tableId : currentRound.getTableIds()) {
             Optional<TableActor> actorOpt = tableManager.getTable(tableId);
             if (actorOpt.isEmpty()) continue;
@@ -523,12 +623,15 @@ public class TournamentService {
             }
             List<PlayerState> sorted = actor.getState().getPlayers().stream()
                     .filter(p -> !p.getPlayerId().equals(winnerId))
-                    .sorted(Comparator.comparingLong(PlayerState::getChipBalance).reversed())
+                    .sorted(isPoints
+                            ? Comparator.comparingInt(PlayerState::getScore)
+                            : Comparator.comparingLong(PlayerState::getChipBalance).reversed())
                     .toList();
             for (int r = 0; r < sorted.size(); r++) {
                 PlayerState runner = sorted.get(r);
-                // Prioritize higher table rank (2nd place before 3rd place), then chipBalance
-                runnersUp.add(new PlayerScore(runner.getPlayerId(), runner.getChipBalance(), r));
+                // Prioritize higher table rank (2nd place before 3rd place), then best score/chips
+                long tieMetric = isPoints ? -runner.getScore() : runner.getChipBalance();
+                runnersUp.add(new PlayerScore(runner.getPlayerId(), tieMetric, r));
             }
         }
 
@@ -558,12 +661,17 @@ public class TournamentService {
         Optional<TableActor> actorOpt = tableManager.getTable(finalTableId);
         String explicitWinnerId = actorOpt.map(TableActor::getTournamentWinnerId).orElse(null);
 
-        // Rank finalists by highest chipBalance (with explicit table winner prioritized on tie)
+        boolean isPoints = "POINTS_13".equalsIgnoreCase(t.getVariant());
+
+        // Rank finalists: explicit table winner first, then lowest penalty score (Points) or highest chipBalance (Deals)
         List<PlayerState> finalists = actorOpt
                 .<List<PlayerState>>map(a -> a.getState().getPlayers().stream()
-                        .sorted(Comparator
-                                .comparingLong(PlayerState::getChipBalance).reversed()
-                                .thenComparing(p -> p.getPlayerId().equals(explicitWinnerId) ? 0 : 1))
+                        .sorted(isPoints
+                                ? Comparator.<PlayerState>comparingInt(p -> p.getPlayerId().equals(explicitWinnerId) ? 0 : 1)
+                                        .thenComparingInt(PlayerState::getScore)
+                                : Comparator
+                                        .comparingLong(PlayerState::getChipBalance).reversed()
+                                        .thenComparing(p -> p.getPlayerId().equals(explicitWinnerId) ? 0 : 1))
                         .toList())
                 .orElse(Collections.emptyList());
 

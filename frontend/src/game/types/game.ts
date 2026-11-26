@@ -223,6 +223,8 @@ export interface GameResultItem {
   finalScore: number;
   won: boolean;
   status: string;
+  rulesetId?: string;
+  netAmountRs?: number | null;
   createdAt: string;
 }
 

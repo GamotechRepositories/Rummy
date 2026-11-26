@@ -10,9 +10,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * REST API for querying player match history, career stats, and game replay events.
@@ -27,22 +30,58 @@ public class GameHistoryController {
         this.persistenceService = Objects.requireNonNull(persistenceService);
     }
 
+    public ResponseEntity<Map<String, Object>> getPlayerHistory(HttpServletRequest request, String playerId) {
+        return getPlayerHistory(request, playerId, null, false);
+    }
+
+    public ResponseEntity<Map<String, Object>> getPlayerHistory(HttpServletRequest request, String playerId, String rulesets) {
+        return getPlayerHistory(request, playerId, rulesets, false);
+    }
+
     @GetMapping("/player/{playerId}")
-    public ResponseEntity<Map<String, Object>> getPlayerHistory(HttpServletRequest request, @PathVariable String playerId) {
+    public ResponseEntity<Map<String, Object>> getPlayerHistory(
+            HttpServletRequest request,
+            @PathVariable String playerId,
+            @RequestParam(name = "rulesets", required = false) String rulesets,
+            @RequestParam(name = "excludeTournaments", required = false, defaultValue = "false") boolean excludeTournaments) {
         String owner = AuthenticatedPlayer.resolve(request, playerId);
-        List<GameResultDocument> results = persistenceService.getPlayerHistory(owner);
+        Set<String> allowedRulesets = parseRulesets(rulesets);
+        List<GameResultDocument> results = (allowedRulesets.isEmpty() && !excludeTournaments)
+                ? persistenceService.getPlayerHistory(owner)
+                : persistenceService.getPlayerHistory(owner, allowedRulesets, excludeTournaments);
         UserProfileDocument profile = persistenceService.getOrCreateUserProfile(owner, owner);
 
-        double winRate = profile.getGamesPlayed() > 0
-                ? ((double) profile.getGamesWon() / profile.getGamesPlayed()) * 100.0
-                : 0.0;
+        boolean filtered = !allowedRulesets.isEmpty() || excludeTournaments;
+        double winRate;
+        if (filtered) {
+            long won = results.stream().filter(GameResultDocument::isWon).count();
+            winRate = results.isEmpty() ? 0.0 : ((double) won / results.size()) * 100.0;
+        } else {
+            winRate = profile.getGamesPlayed() > 0
+                    ? ((double) profile.getGamesWon() / profile.getGamesPlayed()) * 100.0
+                    : 0.0;
+        }
 
         return ResponseEntity.ok(Map.of(
                 "playerId", owner,
                 "profile", profile,
                 "winRate", Math.round(winRate * 10.0) / 10.0,
-                "results", results
+                "results", results,
+                "filtered", filtered
         ));
+    }
+
+    private static Set<String> parseRulesets(String rulesets) {
+        Set<String> parsed = new LinkedHashSet<>();
+        if (rulesets == null || rulesets.isBlank()) {
+            return parsed;
+        }
+        for (String token : rulesets.split(",")) {
+            if (token != null && !token.isBlank()) {
+                parsed.add(token.trim().toUpperCase(Locale.ROOT));
+            }
+        }
+        return parsed;
     }
 
     /**

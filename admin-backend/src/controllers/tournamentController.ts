@@ -16,9 +16,14 @@ const DEFAULT_PRIZES: ITournamentPrize[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 export async function listTournaments(req: Request, res: Response): Promise<void> {
   try {
-    const { status, limit = 50 } = req.query;
+    const { status, variant, limit = 50 } = req.query;
     const filter: any = {};
     if (status) filter.status = status;
+    if (variant === 'POINTS_13') {
+      filter.variant = 'POINTS_13';
+    } else if (variant === 'DEALS_3') {
+      filter.$or = [{ variant: 'DEALS_3' }, { variant: { $exists: false } }, { variant: null }];
+    }
 
     const tournaments = await Tournament.find(filter)
       .sort({ startsAt: -1 })
@@ -49,9 +54,9 @@ export async function getTournament(req: Request, res: Response): Promise<void> 
 
     const [games, results] = allTableIds.length > 0
       ? await Promise.all([
-          Game.find({ tableId: { $in: allTableIds } }).lean(),
-          GameResult.find({ tableId: { $in: allTableIds } }).lean(),
-        ])
+        Game.find({ tableId: { $in: allTableIds } }).lean(),
+        GameResult.find({ tableId: { $in: allTableIds } }).lean(),
+      ])
       : [[], []];
 
     const gamesByTable = new Map<string, any>();
@@ -82,21 +87,21 @@ export async function getTournament(req: Request, res: Response): Promise<void> 
         const tableResults = resultsByTable.get(tableId) || [];
         const players = tableResults.length > 0
           ? tableResults.map((pr: any) => ({
-              playerId: pr.playerId,
-              displayName: pr.displayName || displayNameMap.get(pr.playerId) || pr.playerId,
-              finalScore: pr.finalScore ?? 0,
-              won: Boolean(pr.won) || g?.winnerPlayerId === pr.playerId,
-              qualified: qualifiedSet.has(pr.playerId),
-              status: pr.status || 'FINISHED',
-            }))
+            playerId: pr.playerId,
+            displayName: pr.displayName || displayNameMap.get(pr.playerId) || pr.playerId,
+            finalScore: pr.finalScore ?? 0,
+            won: Boolean(pr.won) || g?.winnerPlayerId === pr.playerId,
+            qualified: qualifiedSet.has(pr.playerId),
+            status: pr.status || 'FINISHED',
+          }))
           : (g?.players || []).map((gp: any) => ({
-              playerId: gp.playerId,
-              displayName: gp.displayName || displayNameMap.get(gp.playerId) || gp.playerId,
-              finalScore: gp.cumulativeScore ?? gp.score ?? 0,
-              won: g?.winnerPlayerId === gp.playerId,
-              qualified: qualifiedSet.has(gp.playerId),
-              status: gp.status || 'PLAYED',
-            }));
+            playerId: gp.playerId,
+            displayName: gp.displayName || displayNameMap.get(gp.playerId) || gp.playerId,
+            finalScore: gp.cumulativeScore ?? gp.score ?? 0,
+            won: g?.winnerPlayerId === gp.playerId,
+            qualified: qualifiedSet.has(gp.playerId),
+            status: gp.status || 'PLAYED',
+          }));
 
         const winnerId = g?.winnerPlayerId || players.find((p: any) => p.won)?.playerId || null;
         return {
@@ -177,6 +182,7 @@ export async function createTournament(req: AdminAuthRequest, res: Response): Pr
   try {
     const {
       title,
+      variant,
       minPlayers,
       maxPlayers,
       entryFeeRs,
@@ -199,9 +205,12 @@ export async function createTournament(req: AdminAuthRequest, res: Response): Pr
       return;
     }
 
+    const resolvedVariant = variant === 'POINTS_13' ? 'POINTS_13' : 'DEALS_3';
+
     const tournament = await Tournament.create({
       tournamentId: `TRN-${randomBytes(4).toString('hex').toUpperCase()}`,
       title,
+      variant: resolvedVariant,
       minPlayers: Number(minPlayers),
       maxPlayers: Number(maxPlayers),
       entryFeeRs: Number(entryFeeRs ?? 0),
@@ -235,8 +244,8 @@ export async function updateTournament(req: AdminAuthRequest, res: Response): Pr
     }
 
     const allowed = ['title', 'minPlayers', 'maxPlayers', 'entryFeeRs', 'fixedPrizeRs',
-                     'checkInWindowMinutes', 'prizes', 'registrationStartsAt', 'registrationEndsAt',
-                     'startsAt', 'operatorScope'];
+      'checkInWindowMinutes', 'prizes', 'registrationStartsAt', 'registrationEndsAt',
+      'startsAt', 'operatorScope'];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
         (t as any)[key] = req.body[key];
