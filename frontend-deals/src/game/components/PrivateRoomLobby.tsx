@@ -536,10 +536,12 @@ export const PrivateRoomLobby: React.FC<{
                     <button
                       key={v.id}
                       type="button"
+                      aria-pressed={rulesetId === v.id}
                       className={`prv-pill ${rulesetId === v.id ? 'active' : ''}`}
                       onClick={() => handleSelectVariant(v.id)}
                     >
-                      {v.label}
+                      {rulesetId === v.id && <Check size={13} strokeWidth={3} aria-hidden />}
+                      <span>{v.label}</span>
                     </button>
                   ))}
                 </div>

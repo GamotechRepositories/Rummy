@@ -8,8 +8,6 @@ import {
   LogOut,
   CheckCircle2,
   AlertCircle,
-  Eye,
-  EyeOff,
   Layers,
   Sparkles,
   Trophy,
@@ -314,8 +312,6 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
     clearSelection,
   } = useGameStore();
 
-  const [expandedPlayerIds, setExpandedPlayerIds] = useState<Record<string, boolean>>({});
-  const [showAllCards, setShowAllCards] = useState<boolean>(false);
   const [trnResult, setTrnResult] = useState<{
     tournamentId: string;
     title: string;
@@ -607,20 +603,6 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
   const nameOf = (id: string) =>
     id === playerId ? 'You' : unrankedPlayers.find((p) => p.playerId === id)?.name ?? id;
   const rejoinFee = gameState.rejoinFee || stakeTier;
-
-  const togglePlayerExpanded = (pId: string) => {
-    setExpandedPlayerIds((prev) => ({
-      ...prev,
-      [pId]: prev[pId] !== undefined ? !prev[pId] : !showAllCards,
-    }));
-  };
-
-  const isPlayerExpanded = (pId: string): boolean => {
-    if (expandedPlayerIds[pId] !== undefined) {
-      return expandedPlayerIds[pId];
-    }
-    return showAllCards;
-  };
 
   const handleRematch = () => {
     soundEngine.play('match');
@@ -1364,28 +1346,6 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
                 <Layers size={14} />
                 <span>{isMultiDealGame ? `Deal ${dealNum} Showdown Cards` : 'Showdown Scoreboard'}</span>
               </div>
-
-              <button
-                type="button"
-                className="his-chip res-toggle-chip"
-                onClick={() => {
-                  const next = !showAllCards;
-                  setShowAllCards(next);
-                  setExpandedPlayerIds(
-                    allPlayers.reduce((acc, p) => ({ ...acc, [p.playerId]: next }), {})
-                  );
-                }}
-              >
-                {showAllCards ? (
-                  <>
-                    <EyeOff size={12} /> Collapse Cards
-                  </>
-                ) : (
-                  <>
-                    <Eye size={12} /> Expand All Cards
-                  </>
-                )}
-              </button>
             </div>
 
             <div className="res-table-subhead">
@@ -1396,7 +1356,6 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
             <div className="his-list res-showdown-list">
               {allPlayers.map((p, pRankIdx) => {
                 const won = p.isWinner;
-                const expanded = isPlayerExpanded(p.playerId);
 
                 let playerGroups: ShowdownGroup[] = [];
                 const submittedMeld = gameState.submittedMelds?.[p.playerId];
@@ -1468,7 +1427,7 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
                     key={p.playerId}
                     className={`his-row res-row${won ? ' res-row--winner' : ''}`}
                   >
-                    <div className="res-row-top" onClick={() => togglePlayerExpanded(p.playerId)}>
+                    <div className="res-row-top">
                       <div className="res-row-player">
                         <span className={`res-rank-pill${won ? ' res-rank-pill--winner' : ''}`}>
                           #{pRankIdx + 1}
@@ -1578,46 +1537,44 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
                       </div>
                     </div>
 
-                    {expanded && (
-                      <div className="result-row-cards-tray">
-                        {playerGroups && playerGroups.length > 0 ? (
-                          playerGroups.map((group, gIdx) => {
-                            const config = GROUP_CONFIG[group.type] ?? GROUP_CONFIG.INVALID;
-                            return (
-                              <div key={gIdx} className="result-card-group">
-                                <div className="result-group-header">
-                                  <span
-                                    className="result-group-badge"
-                                    style={{ color: config.color, background: config.bg }}
-                                  >
-                                    {config.label}
-                                  </span>
-                                  {group.pts > 0 && (
-                                    <span className="result-group-pts">{group.pts} pts</span>
-                                  )}
-                                </div>
-
-                                <div className="result-group-fan">
-                                  {group.cards.map((c, cIdx) => (
-                                    <div
-                                      key={c.instanceId || `${gIdx}-${cIdx}`}
-                                      className="result-card-slot"
-                                      style={{ zIndex: cIdx + 1 }}
-                                    >
-                                      <CardView card={c} wildJoker={gameState.cutJoker} />
-                                    </div>
-                                  ))}
-                                </div>
+                    <div className="result-row-cards-tray">
+                      {playerGroups && playerGroups.length > 0 ? (
+                        playerGroups.map((group, gIdx) => {
+                          const config = GROUP_CONFIG[group.type] ?? GROUP_CONFIG.INVALID;
+                          return (
+                            <div key={gIdx} className="result-card-group">
+                              <div className="result-group-header">
+                                <span
+                                  className="result-group-badge"
+                                  style={{ color: config.color, background: config.bg }}
+                                >
+                                  {config.label}
+                                </span>
+                                {group.pts > 0 && (
+                                  <span className="result-group-pts">{group.pts} pts</span>
+                                )}
                               </div>
-                            );
-                          })
-                        ) : (
-                          <div className="result-cards-concealed">
-                            Cards concealed (Player dropped or sitting out)
-                          </div>
-                        )}
-                      </div>
-                    )}
+
+                              <div className="result-group-fan">
+                                {group.cards.map((c, cIdx) => (
+                                  <div
+                                    key={c.instanceId || `${gIdx}-${cIdx}`}
+                                    className="result-card-slot"
+                                    style={{ zIndex: cIdx + 1 }}
+                                  >
+                                    <CardView card={c} wildJoker={gameState.cutJoker} />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="result-cards-concealed">
+                          Cards concealed (Player dropped or sitting out)
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
