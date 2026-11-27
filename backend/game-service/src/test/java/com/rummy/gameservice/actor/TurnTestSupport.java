@@ -21,4 +21,10 @@ public final class TurnTestSupport {
         }
         return actor.processCommand(new DropCommand(commandId, state.getGameId(), playerId, Instant.now()), commandId);
     }
+
+    public static void startNextDeal(TableActor actor) {
+        actor.startNextDeal();
+    }
+
+    public static final int MAX_TIE_BREAKER_DEALS = TableActor.MAX_TIE_BREAKER_DEALS;
 }

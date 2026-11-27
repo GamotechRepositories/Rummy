@@ -451,4 +451,19 @@ class WalletServiceTest {
         assertThat(wallet.getWinningsBalance()).isEqualByComparingTo(BigDecimal.valueOf(50));
         assertThat(wallet.getBalance()).isEqualByComparingTo(BigDecimal.valueOf(400));
     }
+
+    @Test
+    @DisplayName("TOURNAMENT_PRIZE credits withdrawable winningsBalance while TOURNAMENT_REFUND returns to depositBalance")
+    void testTournamentPrizeCreditsWithdrawableWinnings() {
+        String playerId = "USR_TRN_W";
+        walletService.credit(playerId, BigDecimal.valueOf(100), "DEPOSIT", "DEP_T1", null, "Deposit", null);
+        walletService.debit(playerId, BigDecimal.valueOf(100), "TOURNAMENT_ENTRY", "ENT_T1", "TRN1", "Entry", null);
+        walletService.credit(playerId, BigDecimal.valueOf(500), "TOURNAMENT_PRIZE", "PRZ_T1", "TRN1", "Prize", null);
+        walletService.credit(playerId, BigDecimal.valueOf(50), "TOURNAMENT_REFUND", "REF_T1", "TRN2", "Refund", null);
+
+        WalletAccountDocument wallet = walletService.getOrCreateWallet(playerId);
+        assertThat(wallet.getWinningsBalance()).isEqualByComparingTo(BigDecimal.valueOf(500));
+        assertThat(wallet.getDepositBalance()).isEqualByComparingTo(BigDecimal.valueOf(50));
+        assertThat(wallet.getBalance()).isEqualByComparingTo(BigDecimal.valueOf(550));
+    }
 }

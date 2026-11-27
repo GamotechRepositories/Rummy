@@ -6,7 +6,9 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * MongoDB document mapping to the shared {@code tournaments} collection
@@ -43,6 +45,7 @@ public class TournamentDocument {
     private String operatorScope = "ALL";
     private List<Registration> registrations = new ArrayList<>();
     private List<RoundRecord> rounds = new ArrayList<>();
+    private Map<String, String> playerActiveTables = new LinkedHashMap<>();
     private List<FinalRanking> finalRankings = new ArrayList<>();
     private double grossPoolRs = 0;
     private double platformProfitRs = 0;
@@ -86,10 +89,55 @@ public class TournamentDocument {
         public void setRefunded(boolean refunded) { this.refunded = refunded; }
     }
 
+    public static class TablePlayerResult {
+        private String playerId;
+        private String displayName;
+        private int score;
+        private int cumulativeScore;
+        private long chipBalance;
+
+        public TablePlayerResult() {}
+        public TablePlayerResult(String playerId, String displayName, int score, int cumulativeScore, long chipBalance) {
+            this.playerId = playerId;
+            this.displayName = displayName;
+            this.score = score;
+            this.cumulativeScore = cumulativeScore;
+            this.chipBalance = chipBalance;
+        }
+
+        public String getPlayerId() { return playerId; }
+        public void setPlayerId(String playerId) { this.playerId = playerId; }
+        public String getDisplayName() { return displayName; }
+        public void setDisplayName(String displayName) { this.displayName = displayName; }
+        public int getScore() { return score; }
+        public void setScore(int score) { this.score = score; }
+        public int getCumulativeScore() { return cumulativeScore; }
+        public void setCumulativeScore(int cumulativeScore) { this.cumulativeScore = cumulativeScore; }
+        public long getChipBalance() { return chipBalance; }
+        public void setChipBalance(long chipBalance) { this.chipBalance = chipBalance; }
+    }
+
+    public static class RoundTableOutcome {
+        private String tableId;
+        private String winnerId;
+        private List<String> tiedWinnerIds = new ArrayList<>();
+        private List<TablePlayerResult> players = new ArrayList<>();
+
+        public String getTableId() { return tableId; }
+        public void setTableId(String tableId) { this.tableId = tableId; }
+        public String getWinnerId() { return winnerId; }
+        public void setWinnerId(String winnerId) { this.winnerId = winnerId; }
+        public List<String> getTiedWinnerIds() { return tiedWinnerIds; }
+        public void setTiedWinnerIds(List<String> tiedWinnerIds) { this.tiedWinnerIds = tiedWinnerIds; }
+        public List<TablePlayerResult> getPlayers() { return players; }
+        public void setPlayers(List<TablePlayerResult> players) { this.players = players; }
+    }
+
     public static class RoundRecord {
         private int roundNumber;
         private List<String> tableIds = new ArrayList<>();
         private List<String> qualifiedPlayerIds = new ArrayList<>();
+        private Map<String, RoundTableOutcome> tableOutcomes = new LinkedHashMap<>();
         private String status = "PENDING"; // PENDING, RUNNING, DONE
         private Instant startedAt;
         private Instant finishedAt;
@@ -100,6 +148,8 @@ public class TournamentDocument {
         public void setTableIds(List<String> tableIds) { this.tableIds = tableIds; }
         public List<String> getQualifiedPlayerIds() { return qualifiedPlayerIds; }
         public void setQualifiedPlayerIds(List<String> qualifiedPlayerIds) { this.qualifiedPlayerIds = qualifiedPlayerIds; }
+        public Map<String, RoundTableOutcome> getTableOutcomes() { return tableOutcomes; }
+        public void setTableOutcomes(Map<String, RoundTableOutcome> tableOutcomes) { this.tableOutcomes = tableOutcomes; }
         public String getStatus() { return status; }
         public void setStatus(String status) { this.status = status; }
         public Instant getStartedAt() { return startedAt; }
@@ -113,6 +163,7 @@ public class TournamentDocument {
         private String playerId;
         private String displayName;
         private double prizeRs;
+        private boolean prizeCredited;
 
         public FinalRanking() {}
         public FinalRanking(int rank, String playerId, String displayName, double prizeRs) {
@@ -129,6 +180,8 @@ public class TournamentDocument {
         public void setDisplayName(String displayName) { this.displayName = displayName; }
         public double getPrizeRs() { return prizeRs; }
         public void setPrizeRs(double prizeRs) { this.prizeRs = prizeRs; }
+        public boolean isPrizeCredited() { return prizeCredited; }
+        public void setPrizeCredited(boolean prizeCredited) { this.prizeCredited = prizeCredited; }
     }
 
     // ── Getters & Setters ──
@@ -172,6 +225,8 @@ public class TournamentDocument {
     public void setRegistrations(List<Registration> registrations) { this.registrations = registrations; }
     public List<RoundRecord> getRounds() { return rounds; }
     public void setRounds(List<RoundRecord> rounds) { this.rounds = rounds; }
+    public Map<String, String> getPlayerActiveTables() { return playerActiveTables; }
+    public void setPlayerActiveTables(Map<String, String> playerActiveTables) { this.playerActiveTables = playerActiveTables; }
     public List<FinalRanking> getFinalRankings() { return finalRankings; }
     public void setFinalRankings(List<FinalRanking> finalRankings) { this.finalRankings = finalRankings; }
     public double getGrossPoolRs() { return grossPoolRs; }

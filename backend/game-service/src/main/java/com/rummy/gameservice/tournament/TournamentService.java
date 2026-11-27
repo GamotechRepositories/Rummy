@@ -9,6 +9,9 @@ import com.rummy.engine.rules.RulesetRegistry;
 import com.rummy.engine.rules.RummyRules;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
+import com.rummy.gameservice.cluster.ClusterNodeService;
+import com.rummy.gameservice.persistence.document.GameDocument;
+import com.rummy.gameservice.persistence.repository.GameRepository;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
 import com.rummy.gameservice.wallet.WalletService;
 import org.slf4j.Logger;
@@ -44,6 +47,8 @@ public class TournamentService {
 
     /** Maps playerId -> currently assigned active tournament tableId for auto-seating */
     private final Map<String, String> playerActiveTable = new ConcurrentHashMap<>();
+    private ClusterNodeService clusterNodes;
+    private GameRepository gameRepository;
 
     public TournamentService(
             TournamentRepository tournamentRepository,
@@ -54,6 +59,16 @@ public class TournamentService {
         this.tableManager = tableManager;
         this.routingRegistry = routingRegistry;
         this.walletService = walletService;
+    }
+
+    @Autowired(required = false)
+    public void setClusterNodes(ClusterNodeService clusterNodes) {
+        this.clusterNodes = clusterNodes;
+    }
+
+    @Autowired(required = false)
+    public void setGameRepository(GameRepository gameRepository) {
+        this.gameRepository = gameRepository;
     }
 
     // ── Public Query ──────────────────────────────────────────────────────────
@@ -91,8 +106,11 @@ public class TournamentService {
                 }
             }
             boolean isCheckedIn = playerId != null && t.getCheckedInPlayerIds().contains(playerId);
+            String activeTbl = playerId != null
+                    ? playerActiveTable.getOrDefault(playerId, t.getPlayerActiveTables() != null ? t.getPlayerActiveTables().get(playerId) : null)
+                    : null;
             String assignedTableId = isRegistered && isCheckedIn && "RUNNING".equals(t.getStatus())
-                    ? playerActiveTable.get(playerId)
+                    ? activeTbl
                     : null;
 
             Integer myRank = null;
@@ -253,8 +271,13 @@ public class TournamentService {
                     finishedTables = totalTablesInRound;
                 } else {
                     for (String tid : rr.getTableIds()) {
+                        boolean savedOutcome = rr.getTableOutcomes() != null && rr.getTableOutcomes().containsKey(tid);
+                        if (savedOutcome) {
+                            finishedTables++;
+                            continue;
+                        }
                         Optional<TableActor> a = tableManager.getTable(tid);
-                        if (a.isEmpty() || a.get().getTournamentWinnerId() != null) {
+                        if (a.isPresent() && a.get().getTournamentWinnerId() != null) {
                             finishedTables++;
                         }
                     }
@@ -266,7 +289,9 @@ public class TournamentService {
             }
         }
 
-        String currentAssigned = playerId != null ? playerActiveTable.get(playerId) : null;
+        String currentAssigned = playerId != null
+                ? playerActiveTable.getOrDefault(playerId, t.getPlayerActiveTables() != null ? t.getPlayerActiveTables().get(playerId) : null)
+                : null;
         String nextTableId = (currentAssigned != null && !currentAssigned.equals(tableId)) ? currentAssigned : null;
 
         Integer myRank = null;
@@ -407,6 +432,7 @@ public class TournamentService {
             processCheckInCompletions();
             processCancelledRefunds();
             processRunningRounds();
+            processPendingPrizePayouts();
         } catch (Exception e) {
             log.error("[Tournament] Scheduler tick error", e);
         }
@@ -426,6 +452,7 @@ public class TournamentService {
                         t.getTournamentId(), count, t.getMinPlayers());
                 t.setStatus("CANCELLED");
                 t.setCancelledReason("Minimum players (" + t.getMinPlayers() + ") not met.");
+                clearTournamentActiveTables(t);
                 refundAllUnrefunded(t);
                 tournamentRepository.save(t);
             } else {
@@ -449,11 +476,16 @@ public class TournamentService {
                 continue;
             }
             List<String> checkedIn = new ArrayList<>(t.getCheckedInPlayerIds());
-            if (checkedIn.isEmpty()) {
-                log.info("[Tournament] {} had 0 checked-in players by {}. Closing without refund.",
-                        t.getTournamentId(), t.getCheckInEndsAt());
-                t.setStatus("COMPLETED");
-                t.setCancelledReason("No registered players checked in before match start.");
+            if (checkedIn.size() < 2) {
+                String reason = checkedIn.isEmpty()
+                        ? "No registered players checked in before match start."
+                        : "Fewer than 2 players checked in before match start.";
+                log.info("[Tournament] {} had {} checked-in player(s) by {}. Cancelling and refunding.",
+                        t.getTournamentId(), checkedIn.size(), t.getCheckInEndsAt());
+                t.setStatus("CANCELLED");
+                t.setCancelledReason(reason);
+                clearTournamentActiveTables(t);
+                refundAllUnrefunded(t);
                 tournamentRepository.save(t);
             } else {
                 log.info("[Tournament] {} starting Round 1 with {}/{} checked-in players!",
@@ -505,26 +537,94 @@ public class TournamentService {
 
     private void processRunningRounds() {
         List<TournamentDocument> running = tournamentRepository.findByStatus("RUNNING");
+        Instant now = Instant.now();
         for (TournamentDocument t : running) {
             if (t.getRounds().isEmpty()) continue;
             TournamentDocument.RoundRecord currentRound = t.getRounds().get(t.getRounds().size() - 1);
             if (!"RUNNING".equals(currentRound.getStatus())) continue;
-
-            boolean allTablesFinished = true;
-            for (String tableId : currentRound.getTableIds()) {
-                Optional<TableActor> actorOpt = tableManager.getTable(tableId);
-                if (actorOpt.isEmpty()) {
-                    continue;
-                }
-                TableActor actor = actorOpt.get();
-                if (actor.getTournamentWinnerId() == null) {
-                    allTablesFinished = false;
-                    break;
-                }
+            if (currentRound.getTableOutcomes() == null) {
+                currentRound.setTableOutcomes(new LinkedHashMap<>());
             }
 
+            boolean allTablesFinished = true;
+            boolean roundModified = false;
+            boolean aborted = false;
+
+            for (String tableId : currentRound.getTableIds()) {
+                if (currentRound.getTableOutcomes().containsKey(tableId)) {
+                    continue;
+                }
+                Optional<TableActor> actorOpt = tableManager.getTable(tableId);
+                if (actorOpt.isPresent()) {
+                    TableActor actor = actorOpt.get();
+                    if (actor.getTournamentWinnerId() != null) {
+                        currentRound.getTableOutcomes().put(tableId, buildOutcomeFromActor(tableId, actor));
+                        actor.markTournamentResultRecorded();
+                        roundModified = true;
+                    } else {
+                        allTablesFinished = false;
+                    }
+                    continue;
+                }
+
+                // Missing from local TableManager: verify if hosted on another live node or completed in DB
+                if (routingRegistry != null && routingRegistry.isOwnedByRemoteServer(tableId)) {
+                    String owner = routingRegistry.getServerForTable(tableId).orElse(null);
+                    if (owner != null && (clusterNodes == null || clusterNodes.isAlive(owner))) {
+                        allTablesFinished = false;
+                        continue;
+                    }
+                }
+
+                TournamentDocument.RoundTableOutcome dbOutcome = tryLoadOutcomeFromDb(t, tableId);
+                if (dbOutcome != null) {
+                    currentRound.getTableOutcomes().put(tableId, dbOutcome);
+                    roundModified = true;
+                    continue;
+                }
+
+                Instant started = currentRound.getStartedAt();
+                if (started != null && now.isAfter(started.plusSeconds(60))) {
+                    log.warn("[Tournament] {} Round {} table {} vanished unexpectedly; cancelling and refunding.",
+                            t.getTournamentId(), currentRound.getRoundNumber(), tableId);
+                    t.setStatus("CANCELLED");
+                    t.setCancelledReason("Tournament table closed unexpectedly during Round " + currentRound.getRoundNumber() + ".");
+                    clearTournamentActiveTables(t);
+                    refundAllUnrefunded(t);
+                    tournamentRepository.save(t);
+                    aborted = true;
+                    break;
+                }
+                allTablesFinished = false;
+            }
+
+            if (aborted) {
+                continue;
+            }
             if (allTablesFinished) {
                 advanceOrCompleteTournament(t, currentRound);
+            } else if (roundModified) {
+                tournamentRepository.save(t);
+            }
+        }
+    }
+
+    private void processPendingPrizePayouts() {
+        if (walletService == null) {
+            return;
+        }
+        List<TournamentDocument> completed = tournamentRepository.findByStatus("COMPLETED");
+        if (completed == null) {
+            return;
+        }
+        for (TournamentDocument t : completed) {
+            if (t.getFinalRankings() == null || t.getFinalRankings().isEmpty()) {
+                continue;
+            }
+            boolean hasPending = t.getFinalRankings().stream()
+                    .anyMatch(fr -> fr.getPrizeRs() > 0 && !fr.isPrizeCredited());
+            if (hasPending && creditPendingTournamentPrizes(t)) {
+                tournamentRepository.save(t);
             }
         }
     }
@@ -532,6 +632,11 @@ public class TournamentService {
     // ── Dynamic Table Balancing & Round Progression ───────────────────────────
 
     private void startRound(TournamentDocument t, int roundNum, List<String> playerIds) {
+        clearTournamentActiveTables(t);
+        if (t.getPlayerActiveTables() == null) {
+            t.setPlayerActiveTables(new LinkedHashMap<>());
+        }
+
         List<String> shuffled = new ArrayList<>(playerIds);
         Collections.shuffle(shuffled);
 
@@ -574,6 +679,7 @@ public class TournamentService {
                     routingRegistry.registerPlayerTable(pid, tableId);
                 }
                 playerActiveTable.put(pid, tableId);
+                t.getPlayerActiveTables().put(pid, tableId);
 
                 actor.processCommand(new JoinCommand(
                         UUID.randomUUID().toString(),
@@ -607,39 +713,50 @@ public class TournamentService {
     }
 
     private void advanceOrCompleteTournament(TournamentDocument t, TournamentDocument.RoundRecord currentRound) {
+        if (currentRound.getTableOutcomes() == null) {
+            currentRound.setTableOutcomes(new LinkedHashMap<>());
+        }
+        for (String tableId : currentRound.getTableIds()) {
+            tableManager.getTable(tableId).ifPresent(actor -> {
+                if (!currentRound.getTableOutcomes().containsKey(tableId) && actor.getTournamentWinnerId() != null) {
+                    currentRound.getTableOutcomes().put(tableId, buildOutcomeFromActor(tableId, actor));
+                }
+                actor.markTournamentResultRecorded();
+            });
+        }
+
         currentRound.setStatus("DONE");
         currentRound.setFinishedAt(Instant.now());
 
         // Final table reached (only 1 table in this round)
         if (currentRound.getTableIds().size() == 1) {
             String finalTableId = currentRound.getTableIds().get(0);
-            finalizeTournament(t, finalTableId);
+            finalizeTournament(t, currentRound, finalTableId);
             return;
         }
 
-        // Collect rank-1 winners from each table and rank-2 runners-up sorted by chips
+        // Collect rank-1 winners from each table and rank-2+ runners-up sorted by chips/score
         List<String> tableWinners = new ArrayList<>();
         List<PlayerScore> runnersUp = new ArrayList<>();
 
         boolean isPoints = "POINTS_13".equalsIgnoreCase(t.getVariant());
         for (String tableId : currentRound.getTableIds()) {
-            Optional<TableActor> actorOpt = tableManager.getTable(tableId);
-            if (actorOpt.isEmpty()) continue;
-            TableActor actor = actorOpt.get();
-
-            String winnerId = actor.getTournamentWinnerId();
+            TournamentDocument.RoundTableOutcome outcome = currentRound.getTableOutcomes().get(tableId);
+            if (outcome == null) {
+                continue;
+            }
+            String winnerId = outcome.getWinnerId();
             if (winnerId != null) {
                 tableWinners.add(winnerId);
             }
-            List<PlayerState> sorted = actor.getState().getPlayers().stream()
+            List<TournamentDocument.TablePlayerResult> sorted = outcome.getPlayers().stream()
                     .filter(p -> !p.getPlayerId().equals(winnerId))
                     .sorted(isPoints
-                            ? Comparator.comparingInt(PlayerState::getScore)
-                            : Comparator.comparingLong(PlayerState::getChipBalance).reversed())
+                            ? Comparator.comparingInt(TournamentDocument.TablePlayerResult::getScore)
+                            : Comparator.comparingLong(TournamentDocument.TablePlayerResult::getChipBalance).reversed())
                     .toList();
             for (int r = 0; r < sorted.size(); r++) {
-                PlayerState runner = sorted.get(r);
-                // Prioritize higher table rank (2nd place before 3rd place), then best score/chips
+                TournamentDocument.TablePlayerResult runner = sorted.get(r);
                 long tieMetric = isPoints ? -runner.getScore() : runner.getChipBalance();
                 runnersUp.add(new PlayerScore(runner.getPlayerId(), tieMetric, r));
             }
@@ -667,72 +784,203 @@ public class TournamentService {
         tournamentRepository.save(t);
     }
 
-    private void finalizeTournament(TournamentDocument t, String finalTableId) {
+    private void finalizeTournament(TournamentDocument t, TournamentDocument.RoundRecord finalRound, String finalTableId) {
         Optional<TableActor> actorOpt = tableManager.getTable(finalTableId);
-        String explicitWinnerId = actorOpt.map(TableActor::getTournamentWinnerId).orElse(null);
+        TournamentDocument.RoundTableOutcome outcome = finalRound.getTableOutcomes().get(finalTableId);
+        if (outcome == null && actorOpt.isPresent()) {
+            outcome = buildOutcomeFromActor(finalTableId, actorOpt.get());
+            finalRound.getTableOutcomes().put(finalTableId, outcome);
+        }
+        actorOpt.ifPresent(TableActor::markTournamentResultRecorded);
+        clearTournamentActiveTables(t);
 
+        String explicitWinnerId = outcome != null ? outcome.getWinnerId() : null;
+        Set<String> actorTiedWinners = outcome != null && outcome.getTiedWinnerIds() != null
+                ? new HashSet<>(outcome.getTiedWinnerIds())
+                : Collections.emptySet();
         boolean isPoints = "POINTS_13".equalsIgnoreCase(t.getVariant());
 
-        // Rank finalists: explicit table winner first, then lowest penalty score (Points) or highest chipBalance (Deals)
-        List<PlayerState> finalists = actorOpt
-                .<List<PlayerState>>map(a -> a.getState().getPlayers().stream()
-                        .sorted(isPoints
-                                ? Comparator.<PlayerState>comparingInt(p -> p.getPlayerId().equals(explicitWinnerId) ? 0 : 1)
-                                        .thenComparingInt(PlayerState::getScore)
-                                : Comparator
-                                        .comparingLong(PlayerState::getChipBalance).reversed()
-                                        .thenComparing(p -> p.getPlayerId().equals(explicitWinnerId) ? 0 : 1))
-                        .toList())
-                .orElse(Collections.emptyList());
+        List<TournamentDocument.TablePlayerResult> rawPlayers = outcome != null && outcome.getPlayers() != null
+                ? outcome.getPlayers()
+                : Collections.emptyList();
 
-        // Winner-Takes-All: highest chipBalance after 3 deals wins 100% of fixedPrizeRs
-        long topChips = finalists.isEmpty() ? 0L : finalists.get(0).getChipBalance();
-        long tiedWinnersCount = finalists.stream().filter(p -> p.getChipBalance() == topChips).count();
-        boolean splitTop = explicitWinnerId == null && tiedWinnersCount > 1;
+        List<TournamentDocument.TablePlayerResult> finalists = rawPlayers.stream()
+                .sorted(isPoints
+                        ? Comparator.<TournamentDocument.TablePlayerResult>comparingInt(
+                                        p -> p.getPlayerId().equals(explicitWinnerId) ? 0 : 1)
+                                .thenComparingInt(TournamentDocument.TablePlayerResult::getScore)
+                        : Comparator
+                                .comparingLong(TournamentDocument.TablePlayerResult::getChipBalance).reversed()
+                                .thenComparingInt(p -> p.getPlayerId().equals(explicitWinnerId) ? 0 : 1))
+                .toList();
 
-        List<TournamentDocument.FinalRanking> rankings = new ArrayList<>();
-        for (int i = 0; i < finalists.size(); i++) {
-            int rank = i + 1;
-            PlayerState p = finalists.get(i);
-            boolean isTopWinner = splitTop
-                    ? p.getChipBalance() == topChips
-                    : (explicitWinnerId != null ? p.getPlayerId().equals(explicitWinnerId) : rank == 1);
-
-            double prizeRs = 0.0;
-            if (isTopWinner && t.getFixedPrizeRs() > 0) {
-                int divisor = splitTop ? (int) Math.max(1, tiedWinnersCount) : 1;
-                prizeRs = BigDecimal.valueOf(t.getFixedPrizeRs() / divisor)
-                        .setScale(2, RoundingMode.HALF_UP).doubleValue();
-            }
-
-            rankings.add(new TournamentDocument.FinalRanking(rank, p.getPlayerId(), p.getDisplayName(), prizeRs));
-            playerActiveTable.remove(p.getPlayerId());
-
-            if (prizeRs > 0 && walletService != null) {
-                try {
-                    String key = "TRN_PRIZE_" + t.getTournamentId() + "_R" + rank + "_" + p.getPlayerId();
-                    walletService.credit(
-                            p.getPlayerId(),
-                            BigDecimal.valueOf(prizeRs),
-                            "TOURNAMENT_PRIZE",
-                            key,
-                            t.getTournamentId(),
-                            "Tournament Champion Prize: " + t.getTitle(),
-                            Map.of("tournamentId", t.getTournamentId(), "rank", rank)
-                    );
-                } catch (Exception e) {
-                    log.error("[Tournament] Failed prize credit for rank {} player={}", rank, p.getPlayerId(), e);
+        Map<Integer, Double> pctByRank = new HashMap<>();
+        if (t.getPrizes() != null && !t.getPrizes().isEmpty()) {
+            for (TournamentDocument.PrizeTier tier : t.getPrizes()) {
+                if (tier != null && tier.getRank() > 0 && tier.getPercentage() > 0) {
+                    pctByRank.merge(tier.getRank(), tier.getPercentage(), Double::sum);
                 }
             }
+        }
+        if (pctByRank.isEmpty()) {
+            pctByRank.put(1, 100.0);
+        }
+
+        List<TournamentDocument.FinalRanking> rankings = new ArrayList<>();
+        int idx = 0;
+        while (idx < finalists.size()) {
+            int startRank = idx + 1;
+            TournamentDocument.TablePlayerResult first = finalists.get(idx);
+            int endIdx = idx + 1;
+            while (endIdx < finalists.size() && sameRankGroup(first, finalists.get(endIdx), isPoints, explicitWinnerId, actorTiedWinners)) {
+                endIdx++;
+            }
+            int groupSize = endIdx - idx;
+            double combinedPct = 0.0;
+            for (int r = startRank; r < startRank + groupSize; r++) {
+                combinedPct += pctByRank.getOrDefault(r, 0.0);
+            }
+            double groupEachPrize = 0.0;
+            if (combinedPct > 0.0 && t.getFixedPrizeRs() > 0) {
+                groupEachPrize = BigDecimal.valueOf(t.getFixedPrizeRs())
+                        .multiply(BigDecimal.valueOf(combinedPct))
+                        .divide(BigDecimal.valueOf(100L * groupSize), 2, RoundingMode.HALF_UP)
+                        .doubleValue();
+            }
+
+            for (int g = idx; g < endIdx; g++) {
+                TournamentDocument.TablePlayerResult p = finalists.get(g);
+                rankings.add(new TournamentDocument.FinalRanking(startRank, p.getPlayerId(), p.getDisplayName(), groupEachPrize));
+            }
+            idx = endIdx;
         }
 
         t.setFinalRankings(rankings);
         t.setStatus("COMPLETED");
+        creditPendingTournamentPrizes(t);
         tournamentRepository.save(t);
         log.info("[Tournament] {} COMPLETED! Winner: {} (prize Rs {})",
                 t.getTournamentId(),
                 rankings.isEmpty() ? "none" : rankings.get(0).getPlayerId(),
                 t.getFixedPrizeRs());
+    }
+
+    private boolean sameRankGroup(TournamentDocument.TablePlayerResult a,
+                                  TournamentDocument.TablePlayerResult b,
+                                  boolean isPoints,
+                                  String explicitWinnerId,
+                                  Set<String> actorTiedWinners) {
+        if (isPoints) {
+            boolean aWin = a.getPlayerId().equals(explicitWinnerId);
+            boolean bWin = b.getPlayerId().equals(explicitWinnerId);
+            if (aWin != bWin) {
+                return false;
+            }
+            return a.getScore() == b.getScore();
+        }
+        if (a.getChipBalance() != b.getChipBalance()) {
+            return false;
+        }
+        // Deals table ends with >1 player sharing top chips only when all tie-breakers stayed level.
+        return actorTiedWinners.isEmpty()
+                || (actorTiedWinners.contains(a.getPlayerId()) && actorTiedWinners.contains(b.getPlayerId()))
+                || (!a.getPlayerId().equals(explicitWinnerId) && !b.getPlayerId().equals(explicitWinnerId));
+    }
+
+    private boolean creditPendingTournamentPrizes(TournamentDocument t) {
+        if (walletService == null || t.getFinalRankings() == null) {
+            return false;
+        }
+        boolean anyUpdated = false;
+        for (TournamentDocument.FinalRanking fr : t.getFinalRankings()) {
+            if (fr.getPrizeRs() > 0 && !fr.isPrizeCredited()) {
+                try {
+                    String key = "TRN_PRIZE_" + t.getTournamentId() + "_R" + fr.getRank() + "_" + fr.getPlayerId();
+                    walletService.credit(
+                            fr.getPlayerId(),
+                            BigDecimal.valueOf(fr.getPrizeRs()),
+                            "TOURNAMENT_PRIZE",
+                            key,
+                            t.getTournamentId(),
+                            "Tournament Prize (Rank #" + fr.getRank() + "): " + t.getTitle(),
+                            Map.of("tournamentId", t.getTournamentId(), "rank", fr.getRank())
+                    );
+                    fr.setPrizeCredited(true);
+                    anyUpdated = true;
+                } catch (Exception e) {
+                    log.error("[Tournament] Failed prize credit for rank {} player={} in {}: {}",
+                            fr.getRank(), fr.getPlayerId(), t.getTournamentId(), e.getMessage(), e);
+                }
+            }
+        }
+        return anyUpdated;
+    }
+
+    private void clearTournamentActiveTables(TournamentDocument t) {
+        if (t.getRegistrations() != null) {
+            for (TournamentDocument.Registration r : t.getRegistrations()) {
+                playerActiveTable.remove(r.getPlayerId());
+            }
+        }
+        if (t.getPlayerActiveTables() != null) {
+            for (String pid : t.getPlayerActiveTables().keySet()) {
+                playerActiveTable.remove(pid);
+            }
+            t.getPlayerActiveTables().clear();
+        }
+    }
+
+    private TournamentDocument.RoundTableOutcome buildOutcomeFromActor(String tableId, TableActor actor) {
+        TournamentDocument.RoundTableOutcome outcome = new TournamentDocument.RoundTableOutcome();
+        outcome.setTableId(tableId);
+        outcome.setWinnerId(actor.getTournamentWinnerId());
+        outcome.setTiedWinnerIds(new ArrayList<>(actor.getTiedWinnerIds()));
+        List<TournamentDocument.TablePlayerResult> players = new ArrayList<>();
+        for (PlayerState ps : actor.getState().getPlayers()) {
+            players.add(new TournamentDocument.TablePlayerResult(
+                    ps.getPlayerId(),
+                    ps.getDisplayName(),
+                    ps.getScore(),
+                    ps.getCumulativeScore(),
+                    ps.getChipBalance()
+            ));
+        }
+        outcome.setPlayers(players);
+        return outcome;
+    }
+
+    private TournamentDocument.RoundTableOutcome tryLoadOutcomeFromDb(TournamentDocument t, String tableId) {
+        if (gameRepository == null) {
+            return null;
+        }
+        List<GameDocument> games = gameRepository.findByTableId(tableId);
+        if (games == null || games.isEmpty()) {
+            return null;
+        }
+        GameDocument completed = games.stream()
+                .filter(g -> g != null && "COMPLETED".equalsIgnoreCase(g.getStatus()))
+                .reduce((first, second) -> second)
+                .orElse(null);
+        if (completed == null || completed.getWinnerPlayerId() == null) {
+            return null;
+        }
+        TournamentDocument.RoundTableOutcome outcome = new TournamentDocument.RoundTableOutcome();
+        outcome.setTableId(tableId);
+        outcome.setWinnerId(completed.getWinnerPlayerId());
+        List<TournamentDocument.TablePlayerResult> players = new ArrayList<>();
+        if (completed.getPlayers() != null) {
+            for (GameDocument.PlayerSnapshot ps : completed.getPlayers()) {
+                players.add(new TournamentDocument.TablePlayerResult(
+                        ps.playerId(),
+                        ps.displayName(),
+                        ps.finalScore(),
+                        ps.finalScore(),
+                        ps.playerId().equals(completed.getWinnerPlayerId()) ? 240L : 0L
+                ));
+            }
+        }
+        outcome.setPlayers(players);
+        return outcome;
     }
 
     private record PlayerScore(String playerId, long chips, int rankIndex) {}

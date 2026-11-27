@@ -389,10 +389,16 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 }
             }
             case "LEAVE_TABLE" -> {
-                // Voluntary leave — clear resume binding; drop if active and mark eliminated to prevent ghost deal stalls
-                if (tableActor.getState().getStatus() == GameStatus.IN_PROGRESS || tableActor.getState().getStatus() == GameStatus.COMPLETED) {
+                // Voluntary leave — clear resume binding; drop/forfeit if live and mark eliminated to prevent ghost deal stalls
+                GameStatus status = tableActor.getState().getStatus();
+                if (status == GameStatus.IN_PROGRESS
+                        || status == GameStatus.DECLARING
+                        || status == GameStatus.SHOWDOWN
+                        || status == GameStatus.SETTLING
+                        || status == GameStatus.COMPLETED
+                        || status == GameStatus.DEALING) {
                     tableActor.handleVoluntaryLeave(playerId, reqId);
-                } else if (tableActor.getState().getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
+                } else if (status == GameStatus.WAITING_FOR_PLAYERS) {
                     tableActor.removeWaitingHuman(playerId);
                     if (matchmakingService != null) {
                         matchmakingService.onWaitingHumanLeft(playerId, tableId);
@@ -404,7 +410,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                         "playerId", playerId,
                         "tableId", tableId
                 )));
-                log.info("[WS] Player {} voluntarily left table {}", playerId, tableId);
+                log.info("[WS] Player {} voluntarily left table {} (status={})", playerId, tableId, status);
             }
             case "READY" -> {
                 ReadyCommand cmd = new ReadyCommand(reqId, gameId, playerId, now);

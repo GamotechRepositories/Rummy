@@ -15,7 +15,6 @@ import {
   Trophy,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
-import { clearActiveSessionRemote } from '../utils/sessionResume';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import { authFetch } from '../utils/authClient';
 import { SoundToggle } from './SoundToggle';
@@ -308,7 +307,6 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
     groups: myVisualGroups,
     lastKnownHand,
     lastGameConfig,
-    leaveTable,
     setSession,
     setWalletBalance,
     setAutoMatchmakePending,
@@ -636,25 +634,24 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
 
     clearSelection();
     setAutoMatchmakePending(true);
-    void clearActiveSessionRemote(playerId);
-    socketClient.disconnect();
-    leaveTable();
+    void socketClient.leaveTableAndDisconnect();
   };
 
   const handleLeave = () => {
     soundEngine.play('click');
-    void clearActiveSessionRemote(playerId);
-    socketClient.disconnect();
-    leaveTable();
+    void socketClient.leaveTableAndDisconnect();
   };
 
   const computePlayerSettlement = (p: (typeof allPlayers)[number]) => {
     const playerDetail = gameSettlement?.playerDetails?.[p.playerId];
+    const isSettledWinner = playerDetail
+      ? playerDetail.isWinner
+      : (isTournamentWinner ? p.playerId === matchWinnerId : p.isWinner);
     let pLoss = playerDetail?.lossAmount;
     let pRefund = playerDetail?.refundAmount;
 
     if (pLoss === undefined) {
-      if (p.isWinner) {
+      if (isSettledWinner) {
         pLoss = 0;
         pRefund = 0;
       } else if (isPointsBased) {
@@ -670,19 +667,23 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
       }
     }
 
-    const netRs = splitPayouts?.[p.playerId] != null
+    const netRs = playerDetail?.netWalletDelta != null
+      ? Number(playerDetail.netWalletDelta)
+      : splitPayouts?.[p.playerId] != null
+        ? Number(splitPayouts[p.playerId]) - Number(stakeTier)
+        : isSettledWinner
+          ? (isPointsBased ? Number(displayPrize) : Number(displayPrize) - Number(stakeTier))
+          : -Number(pLoss ?? 0);
+
+    const totalCredit = splitPayouts?.[p.playerId] != null
       ? Number(splitPayouts[p.playerId])
-      : p.isWinner
-        ? Number(displayPrize)
-        : -Number(pLoss ?? 0);
+      : isSettledWinner
+        ? (isPointsBased
+            ? Number(playerDetail?.initialStake ?? stakeTier) + Number(playerDetail?.winAmount ?? displayPrize)
+            : Number(playerDetail?.winAmount ?? displayPrize))
+        : Number(pRefund ?? 0);
 
-    const totalCredit = playerDetail?.initialStake != null
-      ? Number(playerDetail.initialStake) + Number(displayPrize)
-      : isPointsBased
-        ? Number(stakeTier) + Number(displayPrize)
-        : Number(displayPrize);
-
-    return { pLoss: Number(pLoss ?? 0), pRefund, netRs, totalCredit };
+    return { pLoss: Number(pLoss ?? 0), pRefund, netRs, totalCredit, isSettledWinner };
   };
 
   const viewerPlayer = allPlayers.find((p) => p.isMe) ?? allPlayers[0];
@@ -1320,17 +1321,23 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
                             )}
                           </td>
 
-                          {!isIntermediateDeal && !isScheduledTournament && (
-                            <td style={{ textAlign: 'center' }}>
-                              {isFreePrivateRoom ? (
-                                <span className="his-row-score">Free</span>
-                              ) : isTournamentChamp ? (
-                                <span className="his-tx-amount his-tx-amount--credit">+₹ {formatAmount(Number(displayPrize))}</span>
-                              ) : (
-                                <span className="his-tx-amount his-tx-amount--debit">-₹ {formatAmount(Number(stakeTier))}</span>
-                              )}
-                            </td>
-                          )}
+                          {!isIntermediateDeal && !isScheduledTournament && (() => {
+                            const tblSettlement = computePlayerSettlement(p);
+                            const netVal = tblSettlement.netRs;
+                            return (
+                              <td style={{ textAlign: 'center' }}>
+                                {isFreePrivateRoom ? (
+                                  <span className="his-row-score">Free</span>
+                                ) : netVal > 0 ? (
+                                  <span className="his-tx-amount his-tx-amount--credit">+₹ {formatAmount(netVal)}</span>
+                                ) : netVal < 0 ? (
+                                  <span className="his-tx-amount his-tx-amount--debit">-₹ {formatAmount(Math.abs(netVal))}</span>
+                                ) : (
+                                  <span className="his-row-score">₹ 0</span>
+                                )}
+                              </td>
+                            );
+                          })()}
 
                           <td style={{ textAlign: 'right' }}>
                             {isTournamentChamp ? (
@@ -1434,16 +1441,16 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
                   );
                 }
 
-                const { pLoss, pRefund, netRs, totalCredit } = computePlayerSettlement(p);
+                const { pLoss, pRefund, netRs, totalCredit, isSettledWinner } = computePlayerSettlement(p);
 
                 const rowNetText = isScheduledTournament
                   ? (isDeals ? (won ? 'Won Table' : `-${p.score} chips`) : won ? '0 pts' : `+${p.score} pts`)
                   : isFreePrivateRoom
                     ? (won ? 'Won' : 'Free')
-                    : splitPayouts?.[p.playerId] != null
-                      ? `+₹ ${formatAmount(Number(splitPayouts[p.playerId]))}`
-                      : won
-                        ? `+₹ ${formatAmount(Number(displayPrize))}`
+                    : netRs > 0
+                      ? `+₹ ${formatAmount(netRs)}`
+                      : netRs < 0
+                        ? `-₹ ${formatAmount(Math.abs(netRs))}`
                         : pLoss > 0
                           ? `-₹ ${formatAmount(pLoss)}`
                           : '₹ 0';
@@ -1559,7 +1566,7 @@ const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboa
                                     (+₹ {formatAmount(pRefund)} refund)
                                   </span>
                                 )}
-                                {!isScheduledTournament && !isFreePrivateRoom && won && (
+                                {!isScheduledTournament && !isFreePrivateRoom && (isSettledWinner || splitPayouts?.[p.playerId] != null) && totalCredit > 0 && (
                                   <span className="res-sub-credit">
                                     (Total Credit: ₹ {formatAmount(totalCredit)})
                                   </span>

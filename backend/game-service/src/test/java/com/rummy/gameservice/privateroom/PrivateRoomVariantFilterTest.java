@@ -3,6 +3,8 @@ package com.rummy.gameservice.privateroom;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rummy.gameservice.actor.TableManager;
+import com.rummy.gameservice.cluster.ClusterNodeService;
+import com.rummy.gameservice.routing.TableRoutingRegistry;
 import com.rummy.gameservice.security.AuthenticatedPlayer;
 import com.rummy.gameservice.security.VariantAccessPolicy;
 import org.junit.jupiter.api.AfterEach;
@@ -42,6 +44,11 @@ class PrivateRoomVariantFilterTest {
                     if ("findByRoomCode".equals(name)) {
                         String code = (String) args[0];
                         return store.stream().filter(d -> code.equals(d.getRoomCode())).findFirst();
+                    }
+                    if ("findByStatusIn".equals(name)) {
+                        @SuppressWarnings("unchecked")
+                        List<String> statuses = (List<String>) args[0];
+                        return store.stream().filter(d -> statuses.contains(d.getStatus())).toList();
                     }
                     if ("findByPlayersPlayerIdOrderByCreatedAtDesc".equals(name)) {
                         String pid = (String) args[0];
@@ -155,5 +162,49 @@ class PrivateRoomVariantFilterTest {
         pointsReq.addHeader("Origin", "https://points.example.com");
         ResponseEntity<?> allowed = controller.getRoom(pointsReq, "PTS777", "HOST1");
         assertThat(allowed.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    @DisplayName("tickPrivateRooms does not cancel a RUNNING room hosted on another live node")
+    void tickDoesNotCancelRemoteRunningRoom() {
+        TableRoutingRegistry routing = new TableRoutingRegistry(null, "node-a");
+        routing.registerTableOwnership("TBL_PRV_REM1");
+        TableRoutingRegistry peerView = new TableRoutingRegistry(null, "node-b");
+        peerView.registerTableOwnership("TBL_PRV_REM1");
+        // node-b queries Redis/shared state -> wait: in-memory test simulates peer by registering remote node directly:
+        // Use a ClusterNodeService whose nodeId differs from the owner or simulate with TableRoutingRegistry:
+        TableRoutingRegistry nodeB = new TableRoutingRegistry(null, "node-b") {
+            @Override
+            public boolean isOwnedByRemoteServer(String tableId) {
+                return "TBL_PRV_REM1".equals(tableId);
+            }
+
+            @Override
+            public java.util.Optional<String> getServerForTable(String tableId) {
+                return "TBL_PRV_REM1".equals(tableId) ? java.util.Optional.of("node-a") : java.util.Optional.empty();
+            }
+        };
+
+        PrivateRoomDocument doc = makeRoom("REM1", "POOL_101", "RUNNING", "HOST1", Instant.now().minusSeconds(60));
+        doc.setTableId("TBL_PRV_REM1");
+        doc.setStartedAt(Instant.now().minusSeconds(30));
+        store.add(doc);
+
+        PrivateRoomService remoteAware = new PrivateRoomService(getFieldRepo(), tableManager, null, nodeB);
+        remoteAware.setClusterNodes(new ClusterNodeService(nodeB, null, 45));
+        remoteAware.tickPrivateRooms();
+
+        assertThat(doc.getStatus()).isEqualTo("RUNNING");
+        assertThat(doc.getCancelledReason()).isNull();
+    }
+
+    private PrivateRoomRepository getFieldRepo() {
+        try {
+            var f = PrivateRoomService.class.getDeclaredField("roomRepo");
+            f.setAccessible(true);
+            return (PrivateRoomRepository) f.get(service);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

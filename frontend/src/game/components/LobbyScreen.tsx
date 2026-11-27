@@ -281,8 +281,23 @@ export const LobbyScreen: React.FC = () => {
 
   useEffect(() => {
     fetchBalance();
+    const t1 = window.setTimeout(fetchBalance, 1500);
+    const t2 = window.setTimeout(fetchBalance, 4000);
     const interval = setInterval(fetchBalance, 10000);
-    return () => clearInterval(interval);
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchBalance();
+      }
+    };
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+    };
   }, [fetchBalance]);
 
   useEffect(() => {

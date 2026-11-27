@@ -145,6 +145,20 @@ class TableReclaimTest {
         assertThat(manager.hasCapacityForNewTable()).isFalse();
     }
 
+    @Test
+    @DisplayName("A finished tournament table is preserved past normal 180s grace until recorded")
+    void finishedTournamentTablePreservedUntilRecorded() {
+        TableActor actor = finishedPointsTable("TBL_TRN_TRN1_R1_1");
+        Instant now = Instant.now();
+
+        assertThat(manager.reclaimIdleTables(now.plusSeconds(200))).isZero();
+        assertThat(manager.getTable("TBL_TRN_TRN1_R1_1")).isPresent();
+
+        actor.markTournamentResultRecorded();
+        assertThat(manager.reclaimIdleTables(now.plusSeconds(200))).isEqualTo(1);
+        assertThat(manager.getTable("TBL_TRN_TRN1_R1_1")).isEmpty();
+    }
+
     private TableActor seatedPointsTable(String tableId) {
         TableActor actor = manager.getOrCreateTable(tableId, null);
         String gameId = actor.getState().getGameId();

@@ -3,6 +3,7 @@ import type { CardInstance, PlayerGameView, WsClientMessage, WsServerMessage } f
 import { soundEngine } from '../audio/soundEngine';
 import { getWsBaseUrl, getApiBaseUrl } from '../utils/apiConfig';
 import { ensureAuthToken, getAuthToken, authFetch } from '../utils/authClient';
+import { clearActiveSessionRemote } from '../utils/sessionResume';
 
 class GameSocketClient {
   private ws: WebSocket | null = null;
@@ -17,6 +18,8 @@ class GameSocketClient {
   private resumeJoinTimer: number | null = null;
   private recoveryTimer: number | null = null;
   private recoveryAttempts = 0;
+  private leaveAckResolvers: Array<() => void> = [];
+  private leaveInProgress = false;
 
   private url: string;
   /** Node that owns the current table, from a REDIRECT; cleared when the player leaves the table. */
@@ -90,6 +93,7 @@ class GameSocketClient {
       if (generation !== this.socketGeneration) return;
       console.warn('[WS] Disconnected (code: ' + event.code + ', reason: ' + event.reason + ')');
       this.stopHeartbeat();
+      this.resolveLeaveAck();
       useGameStore.getState().setConnectionStatus('DISCONNECTED');
       if (!this.isExplicitDisconnect) {
         this.scheduleReconnect();
@@ -119,6 +123,7 @@ class GameSocketClient {
     this.stopHeartbeat();
     this.clearResumeJoinTimer();
     this.clearRecoveryTimer();
+    this.resolveLeaveAck();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -325,6 +330,10 @@ class GameSocketClient {
         break;
       }
 
+      case 'LEFT_TABLE':
+        this.resolveLeaveAck();
+        break;
+
       case 'PONG':
         // Heartbeat ACK
         break;
@@ -516,6 +525,17 @@ class GameSocketClient {
     this.sendMessage({ type: 'SPLIT_RESPONSE', payload: { accept } });
   }
 
+  private resolveLeaveAck(): void {
+    const pending = this.leaveAckResolvers.splice(0);
+    for (const resolve of pending) {
+      try {
+        resolve();
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   public leaveTable(): void {
     const { tableId, playerId } = useGameStore.getState();
     this.targetServerId = null;
@@ -525,6 +545,52 @@ class GameSocketClient {
       tableId,
       payload: { playerId },
     });
+  }
+
+  public async leaveTableAndDisconnect(waitMs = 500): Promise<void> {
+    if (this.leaveInProgress) return;
+    this.leaveInProgress = true;
+    const { playerId, leaveTable, setWalletBalance } = useGameStore.getState();
+    try {
+      const shouldWaitAck = Boolean(this.ws && this.ws.readyState === WebSocket.OPEN);
+      const ackPromise = shouldWaitAck
+        ? new Promise<void>((resolve) => {
+            const timer = window.setTimeout(() => resolve(), waitMs);
+            this.leaveAckResolvers.push(() => {
+              window.clearTimeout(timer);
+              resolve();
+            });
+          })
+        : Promise.resolve();
+
+      try {
+        if (shouldWaitAck) {
+          this.leaveTable();
+        } else {
+          this.targetServerId = null;
+          this.clearRecoveryTimer();
+        }
+      } catch {
+        // ignore send errors when offline
+      }
+
+      await Promise.all([ackPromise, clearActiveSessionRemote(playerId)]);
+    } finally {
+      this.disconnect();
+      leaveTable();
+      this.leaveInProgress = false;
+    }
+
+    if (playerId) {
+      void authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${encodeURIComponent(playerId)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.balance != null) {
+            setWalletBalance(Number(data.balance));
+          }
+        })
+        .catch(() => {});
+    }
   }
 }
 

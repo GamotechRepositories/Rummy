@@ -8,9 +8,14 @@ import com.rummy.engine.rules.RummyRules;
 import com.rummy.engine.rules.RulesetRegistry;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
+import com.rummy.gameservice.cluster.ClusterNodeService;
 import com.rummy.gameservice.matchmaking.StakeTiers;
+import com.rummy.gameservice.persistence.document.GameDocument;
+import com.rummy.gameservice.persistence.document.SettlementJobDocument;
+import com.rummy.gameservice.persistence.repository.GameRepository;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
 import com.rummy.gameservice.wallet.GameSettlementResult;
+import com.rummy.gameservice.wallet.SettlementJobStore;
 import com.rummy.gameservice.wallet.StakeEscrowService;
 import com.rummy.gameservice.wallet.WalletService;
 import org.slf4j.Logger;
@@ -42,6 +47,9 @@ public class PrivateRoomService {
     private final WalletService walletService;
     private final TableRoutingRegistry routingRegistry;
     private StakeEscrowService escrows;
+    private ClusterNodeService clusterNodes;
+    private GameRepository gameRepo;
+    private SettlementJobStore settlementJobs;
 
     public PrivateRoomService(
             PrivateRoomRepository roomRepo,
@@ -58,6 +66,21 @@ public class PrivateRoomService {
     @Autowired(required = false)
     public void setEscrows(StakeEscrowService escrows) {
         this.escrows = escrows;
+    }
+
+    @Autowired(required = false)
+    public void setClusterNodes(ClusterNodeService clusterNodes) {
+        this.clusterNodes = clusterNodes;
+    }
+
+    @Autowired(required = false)
+    public void setGameRepo(GameRepository gameRepo) {
+        this.gameRepo = gameRepo;
+    }
+
+    @Autowired(required = false)
+    public void setSettlementJobs(SettlementJobStore settlementJobs) {
+        this.settlementJobs = settlementJobs;
     }
 
     public synchronized Map<String, Object> createRoom(
@@ -386,15 +409,24 @@ public class PrivateRoomService {
     private void syncRunningRoom(PrivateRoomDocument doc, Instant now) {
         Optional<TableActor> actorOpt = tableManager.getTable(doc.getTableId());
         if (actorOpt.isEmpty()) {
+            // Do not cancel if another healthy node hosts this table
+            if (routingRegistry != null && routingRegistry.isOwnedByRemoteServer(doc.getTableId())) {
+                String owner = routingRegistry.getServerForTable(doc.getTableId()).orElse(null);
+                if (owner != null && (clusterNodes == null || clusterNodes.isAlive(owner))) {
+                    return;
+                }
+            }
+
+            // Check if the game already completed / settled before table eviction
+            if (tryHydrateCompletedRoomFromDb(doc, now)) {
+                return;
+            }
+
             if (doc.getStartedAt() != null && now.isAfter(doc.getStartedAt().plusSeconds(10))) {
                 doc.setStatus("CANCELLED");
                 doc.setCancelledReason("Table closed or aborted");
                 doc.setFinishedAt(now);
-                double sum = doc.getPlayers().stream().mapToDouble(PrivateRoomDocument.RoomPlayer::getDebitedAmount).sum();
-                if (doc.getRefundedTotalRs() <= 0 && sum > 0) {
-                    doc.setRefundedTotalRs(sum);
-                    doc.getPlayers().forEach(p -> p.setRefunded(true));
-                }
+                refundAllUnrefunded(doc, "Private room table closed unexpectedly");
                 roomRepo.save(doc);
             }
             return;
@@ -403,41 +435,13 @@ public class PrivateRoomService {
         TableActor actor = actorOpt.get();
         GameSettlementResult settlement = actor.getLastSettlement();
         if (settlement != null) {
-            doc.setGrossCollectionRs(settlement.totalGrossPot().doubleValue());
-            doc.setPlatformRakeRs(settlement.platformRakeAmount().doubleValue());
-            doc.setRakeRate(settlement.platformRakeRate().doubleValue());
-            doc.setWinnerPayoutRs(settlement.netWinnerPrize().doubleValue());
-            doc.setWinnerPlayerId(settlement.winnerPlayerId());
-            String winName = actor.getState().getPlayers().stream()
-                    .filter(p -> p.getPlayerId().equals(settlement.winnerPlayerId()))
-                    .map(PlayerState::getDisplayName)
-                    .findFirst()
-                    .orElse(settlement.winnerPlayerId());
-            doc.setWinnerDisplayName(winName);
-            if (settlement.playerDetails() != null) {
-                for (PrivateRoomDocument.RoomPlayer rp : doc.getPlayers()) {
-                    GameSettlementResult.PlayerSettlementDetail det = settlement.playerDetails().get(rp.getPlayerId());
-                    if (det != null) {
-                        rp.setPenaltyPoints(det.penaltyPoints());
-                        rp.setLossAmount(det.lossAmount() != null ? det.lossAmount().doubleValue() : 0.0);
-                        rp.setRefundAmount(det.refundAmount() != null ? det.refundAmount().doubleValue() : 0.0);
-                        rp.setWinAmount(det.winAmount() != null ? det.winAmount().doubleValue() : 0.0);
-                        rp.setNetWalletDelta(det.netWalletDelta() != null ? det.netWalletDelta().doubleValue() : 0.0);
-                    }
-                }
-            }
-            doc.setStatus("COMPLETED");
-            doc.setFinishedAt(now);
+            applySettlementToRoom(doc, settlement, actor, now);
             roomRepo.save(doc);
         } else if ("ABORTED".equals(actor.getState().getStatus().name())) {
             doc.setStatus("CANCELLED");
             doc.setCancelledReason("Table aborted");
             doc.setFinishedAt(now);
-            double sum = doc.getPlayers().stream().mapToDouble(PrivateRoomDocument.RoomPlayer::getDebitedAmount).sum();
-            if (doc.getRefundedTotalRs() <= 0 && sum > 0) {
-                doc.setRefundedTotalRs(sum);
-                doc.getPlayers().forEach(p -> p.setRefunded(true));
-            }
+            refundAllUnrefunded(doc, "Private room aborted");
             roomRepo.save(doc);
         } else if (doc.getStakeTier() == 0
                 && (actor.getTournamentWinnerId() != null || "COMPLETED".equals(actor.getState().getStatus().name()))) {
@@ -446,6 +450,80 @@ public class PrivateRoomService {
             doc.setFinishedAt(now);
             roomRepo.save(doc);
         }
+    }
+
+    private boolean tryHydrateCompletedRoomFromDb(PrivateRoomDocument doc, Instant now) {
+        if (gameRepo == null || doc.getTableId() == null) {
+            return false;
+        }
+        List<GameDocument> games = gameRepo.findByTableId(doc.getTableId());
+        if (games == null || games.isEmpty()) {
+            return false;
+        }
+        GameDocument completed = games.stream()
+                .filter(g -> g != null && "COMPLETED".equalsIgnoreCase(g.getStatus()))
+                .reduce((first, second) -> second)
+                .orElse(null);
+        if (completed == null) {
+            return false;
+        }
+        String gameId = completed.getGameId();
+        if (settlementJobs != null && gameId != null) {
+            Optional<SettlementJobDocument> jobOpt = settlementJobs.find(gameId);
+            if (jobOpt.isPresent()) {
+                String jobStatus = jobOpt.get().getStatus();
+                if ("PENDING".equals(jobStatus) || "RETRY".equals(jobStatus)) {
+                    return true; // Wait for settlement retry to finish
+                }
+            }
+        }
+        GameSettlementResult cached = walletService != null && gameId != null ? walletService.getSettlement(gameId) : null;
+        if (cached != null) {
+            applySettlementToRoom(doc, cached, null, completed.getFinishedAt() != null ? completed.getFinishedAt() : now);
+        } else {
+            doc.setStatus("COMPLETED");
+            doc.setWinnerPlayerId(completed.getWinnerPlayerId());
+            doc.setFinishedAt(completed.getFinishedAt() != null ? completed.getFinishedAt() : now);
+        }
+        roomRepo.save(doc);
+        return true;
+    }
+
+    private void applySettlementToRoom(PrivateRoomDocument doc, GameSettlementResult settlement, TableActor actor, Instant now) {
+        doc.setGrossCollectionRs(settlement.totalGrossPot().doubleValue());
+        doc.setPlatformRakeRs(settlement.platformRakeAmount().doubleValue());
+        doc.setRakeRate(settlement.platformRakeRate().doubleValue());
+        doc.setWinnerPayoutRs(settlement.netWinnerPrize().doubleValue());
+        doc.setWinnerPlayerId(settlement.winnerPlayerId());
+        String winName = actor != null
+                ? actor.getState().getPlayers().stream()
+                        .filter(p -> p.getPlayerId().equals(settlement.winnerPlayerId()))
+                        .map(PlayerState::getDisplayName)
+                        .findFirst()
+                        .orElse(null)
+                : null;
+        if (winName == null) {
+            winName = doc.getPlayers().stream()
+                    .filter(p -> p.getPlayerId().equals(settlement.winnerPlayerId()))
+                    .map(PrivateRoomDocument.RoomPlayer::getDisplayName)
+                    .findFirst()
+                    .orElse(settlement.winnerPlayerId());
+        }
+        doc.setWinnerDisplayName(winName);
+        if (settlement.playerDetails() != null) {
+            for (PrivateRoomDocument.RoomPlayer rp : doc.getPlayers()) {
+                GameSettlementResult.PlayerSettlementDetail det = settlement.playerDetails().get(rp.getPlayerId());
+                if (det != null) {
+                    rp.setPenaltyPoints(det.penaltyPoints());
+                    rp.setLossAmount(det.lossAmount() != null ? det.lossAmount().doubleValue() : 0.0);
+                    rp.setRefundAmount(det.refundAmount() != null ? det.refundAmount().doubleValue() : 0.0);
+                    rp.setWinAmount(det.winAmount() != null ? det.winAmount().doubleValue() : 0.0);
+                    rp.setNetWalletDelta(det.netWalletDelta() != null ? det.netWalletDelta().doubleValue() : 0.0);
+                }
+            }
+        }
+        doc.setStatus("COMPLETED");
+        doc.setFinishedAt(now);
     }
 
     private void escrowPlayerStake(String playerId, int stakeTier, String escrowKey, String rulesetId, String roomCode) {

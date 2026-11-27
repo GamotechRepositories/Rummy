@@ -332,7 +332,7 @@ public class WalletService {
 
     /**
      * Segregates deposits, winnings, and bonuses based on RMG compliance:
-     * - "GAME_WIN" & "BOT_HOUSE_WIN" increase winningsBalance.
+     * - "GAME_WIN", "BOT_HOUSE_WIN", & "TOURNAMENT_PRIZE" increase winningsBalance.
      * - "PROMOTIONAL_CREDIT" & "BONUS" increase bonusBalance.
      * - "DEPOSIT", "GAME_REFUND", or general deposit increases depositBalance.
      * - "WITHDRAWAL" can only withdraw from winningsBalance.
@@ -346,7 +346,9 @@ public class WalletService {
 
         if (delta.signum() >= 0) {
             BigDecimal amount = delta;
-            if ("GAME_WIN".equalsIgnoreCase(type) || "BOT_HOUSE_WIN".equalsIgnoreCase(type)) {
+            if ("GAME_WIN".equalsIgnoreCase(type)
+                    || "BOT_HOUSE_WIN".equalsIgnoreCase(type)
+                    || "TOURNAMENT_PRIZE".equalsIgnoreCase(type)) {
                 account.setWinningsBalance(account.getWinningsBalance().add(amount));
             } else if ("PROMOTIONAL_CREDIT".equalsIgnoreCase(type) || (type != null && type.toUpperCase().contains("BONUS"))) {
                 account.setBonusBalance(account.getBonusBalance().add(amount));

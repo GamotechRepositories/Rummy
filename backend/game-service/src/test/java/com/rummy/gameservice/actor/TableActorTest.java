@@ -302,4 +302,39 @@ class TableActorTest {
 
         actor.destroy();
     }
+
+    @Test
+    @DisplayName("Points: when last human drops and leaves, bots wind down immediately and refund unlost stake")
+    void abandonedBotsWindDownSettlesHumanRefundImmediately() {
+        com.rummy.gameservice.wallet.WalletService wallet = new com.rummy.gameservice.wallet.WalletService();
+        wallet.credit("H1", java.math.BigDecimal.valueOf(1000), "DEPOSIT", "DEP_H1", null, "seed", null);
+        wallet.debit("H1", java.math.BigDecimal.valueOf(80), "GAME_ENTRY_STAKE", "STAKE_H1", "G_WD", "entry", null);
+
+        Deck deck = Deck.createStandard13CardDeck();
+        GameState ptsState = new GameState("G_WD", "T_WD", "POINTS_13", "1.0.0", List.of(), deck);
+        TableActor actor = new TableActor("T_WD", ptsState, new PointsRummyRules(), new GameEngine(() -> 0L, 0),
+                objectMapper, scheduler, null, null, null, wallet);
+        actor.setSettlements(com.rummy.gameservice.wallet.SettlementService.inline(wallet));
+        actor.setStakeTier(80);
+
+        Instant now = Instant.now();
+        actor.processCommand(new JoinCommand("j1", "G_WD", "H1", "Human", 0, false, now), "j1");
+        actor.registerBot("BOT_1", "Bot 1", com.rummy.engine.bot.BotDifficulty.MEDIUM);
+        actor.registerBot("BOT_2", "Bot 2", com.rummy.engine.bot.BotDifficulty.MEDIUM);
+        actor.processCommand(new JoinCommand("j2", "G_WD", "BOT_1", "Bot 1", 1, true, now), "j2");
+        actor.processCommand(new JoinCommand("j3", "G_WD", "BOT_2", "Bot 2", 2, true, now), "j3");
+        actor.processCommand(new ReadyCommand("r1", "G_WD", "H1", now), "r1");
+        actor.processCommand(new ReadyCommand("r2", "G_WD", "BOT_1", now), "r2");
+        actor.processCommand(new ReadyCommand("r3", "G_WD", "BOT_2", now), "r3");
+        actor.processCommand(new StartGameCommand("s", "G_WD", "H1", now), "s");
+
+        // Human first-drops (20 pts = ₹20 loss -> ₹60 refund due) then leaves immediately
+        TurnTestSupport.dropOnTurn(actor, "d1", "H1");
+        actor.handleVoluntaryLeave("H1", "leave-wd");
+
+        assertThat(actor.getState().getStatus()).isEqualTo(GameStatus.COMPLETED);
+        assertThat(wallet.getOrCreateWallet("H1").getBalance()).isEqualByComparingTo(java.math.BigDecimal.valueOf(980));
+
+        actor.destroy();
+    }
 }

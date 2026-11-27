@@ -7,15 +7,24 @@ import { PlayerHand } from './PlayerHand';
 import { ActionControls } from './ActionControls';
 import { DealAnimation, type DealTarget } from './DealAnimation';
 import { DeclareModal } from './DeclareModal';
-import { LogOut, Wifi, AlertCircle, Menu, X, RotateCw } from 'lucide-react';
+import { LogOut, Wifi, AlertCircle, Menu, X, RotateCw, Wallet } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { FullscreenToggle } from './FullscreenToggle';
 import { soundEngine } from '../audio/soundEngine';
 import { GameResultModal } from './GameResultModal';
 import { PoolScoreboardModal } from './PoolScoreboardModal';
-import { clearActiveSessionRemote } from '../utils/sessionResume';
 import { useLandscapeGate } from './LandscapeGate';
 import { useModalScroll } from '../hooks/useModalScroll';
+import { photoForCharacter } from '../utils/avatarUtils';
+import { authFetch } from '../utils/authClient';
+import { getApiBaseUrl } from '../utils/apiConfig';
+
+function formatCompactRs(amount: number): string {
+  return amount.toLocaleString('en-IN', {
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
 
 function getPerimeterPosition(index: number, total: number): SeatPosition {
   // Clockwise from the viewer: first seat is on the left, last seat is the lower right.
@@ -48,10 +57,44 @@ export const GameBoard: React.FC = () => {
     gameState,
     connectionStatus,
     errorMessage,
-    leaveTable,
     lastGameConfig,
     resumePending,
+    displayName,
+    avatarId,
+    walletBalance,
+    setWalletBalance,
+    playerId,
   } = useGameStore();
+
+  useEffect(() => {
+    if (!playerId) return;
+    let cancelled = false;
+    const refreshBalance = async () => {
+      try {
+        const res = await authFetch(
+          `${getApiBaseUrl()}/api/wallet/balance?playerId=${encodeURIComponent(playerId)}`,
+        );
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled && data && data.balance != null) {
+          setWalletBalance(Number(data.balance));
+        }
+      } catch {
+        // Ignore transient wallet refresh errors while seated at the table
+      }
+    };
+    void refreshBalance();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    playerId,
+    gameState?.tableId,
+    gameState?.gameId,
+    gameState?.gameStatus,
+    gameState?.dealNumber,
+    setWalletBalance,
+  ]);
 
   const { simulatedLandscape, toggleFlip } = useLandscapeGate();
   const modalScroll = useModalScroll();
@@ -172,15 +215,7 @@ export const GameBoard: React.FC = () => {
   }, [gameState?.tableId]);
 
   const handleLeaveTable = () => {
-    const { playerId: pid } = useGameStore.getState();
-    try {
-      socketClient.leaveTable();
-    } catch {
-      // ignore
-    }
-    void clearActiveSessionRemote(pid);
-    socketClient.disconnect();
-    leaveTable();
+    void socketClient.leaveTableAndDisconnect();
   };
 
   const opponents = gameState?.opponents ?? [];
@@ -251,7 +286,11 @@ export const GameBoard: React.FC = () => {
   const isRummy21 = rawRulesetId.includes('21');
   const cardsPerPlayer = isRummy21 ? 21 : 13;
   const leaveAfterDraw = !!gameState?.isMyTurn && gameState?.turnPhase === 'AWAITING_DISCARD';
-  const leaveCountsAsDrop = !leaveAfterDraw && !rawRulesetId.includes('POOL') && !rawRulesetId.includes('DEALS');
+  const leaveCountsAsDrop =
+    gameState?.gameStatus === 'IN_PROGRESS' &&
+    !leaveAfterDraw &&
+    !rawRulesetId.includes('POOL') &&
+    !rawRulesetId.includes('DEALS');
   const leaveOnFirstTurn = gameState?.firstDropAvailable
     ?? !(gameState?.hasTakenFirstTurn ?? ((gameState?.discardHistory?.length ?? 0) > 1));
   const leavePenalty = leaveCountsAsDrop
@@ -302,11 +341,14 @@ export const GameBoard: React.FC = () => {
     ? `₹${pointValue >= 1 ? pointValue.toFixed(0) : pointValue.toFixed(2)}/pt`
     : `Entry ₹${entryFee}`;
 
-  // Points tables have no pot: each loser pays their own points; the stake is the most anyone can lose.
-  const potLabel = isPointsTable ? 'MAX LOSS ' : 'PRIZE ';
-  const potAmount = (
-    isPointsTable ? entryFee : gameState?.prizePool ?? (opponents.length + 1) * entryFee * 0.85
-  ).toFixed(2);
+  const isScheduledTournament = Boolean(gameState?.tableId?.startsWith('TBL_TRN_'));
+  const isCashGame = !isScheduledTournament && entryFee > 0;
+  const cashGameAmount = formatCompactRs(entryFee);
+  const cashGameTitle = isPointsTable
+    ? `Cash Game: ₹${cashGameAmount} (₹${pointValue >= 1 ? pointValue.toFixed(0) : pointValue.toFixed(2)}/pt)`
+    : `Cash Game: ₹${cashGameAmount} Entry`;
+  const playerLabel = displayName?.trim() || 'Player';
+  const balanceLabel = walletBalance !== null ? `₹${formatCompactRs(walletBalance)}` : '₹ —';
   const leaveRupees = isPointsTable ? (leavePenalty * pointValue).toFixed(2) : null;
 
   if (!gameState) {
@@ -380,15 +422,27 @@ export const GameBoard: React.FC = () => {
             </div>
           )}
 
-          {/* Top table plate — stake / pot / live (no turn pill, no joker here) */}
+          {/* Top table plate — player profile, cash stake, and live status icon */}
           <div className="board-hud" aria-label="Table status">
             <div className="board-info-plate">
               <div className="board-info-row">
-                <span className="board-info-variant">
-                  <span className="board-info-variant-title">{variantName}</span>
-                  <span className="board-info-variant-stake"> · {stakeLabel}</span>
-                  <span className="board-info-variant-seats"> · {maxSeats} Players</span>
-                </span>
+                <div className="board-info-player" title={`${playerLabel} · Wallet ${balanceLabel}`}>
+                  <span className="board-info-avatar">
+                    <img
+                      className="board-info-avatar-img"
+                      src={photoForCharacter(avatarId)}
+                      alt={playerLabel}
+                      draggable={false}
+                    />
+                  </span>
+                  <div className="board-info-player-meta">
+                    <span className="board-info-player-name">{playerLabel}</span>
+                    <span className="board-info-player-balance" aria-label={`Wallet balance ${balanceLabel}`}>
+                      <Wallet size={10} strokeWidth={2.2} aria-hidden />
+                      <span>{balanceLabel}</span>
+                    </span>
+                  </div>
+                </div>
                 {isMultiDeal && (
                   <>
                     <span className="board-info-sep" aria-hidden />
@@ -410,17 +464,25 @@ export const GameBoard: React.FC = () => {
                     </span>
                   </>
                 )}
-                <span className="board-info-sep" aria-hidden />
-                <span className="board-info-pot">
-                  <span className="board-info-pot-label">{potLabel}</span>₹{potAmount}
-                </span>
+                {isCashGame && (
+                  <>
+                    <span className="board-info-sep" aria-hidden />
+                    <div className="board-info-cash" title={cashGameTitle} aria-label={cashGameTitle}>
+                      <span className="board-info-cash-label">
+                        <span className="board-info-cash-label-full">CASH GAME</span>
+                        <span className="board-info-cash-label-short">GAME</span>
+                      </span>
+                      <span className="board-info-cash-amt">₹{cashGameAmount}</span>
+                    </div>
+                  </>
+                )}
                 <span
-                  className={`board-info-live${
-                    connectionStatus === 'CONNECTED' ? ' ok' : ''
-                  }`}
+                  className={`board-info-live${connectionStatus === 'CONNECTED' ? ' ok' : ''}`}
+                  role="status"
+                  title={connectionStatus === 'CONNECTED' ? 'Live · Connected' : 'Connecting…'}
+                  aria-label={connectionStatus === 'CONNECTED' ? 'Live' : 'Connecting'}
                 >
-                  <Wifi size={10} />
-                  <span className="board-info-live-text">{connectionStatus === 'CONNECTED' ? 'Live' : '…'}</span>
+                  <Wifi size={12} strokeWidth={2.4} aria-hidden />
                 </span>
               </div>
             </div>
@@ -623,10 +685,14 @@ export const GameBoard: React.FC = () => {
               <p className="royal-dialog-subtitle">
                 {(gameState?.gameStatus === 'IN_PROGRESS' || gameState?.gameStatus === 'SHOWDOWN') && !gameState?.viewerDropped
                   ? (leaveCountsAsDrop
-                    ? 'Your hand is currently live. Leaving now counts as a drop.'
-                    : 'Your hand is currently live. Leaving the table mid-game will forfeit the round.')
+                    ? 'Your hand is currently live. Leaving now counts as a drop (unlost stake settles when hand ends).'
+                    : !isPointsTable && entryFee > 0 && !isScheduledTournament
+                      ? `Leaving a live table forfeits your ₹${entryFee.toFixed(2)} entry fee to the prize pool (no partial refund).`
+                      : 'Your hand is currently live. Leaving the table mid-game will forfeit the round.')
                   : gameState?.viewerDropped
-                  ? 'You have dropped this hand. You can safely leave the table now.'
+                  ? (isPointsTable && entryFee > 0
+                      ? 'You have dropped this hand. You can leave now — any unlost stake is refunded once the hand ends.'
+                      : 'You have dropped this hand. You can safely leave the table now.')
                   : 'Game has not started yet. You can leave now without any penalty.'}
               </p>
             </div>

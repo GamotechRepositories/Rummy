@@ -86,8 +86,11 @@ public final class TableActor {
     private Integer nextDealCountdown = null;
     private Instant nextDealScheduledAt = null;
     private String tournamentWinnerId = null;
+    private final Set<String> tiedWinnerIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private volatile boolean tournamentResultRecorded;
     private int effectiveTotalDeals;
     private final Set<String> voluntaryAbandoners = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private ScheduledFuture<?> abandonedBotsFuture;
 
     /** Pool break between deals: long enough to rejoin or ask for a split. */
     static final int POOL_BREAK_SECONDS = 10;
@@ -196,6 +199,7 @@ public final class TableActor {
         if (destroyed) {
             return;
         }
+        cancelAbandonedBotsWindDown();
         sessions.put(playerId, session);
         lastActivityAt = Instant.now();
         log.debug("[TableActor:{}] Registered session for player {}", tableId, playerId);
@@ -240,23 +244,47 @@ public final class TableActor {
         if (!hasOpenSession() && state.getStatus() == GameStatus.WAITING_FOR_PLAYERS) {
             cancelAutoBotFallback();
         }
+        if (state.getStatus() == GameStatus.IN_PROGRESS
+                && countActiveHumans() == 0
+                && !hasOpenHumanSession()
+                && ((!rules.isEliminationGame() && !rules.isDealsGame()) || allHumansAbandonedOrEliminated())) {
+            scheduleAbandonedBotsWindDown();
+        }
     }
 
     private boolean hasOpenSession() {
         return sessions.values().stream().anyMatch(WebSocketSession::isOpen);
     }
 
+    private boolean hasOpenHumanSession() {
+        return sessions.entrySet().stream()
+                .anyMatch(e -> !isBot(e.getKey()) && e.getValue() != null && e.getValue().isOpen());
+    }
+
+    private boolean hasSpectatingHumanSession() {
+        return sessions.entrySet().stream()
+                .anyMatch(e -> !isBot(e.getKey())
+                        && !voluntaryAbandoners.contains(e.getKey())
+                        && e.getValue() != null && e.getValue().isOpen());
+    }
+
     /**
      * Why this table can be dropped from memory, or empty while it must stay.
-     * Tables with a live deal, a pending next deal, or an open matchmaking lobby are never reclaimed,
-     * because their escrowed stakes still have to be settled.
+     * Tables with a live deal, a pending next deal, an open matchmaking lobby, or an unrecorded
+     * finished tournament table are kept until their result is safely captured.
      */
     public synchronized Optional<String> reclaimReason(Instant now, java.time.Duration finishedGrace, java.time.Duration abandonedAfter) {
         if (destroyed) {
             return Optional.of("already destroyed");
         }
         if (matchFinishedAt != null) {
-            return now.isAfter(matchFinishedAt.plus(finishedGrace))
+            boolean unrecordedTournament = tableId != null && tableId.startsWith("TBL_TRN_") && !tournamentResultRecorded;
+            java.time.Duration effectiveGrace = unrecordedTournament
+                    ? finishedGrace.compareTo(java.time.Duration.ofMinutes(30)) > 0
+                            ? finishedGrace
+                            : java.time.Duration.ofMinutes(30)
+                    : finishedGrace;
+            return now.isAfter(matchFinishedAt.plus(effectiveGrace))
                     ? Optional.of("match finished at " + matchFinishedAt)
                     : Optional.empty();
         }
@@ -734,12 +762,14 @@ public final class TableActor {
                         } else {
                             PlayerState tournamentWinner = leaders.get(0);
                             this.tournamentWinnerId = tournamentWinner.getPlayerId();
+                            this.tiedWinnerIds.clear();
                             Map<String, Integer> sharedBy = null;
                             if (leaders.size() > 1) {
                                 // Still level after every tie-breaker: the leaders share the prize equally.
                                 sharedBy = new LinkedHashMap<>();
                                 for (PlayerState p : leaders) {
                                     sharedBy.put(p.getPlayerId(), 0);
+                                    this.tiedWinnerIds.add(p.getPlayerId());
                                 }
                                 log.info("[TableActor:{}] DEALS still tied after {} tie-breakers; prize shared by {}",
                                         tableId, MAX_TIE_BREAKER_DEALS, sharedBy.keySet());
@@ -759,6 +789,10 @@ public final class TableActor {
                         }
                     }
                 } else if (isPool) {
+                    // Any player who left mid-deal/showdown paid their score above; mark them out before checking survivors.
+                    for (String leaver : voluntaryAbandoners) {
+                        state.getPlayer(leaver).ifPresent(PlayerState::markEliminated);
+                    }
                     Map<String, Integer> currentCumulatives = new HashMap<>();
                     List<String> freshlyEliminated = new ArrayList<>();
                     List<String> freshlyEliminatedIds = new ArrayList<>();
@@ -1143,7 +1177,9 @@ public final class TableActor {
     }
 
     private void armNextBotDropThreshold() {
-        int rounds = ThreadLocalRandom.current().nextInt(4, 7); // 4–6 full rounds between bot drops
+        int rounds = hasSpectatingHumanSession()
+                ? ThreadLocalRandom.current().nextInt(1, 3) // 1-2 rounds when a human is spectating
+                : 1;
         int activeBots = (int) Math.max(1, countActiveBots());
         turnsSinceLastBotDrop = 0;
         lastWindDownTurnCounted = -1;
@@ -1152,6 +1188,69 @@ public final class TableActor {
                 "[TableActor:{}] Next bot drop armed: {} rounds × {} bots = {} turns",
                 tableId, rounds, activeBots, turnsUntilNextBotDrop
         );
+    }
+
+    private boolean allHumansAbandonedOrEliminated() {
+        if (countActiveHumans() > 0) {
+            return false;
+        }
+        return state.getPlayers().stream()
+                .filter(p -> !p.isBot())
+                .allMatch(p -> voluntaryAbandoners.contains(p.getPlayerId()) || p.getStatus() == PlayerStatus.ELIMINATED);
+    }
+
+    private void windDownAbandonedBotsMatch(String reqId) {
+        if (destroyed || state.getStatus() != GameStatus.IN_PROGRESS || countActiveHumans() > 0) {
+            return;
+        }
+        if (botTurnFuture != null && !botTurnFuture.isDone()) {
+            botTurnFuture.cancel(false);
+        }
+        cancelAbandonedBotsWindDown();
+        int guard = 0;
+        while (state.getStatus() == GameStatus.IN_PROGRESS
+                && countActiveHumans() == 0
+                && countActiveBots() >= 2
+                && guard++ < 10) {
+            String weakestBotId = findWeakestActiveBotId();
+            if (weakestBotId == null) {
+                break;
+            }
+            EngineResult res = processCommand(new DropCommand(
+                    UUID.randomUUID().toString(),
+                    state.getGameId(),
+                    weakestBotId,
+                    Instant.now(),
+                    true
+            ), "BOT_ABANDONED_WINDDOWN_" + (reqId != null ? reqId : "AUTO"));
+            if (!res.isSuccess()) {
+                break;
+            }
+        }
+    }
+
+    private void scheduleAbandonedBotsWindDown() {
+        if (abandonedBotsFuture != null && !abandonedBotsFuture.isDone()) {
+            return;
+        }
+        abandonedBotsFuture = scheduler.schedule(() -> {
+            synchronized (this) {
+                if (!destroyed
+                        && state.getStatus() == GameStatus.IN_PROGRESS
+                        && countActiveHumans() == 0
+                        && !hasOpenHumanSession()) {
+                    log.info("[TableActor:{}] No open human sessions left; fast-closing bots-only hand", tableId);
+                    windDownAbandonedBotsMatch("IDLE_DISCONNECT");
+                }
+            }
+        }, 5, TimeUnit.SECONDS);
+    }
+
+    private void cancelAbandonedBotsWindDown() {
+        if (abandonedBotsFuture != null && !abandonedBotsFuture.isDone()) {
+            abandonedBotsFuture.cancel(false);
+            abandonedBotsFuture = null;
+        }
     }
 
     private long countActiveHumans() {
@@ -1331,6 +1430,14 @@ public final class TableActor {
 
     public String getTournamentWinnerId() {
         return tournamentWinnerId;
+    }
+
+    public Set<String> getTiedWinnerIds() {
+        return Set.copyOf(tiedWinnerIds);
+    }
+
+    public void markTournamentResultRecorded() {
+        this.tournamentResultRecorded = true;
     }
 
     /** Ends the match and queues its payout; players get {@code GAME_SETTLEMENT} once it is paid. */
@@ -1579,28 +1686,47 @@ public final class TableActor {
         }
         voluntaryAbandoners.add(playerId);
         mutations++;
+        GameStatus status = state.getStatus();
         var playerOpt = state.getPlayer(playerId);
         if (playerOpt.isPresent()) {
             PlayerState p = playerOpt.get();
-            if (p.getStatus() == PlayerStatus.ACTIVE && state.getStatus() == GameStatus.IN_PROGRESS) {
+            if (p.getStatus() == PlayerStatus.ACTIVE && status == GameStatus.IN_PROGRESS) {
                 processCommand(new DropCommand(reqId, state.getGameId(), playerId, Instant.now(), true), "LEAVE_FORFEIT");
             }
-            boolean handOpen = !rules.isEliminationGame()
-                    && state.getStatus() == GameStatus.IN_PROGRESS && p.getStatus() == PlayerStatus.DROPPED;
-            if (handOpen) {
-                // Eliminated players score 0, so stay DROPPED until this hand is settled at the penalty
-                // (points: paid in rupees; deals: chips go to the deal winner).
-                log.info("[TableActor:{}] Player {} left; eliminated after this hand settles", tableId, playerId);
+            GameStatus postDropStatus = state.getStatus();
+            boolean deferElimination = (postDropStatus == GameStatus.SHOWDOWN || postDropStatus == GameStatus.DECLARING)
+                    || (!rules.isEliminationGame() && postDropStatus == GameStatus.IN_PROGRESS && p.getStatus() == PlayerStatus.DROPPED);
+            if (deferElimination) {
+                // Keep DROPPED / ACTIVE until the live deal or showdown settles so penalty / deadwood is charged accurately.
+                log.info("[TableActor:{}] Player {} left during {}; eliminated after hand settles", tableId, playerId, postDropStatus);
             } else {
                 p.markEliminated();
                 log.info("[TableActor:{}] Player {} marked eliminated upon voluntary leave", tableId, playerId);
             }
+        }
+        if (state.getStatus() == GameStatus.SHOWDOWN && allRemainingShowdownOpponentsDone()) {
+            if (showdownTimeoutFuture != null && !showdownTimeoutFuture.isDone()) {
+                showdownTimeoutFuture.cancel(false);
+            }
+            processCommand(new ShowdownTimeoutCommand(UUID.randomUUID().toString(), state.getGameId(), Instant.now()),
+                    "SHOWDOWN_LEAVE_FINISH");
+        }
+        if (state.getStatus() == GameStatus.IN_PROGRESS && allHumansAbandonedOrEliminated()) {
+            windDownAbandonedBotsMatch(reqId);
         }
         if (splitOffer != null && splitOffer.dropsLeft().containsKey(playerId)) {
             declineSplit(playerId, "left");
         }
         concludeIfLastSurvivorBetweenDeals();
         refreshHumanViews();
+    }
+
+    private boolean allRemainingShowdownOpponentsDone() {
+        String winner = state.getWinnerPlayerId();
+        return state.getPlayers().stream()
+                .filter(p -> p.getStatus() == PlayerStatus.ACTIVE && !p.getPlayerId().equals(winner))
+                .allMatch(p -> state.getSubmittedMelds().containsKey(p.getPlayerId())
+                        || voluntaryAbandoners.contains(p.getPlayerId()));
     }
 
     /** In the break between deals, a match left with one player is over: that player wins now, not after the break. */
@@ -2033,6 +2159,7 @@ public final class TableActor {
             nextDealFuture.cancel(true);
         }
         cancelAutoBotFallback();
+        cancelAbandonedBotsWindDown();
         botsOnlyWindDown = false;
         sessions.clear();
         botAgents.clear();

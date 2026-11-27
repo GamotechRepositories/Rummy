@@ -344,4 +344,46 @@ class GameWebSocketHandlerTest {
         assertThat(attrs.get(JwtHandshakeInterceptor.HANDSHAKE_ORIGIN_ATTRIBUTE)).isEqualTo("https://deals.example.com");
         assertThat(attrs.get(JwtHandshakeInterceptor.AUTH_GAME_CODE_ATTRIBUTE)).isEqualTo("DEALS");
     }
+
+    @Test
+    @DisplayName("LEAVE_TABLE during SHOWDOWN applies forfeit score, finishes showdown when no opponent remains, and emits LEFT_TABLE")
+    void testLeaveTableDuringShowdown() throws Exception {
+        TableActor table = tableManager.getOrCreateTable("TBL_SHOWDOWN_LEAVE", RulesetRegistry.requireRuleset("POINTS_13"));
+        String gameId = table.getState().getGameId();
+        java.time.Instant now = java.time.Instant.now();
+        table.processCommand(new com.rummy.engine.command.JoinCommand("j1", gameId, "P1", "Player 1", 0, false, now), "j1");
+        table.processCommand(new com.rummy.engine.command.JoinCommand("j2", gameId, "P2", "Player 2", 1, false, now), "j2");
+        table.processCommand(new ReadyCommand("r1", gameId, "P1", now), "r1");
+        table.processCommand(new ReadyCommand("r2", gameId, "P2", now), "r2");
+        table.processCommand(new com.rummy.engine.command.StartGameCommand("s", gameId, "P1", now), "s");
+
+        table.getState().setStatus(com.rummy.engine.model.GameStatus.SHOWDOWN);
+        table.getState().setWinnerPlayerId("P1");
+        table.getState().requirePlayer("P1").markDeclared();
+        table.getState().requirePlayer("P1").setScore(0);
+
+        sessionAttributes.put("playerId", "P2");
+        sessionAttributes.put("tableId", "TBL_SHOWDOWN_LEAVE");
+        java.util.List<String> payloads = new java.util.concurrent.CopyOnWriteArrayList<>();
+        doAnswer(inv -> {
+            payloads.add(((TextMessage) inv.getArgument(0)).getPayload());
+            return null;
+        }).when(session).sendMessage(any(TextMessage.class));
+        com.rummy.gameservice.websocket.SessionOutbox.attach(session);
+        table.registerSession("P2", session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type": "LEAVE_TABLE", "tableId": "TBL_SHOWDOWN_LEAVE", "requestId": "req_leave_sd"}
+                """));
+
+        long deadline = System.currentTimeMillis() + SEND_WAIT_MS;
+        while (System.currentTimeMillis() < deadline && payloads.stream().noneMatch(p -> p.contains("LEFT_TABLE"))) {
+            Thread.sleep(20);
+        }
+        boolean sentLeftTable = payloads.stream().anyMatch(p -> p.contains("LEFT_TABLE"));
+        assertThat(sentLeftTable).isTrue();
+        assertThat(table.getState().getStatus()).isEqualTo(com.rummy.engine.model.GameStatus.COMPLETED);
+        assertThat(table.getState().requirePlayer("P2").getScore()).isEqualTo(80);
+        assertThat(table.getState().requirePlayer("P2").getStatus()).isEqualTo(com.rummy.engine.model.PlayerStatus.ELIMINATED);
+    }
 }

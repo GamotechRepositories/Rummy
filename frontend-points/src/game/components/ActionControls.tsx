@@ -33,7 +33,6 @@ export const ActionControls: React.FC = () => {
     groupSelectedCards,
     autoSortHand,
     dealInProgress,
-    leaveTable,
     lastGameConfig,
   } = useGameStore();
   const [confirmDropOpen, setConfirmDropOpen] = React.useState(false);
@@ -457,7 +456,7 @@ export const ActionControls: React.FC = () => {
                 type="button"
                 onClick={() => {
                   soundEngine.play('click');
-                  leaveTable();
+                  void socketClient.leaveTableAndDisconnect();
                 }}
                 className="bcb-action bcb-action--danger"
               >
@@ -625,8 +624,10 @@ export const ActionControls: React.FC = () => {
                 <h3 className="royal-dialog-title">Drop This Hand?</h3>
                 <p className="royal-dialog-subtitle">
                   {isPointsTable
-                    ? 'You give up this hand. The penalty is settled when the hand ends.'
-                    : 'You will fold this hand and sit out until the next deal starts.'}
+                    ? 'You give up this hand. Unlost entry stake (if any) settles once the hand finishes.'
+                    : isPool
+                      ? `Drop points are added toward the ${threshold}-pt elimination limit (no partial cash refund on exit).`
+                      : 'You will fold this deal, transfer penalty chips to the deal winner, and play the next deal.'}
                 </p>
               </div>
 
@@ -644,8 +645,10 @@ export const ActionControls: React.FC = () => {
                       </span>
                       <span className="table-menu-penalty-sub">
                         {dropRupees !== null
-                          ? `You lose ₹${dropRupees.toFixed(2)}`
-                          : 'Will be added to your score'}
+                          ? `You lose ₹${dropRupees.toFixed(2)} (settled when hand ends)`
+                          : isPool
+                            ? 'Points added to your cumulative score (not rupees)'
+                            : 'Chips deducted from your deal stack'}
                       </span>
                     </div>
                     <span className="table-menu-value--penalty">+{dropPenaltyPoints} PTS</span>
