@@ -58,6 +58,14 @@ public class TournamentService {
 
     // ── Public Query ──────────────────────────────────────────────────────────
 
+    public Optional<String> getTournamentVariant(String tournamentId) {
+        if (tournamentId == null || tournamentId.isBlank()) {
+            return Optional.empty();
+        }
+        return tournamentRepository.findByTournamentId(tournamentId)
+                .map(t -> (t.getVariant() != null && !t.getVariant().isBlank()) ? t.getVariant() : "DEALS_3");
+    }
+
     public List<Map<String, Object>> listPublicTournaments(String playerId) {
         return listPublicTournaments(playerId, null);
     }
@@ -273,10 +281,12 @@ public class TournamentService {
             }
         }
 
+        String docVariant = (t.getVariant() != null && !t.getVariant().isBlank()) ? t.getVariant() : "DEALS_3";
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("success", true);
         out.put("tournamentId", t.getTournamentId());
         out.put("title", t.getTitle());
+        out.put("variant", docVariant);
         out.put("status", t.getStatus());
         out.put("fixedPrizeRs", t.getFixedPrizeRs());
         out.put("roundNumber", roundNumber);

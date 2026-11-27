@@ -21,8 +21,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+
+import com.google.gson.JsonObject;
 
 /**
  * Delivers operator wallet calls that must not be lost: credits (winnings, refunds) that failed, and
@@ -35,7 +38,7 @@ public class OperatorWalletOutbox {
 
     private static final Logger log = LoggerFactory.getLogger(OperatorWalletOutbox.class);
 
-    public enum Kind { CREDIT, ROLLBACK }
+    public enum Kind { CREDIT, ROLLBACK, PROVIDER_CREDIT }
 
     private static final String PENDING = "PENDING";
     private static final String DONE = "DONE";
@@ -48,11 +51,29 @@ public class OperatorWalletOutbox {
     private final OperatorWalletClient client;
     private final Map<String, OperatorOutboxDocument> memory = new ConcurrentHashMap<>();
     private volatile BiConsumer<String, BigDecimal> balanceListener = (playerId, balance) -> { };
+    private OrengProviderService orengProvider;
+    private OperatorLaunchService operatorLaunches;
 
     @Autowired
     public OperatorWalletOutbox(@Autowired(required = false) MongoTemplate mongo, OperatorWalletClient client) {
         this.mongo = mongo;
         this.client = Objects.requireNonNull(client);
+    }
+
+    /** Package-private constructor for unit tests exercising provider-only outbox paths without HTTP client creation. */
+    OperatorWalletOutbox(MongoTemplate mongo) {
+        this.mongo = mongo;
+        this.client = null;
+    }
+
+    @Autowired(required = false)
+    public void setOrengProvider(OrengProviderService orengProvider) {
+        this.orengProvider = orengProvider;
+    }
+
+    @Autowired(required = false)
+    public void setOperatorLaunches(OperatorLaunchService operatorLaunches) {
+        this.operatorLaunches = operatorLaunches;
     }
 
     /** Told the player's new operator balance after a queued credit lands. */
@@ -63,6 +84,19 @@ public class OperatorWalletOutbox {
     /** Queues a call; a second enqueue of the same call is ignored. */
     public void enqueue(Kind kind, OperatorRegistry.PlayerRef player, String transactionId, BigDecimal amount,
                         String gameId, String type, String description, String reason) {
+        insertEntry(kind, player, null, transactionId, amount, gameId, type, description, reason);
+    }
+
+    /** Queues a failed Oreng/provider wallet credit with its originating {@code sessionToken} for retry. */
+    public void enqueueProviderCredit(OperatorRegistry.PlayerRef player, String providerSessionToken,
+                                      String transactionId, BigDecimal amount, String gameId,
+                                      String type, String description, String reason) {
+        insertEntry(Kind.PROVIDER_CREDIT, player, providerSessionToken, transactionId, amount, gameId, type, description, reason);
+    }
+
+    private void insertEntry(Kind kind, OperatorRegistry.PlayerRef player, String providerSessionToken,
+                             String transactionId, BigDecimal amount, String gameId, String type,
+                             String description, String reason) {
         Instant now = Instant.now();
         OperatorOutboxDocument doc = new OperatorOutboxDocument();
         doc.setId(kind.name() + ":" + transactionId);
@@ -75,6 +109,7 @@ public class OperatorWalletOutbox {
         doc.setGameId(gameId);
         doc.setType(type);
         doc.setDescription(description);
+        doc.setProviderSessionToken(providerSessionToken);
         doc.setStatus(PENDING);
         doc.setNextAttemptAt(now.plusSeconds(2));
         doc.setLastError(reason);
@@ -120,6 +155,13 @@ public class OperatorWalletOutbox {
     }
 
     private boolean deliver(OperatorOutboxDocument doc) {
+        if (Kind.PROVIDER_CREDIT.name().equals(doc.getKind())) {
+            return deliverProviderCredit(doc);
+        }
+        if (client == null) {
+            handleFailure(doc, "OperatorWalletClient not configured");
+            return false;
+        }
         OperatorRegistry.PlayerRef player = new OperatorRegistry.PlayerRef(doc.getPlayerId(), doc.getOperatorId(), doc.getExternalId());
         String error;
         try {
@@ -138,6 +180,41 @@ public class OperatorWalletOutbox {
         } catch (Exception e) {
             error = e.getMessage();
         }
+        handleFailure(doc, error);
+        return false;
+    }
+
+    private boolean deliverProviderCredit(OperatorOutboxDocument doc) {
+        String error;
+        if (orengProvider == null || !orengProvider.isConfigured()) {
+            error = "Oreng provider SDK not configured";
+        } else {
+            String token = doc.getProviderSessionToken();
+            if ((token == null || token.isBlank()) && operatorLaunches != null) {
+                token = operatorLaunches.getSessionTokenForPlayer(doc.getPlayerId()).orElse(null);
+            }
+            if (token == null || token.isBlank()) {
+                error = "Missing provider sessionToken for player " + doc.getPlayerId();
+            } else {
+                try {
+                    Optional<JsonObject> resp = orengProvider.credit(
+                            token, doc.getAmount(), doc.getTransactionId(), doc.getGameId(), "");
+                    markDone(doc);
+                    resp.flatMap(OrengProviderService::extractBalance)
+                            .ifPresent(bal -> balanceListener.accept(doc.getPlayerId(), bal));
+                    log.info("[OperatorWallet] Delivered queued PROVIDER_CREDIT {} to {}",
+                            doc.getTransactionId(), doc.getOperatorId());
+                    return true;
+                } catch (Exception e) {
+                    error = e.getMessage();
+                }
+            }
+        }
+        handleFailure(doc, error);
+        return false;
+    }
+
+    private void handleFailure(OperatorOutboxDocument doc, String error) {
         int attempts = doc.getAttempts();
         long backoff = Math.min(MAX_BACKOFF.toSeconds(), 5L << Math.min(attempts, 10));
         reschedule(doc, Instant.now().plusSeconds(backoff), error);
@@ -146,7 +223,6 @@ public class OperatorWalletOutbox {
                     doc.getKind(), doc.getTransactionId(), doc.getAmount(), OperatorWalletClient.CURRENCY,
                     doc.getOperatorId(), doc.getExternalId(), attempts, error);
         }
-        return false;
     }
 
     /** Due entries, each leased to this node so no other node sends it meanwhile. */

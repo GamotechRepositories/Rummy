@@ -57,15 +57,17 @@ public class OperatorController {
         }
         String externalId;
         String displayName;
+        String gameCode;
         try {
             JsonNode json = objectMapper.readTree(body);
             externalId = json.path("playerId").asText(null);
             displayName = json.path("displayName").asText(null);
+            gameCode = json.path("gameCode").asText(null);
         } catch (Exception e) {
             return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "Body must be JSON");
         }
         try {
-            OperatorLaunchService.Launch launch = launches.launch(operatorId, externalId, displayName);
+            OperatorLaunchService.Launch launch = launches.launch(operatorId, externalId, displayName, gameCode);
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("launchUrl", launch.launchUrl());
             response.put("expiresInSeconds", launch.expiresInSeconds());

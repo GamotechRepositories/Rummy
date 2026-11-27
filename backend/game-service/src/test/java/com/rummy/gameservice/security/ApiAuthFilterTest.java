@@ -133,6 +133,43 @@ class ApiAuthFilterTest {
     }
 
     @Test
+    void tournamentsAndRoomsRequireToken() throws Exception {
+        for (String path : new String[]{"/api/tournaments", "/api/rooms", "/api/rooms/my"}) {
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            MockFilterChain chain = new MockFilterChain();
+
+            filter.doFilter(request, response, chain);
+
+            assertThat(response.getStatus()).as(path).isEqualTo(401);
+            assertThat(chain.getRequest()).as(path).isNull();
+        }
+    }
+
+    @Test
+    void mutatingApiRoutesAreRateLimited() throws Exception {
+        ApiAuthFilter tight = new ApiAuthFilter(jwtService, true, "admin-key-123", 2, 0.0001);
+        String token = jwtService.generateToken("USR_ALICE", "Alice");
+
+        for (int i = 0; i < 2; i++) {
+            MockHttpServletRequest okReq = new MockHttpServletRequest("POST", "/api/matchmaking/join");
+            okReq.addHeader("Authorization", "Bearer " + token);
+            MockHttpServletResponse okRes = new MockHttpServletResponse();
+            tight.doFilter(okReq, okRes, new MockFilterChain());
+            assertThat(okRes.getStatus()).isEqualTo(200);
+        }
+
+        MockHttpServletRequest blockedReq = new MockHttpServletRequest("POST", "/api/matchmaking/join");
+        blockedReq.addHeader("Authorization", "Bearer " + token);
+        MockHttpServletResponse blockedRes = new MockHttpServletResponse();
+        MockFilterChain blockedChain = new MockFilterChain();
+        tight.doFilter(blockedReq, blockedRes, blockedChain);
+
+        assertThat(blockedRes.getStatus()).isEqualTo(429);
+        assertThat(blockedChain.getRequest()).isNull();
+    }
+
+    @Test
     void shortSecretIsRefused() {
         assertThatThrownBy(() -> new JwtService("too-short", 1))
                 .isInstanceOf(IllegalStateException.class);

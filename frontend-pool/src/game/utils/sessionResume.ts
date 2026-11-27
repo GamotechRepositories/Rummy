@@ -172,7 +172,7 @@ export async function fetchActiveSession(
   const timer = window.setTimeout(() => controller.abort(), 2500);
   try {
     const res = await authFetch(
-      `${getApiBaseUrl()}/api/session/active?playerId=${encodeURIComponent(playerId)}`,
+      `${getApiBaseUrl()}/api/session/active?playerId=${encodeURIComponent(playerId)}&rulesets=${encodeURIComponent('POOL_101,POOL_201')}`,
       { signal: controller.signal }
     );
     if (!res.ok) return null;

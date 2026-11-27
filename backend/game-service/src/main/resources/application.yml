@@ -111,6 +111,11 @@ rummy:
     enforce-jwt: ${RUMMY_ENFORCE_JWT:true}
     # Comma-separated origin patterns, e.g. https://play.example.com,https://*.example.com
     allowed-origins: ${RUMMY_ALLOWED_ORIGINS:*}
+    # Optional semicolon-separated origin -> rulesets map for single-backend multi-frontend setups
+    origin-rulesets: ${RUMMY_ORIGIN_RULESETS:}
+    http-rate-limit:
+      capacity: ${RUMMY_HTTP_RATE_LIMIT_CAPACITY:30}
+      refill-rate: ${RUMMY_HTTP_RATE_LIMIT_REFILL_RATE:10.0}
     # Required for /api/admin/**, /api/fraud/**, /api/wallet/platform-revenue (header X-Admin-Key). Empty = disabled.
     admin-api-key: ${RUMMY_ADMIN_API_KEY:}
     jwt:
@@ -121,6 +126,8 @@ rummy:
   operator:
     # Where players land after an operator launch (the game frontend), e.g. https://play.example.com
     game-url: ${RUMMY_GAME_URL:http://localhost:5173}
+    # Optional gameCode -> launchUrl mapping (e.g. POINTS=https://points.example.com;POOL=https://pool.example.com)
+    game-urls: ${RUMMY_GAME_URLS:}
     # Launch links are single use and expire after this long.
     launch-code-ttl-seconds: ${RUMMY_LAUNCH_CODE_TTL_SECONDS:120}
     # Player session length after launch (refreshable while valid).
@@ -148,6 +155,7 @@ rummy:
   provider:
     api-url: ${PROVIDER_API_URL:https://api.dpbossking.com/api/v1}
     game-server-api-key: ${GAME_SERVER_API_KEY:}
+    game-code-rulesets: ${RUMMY_GAME_CODE_RULESETS:}
     game-code: ${GAME_CODE:RUMMY}
 
 matchmaking:

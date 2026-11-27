@@ -7,10 +7,15 @@ import com.rummy.engine.command.StartGameCommand;
 import com.rummy.engine.model.GameStatus;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
+import com.rummy.gameservice.security.AuthenticatedPlayer;
+import com.rummy.gameservice.security.VariantAccessPolicy;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.lang.reflect.Proxy;
 import java.time.Instant;
@@ -259,5 +264,43 @@ class PointsTournamentTest {
         assertThat(allMine).hasSize(2);
         assertThat(allMine.get(0).get("tournamentId")).isEqualTo("TRN-DLS");
         assertThat(allMine.get(1).get("tournamentId")).isEqualTo("TRN-OLD-PTS");
+    }
+
+    @Test
+    @DisplayName("TournamentController checkIn and byTable enforce VariantAccessPolicy")
+    void controllerCheckInAndByTableEnforceVariantPolicy() {
+        TournamentDocument t = makeTournament("TRN-PTS-CHK", "POINTS_13", "STARTING");
+        t.setCheckInEndsAt(Instant.now().plusSeconds(120));
+        TournamentDocument.Registration reg = new TournamentDocument.Registration();
+        reg.setPlayerId("P1");
+        reg.setDisplayName("Player One");
+        t.getRegistrations().add(reg);
+        store.add(t);
+
+        VariantAccessPolicy policy = new VariantAccessPolicy(
+                "https://points.example.com=POINTS_13;https://deals.example.com=DEALS_RUMMY,DEALS_2,DEALS_3",
+                ""
+        );
+        TournamentController controller = new TournamentController(service, policy);
+
+        MockHttpServletRequest dealsReq = new MockHttpServletRequest();
+        dealsReq.setAttribute(AuthenticatedPlayer.REQUEST_ATTRIBUTE, "P1");
+        dealsReq.addHeader("Origin", "https://deals.example.com");
+
+        ResponseEntity<?> deniedCheckIn = controller.checkIn(dealsReq, "TRN-PTS-CHK", Map.of());
+        assertThat(deniedCheckIn.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        ResponseEntity<?> deniedByTable = controller.byTable(dealsReq, "TBL_TRN_TRN-PTS-CHK_R1_1", "P1");
+        assertThat(deniedByTable.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        MockHttpServletRequest pointsReq = new MockHttpServletRequest();
+        pointsReq.setAttribute(AuthenticatedPlayer.REQUEST_ATTRIBUTE, "P1");
+        pointsReq.addHeader("Origin", "https://points.example.com");
+
+        ResponseEntity<?> allowedCheckIn = controller.checkIn(pointsReq, "TRN-PTS-CHK", Map.of());
+        assertThat(allowedCheckIn.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<?> allowedByTable = controller.byTable(pointsReq, "TBL_TRN_TRN-PTS-CHK_R1_1", "P1");
+        assertThat(allowedByTable.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 }

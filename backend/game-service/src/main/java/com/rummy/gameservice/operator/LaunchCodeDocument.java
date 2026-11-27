@@ -16,6 +16,7 @@ public class LaunchCodeDocument {
     private String operatorId;
     private String externalId;
     private String displayName;
+    private String gameCode;
     @Indexed(expireAfter = "0s")
     private Instant expireAt;
 
@@ -29,6 +30,8 @@ public class LaunchCodeDocument {
     public void setExternalId(String externalId) { this.externalId = externalId; }
     public String getDisplayName() { return displayName; }
     public void setDisplayName(String displayName) { this.displayName = displayName; }
+    public String getGameCode() { return gameCode; }
+    public void setGameCode(String gameCode) { this.gameCode = gameCode; }
     public Instant getExpireAt() { return expireAt; }
     public void setExpireAt(Instant expireAt) { this.expireAt = expireAt; }
 }

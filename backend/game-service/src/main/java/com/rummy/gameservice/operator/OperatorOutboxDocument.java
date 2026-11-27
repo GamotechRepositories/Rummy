@@ -24,6 +24,7 @@ public class OperatorOutboxDocument {
     private String gameId;
     private String type;
     private String description;
+    private String providerSessionToken;
     private String status;
     private int attempts;
     private Instant nextAttemptAt;
@@ -53,6 +54,8 @@ public class OperatorOutboxDocument {
     public void setType(String type) { this.type = type; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public String getProviderSessionToken() { return providerSessionToken; }
+    public void setProviderSessionToken(String providerSessionToken) { this.providerSessionToken = providerSessionToken; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public int getAttempts() { return attempts; }

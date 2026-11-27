@@ -18,7 +18,9 @@ import com.rummy.gameservice.protocol.WsErrorMessage;
 import com.rummy.gameservice.protocol.WsServerMessage;
 import com.rummy.gameservice.recovery.TableRecoveryService;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
+import com.rummy.gameservice.security.JwtHandshakeInterceptor;
 import com.rummy.gameservice.security.RateLimitingService;
+import com.rummy.gameservice.security.VariantAccessPolicy;
 import com.rummy.gameservice.session.PlayerSessionService;
 import com.rummy.gameservice.websocket.SessionOutbox;
 import org.slf4j.Logger;
@@ -42,6 +44,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GameWebSocketHandler.class);
     private static final String MATCHMADE_TABLE_PREFIX = "TBL_MM_";
+    private static final String PRIVATE_TABLE_PREFIX = "TBL_PRV_";
+    private static final String TOURNAMENT_TABLE_PREFIX = "TBL_TRN_";
     private static final int MAX_INBOUND_FRAME_BYTES = 64 * 1024;
     private static final String TOMCAT_BLOCKING_SEND_TIMEOUT = "org.apache.tomcat.websocket.BLOCKING_SEND_TIMEOUT";
 
@@ -65,6 +69,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     private ClusterNodeService clusterNodes;
     private TableRecoveryService recovery;
     private TableRelay relay;
+    private VariantAccessPolicy variantPolicy;
     private final Map<String, WebSocketSession> openSessions = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Autowired
@@ -140,6 +145,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     @Autowired(required = false)
     public void setRelay(TableRelay relay) {
         this.relay = relay;
+    }
+
+    @Autowired(required = false)
+    public void setVariantAccessPolicy(VariantAccessPolicy variantPolicy) {
+        this.variantPolicy = variantPolicy;
     }
 
     /**
@@ -298,14 +308,13 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 }
                 return;
             }
-            if (tableManager.getTable(tableId).isEmpty() && (ownerDied || tableId.startsWith(MATCHMADE_TABLE_PREFIX))) {
+            if (tableManager.getTable(tableId).isEmpty() && (ownerDied || isServerManagedTable(tableId))) {
                 sendTableGone(session, playerId, tableId, reqId);
                 return;
             }
         }
 
-        if (tableId.startsWith(MATCHMADE_TABLE_PREFIX) && !isAllowedAtMatchmadeTable(playerId, tableId)) {
-            sendError(session, "FORBIDDEN", "You are not seated at this table", reqId);
+        if (!isTableAccessAllowed(session, playerId, tableId, reqId)) {
             return;
         }
 
@@ -483,12 +492,40 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    private static boolean isServerManagedTable(String tableId) {
+        return tableId.startsWith(MATCHMADE_TABLE_PREFIX)
+                || tableId.startsWith(PRIVATE_TABLE_PREFIX)
+                || tableId.startsWith(TOURNAMENT_TABLE_PREFIX);
+    }
+
     /**
-     * Paid tables are created only by matchmaking. A player may act there only if matchmaking
-     * routed them to it or they already hold a seat (reconnect after the binding was cleared).
+     * Verifies both seat authorization on server-managed tables (matchmaking, private room, tournament)
+     * and per-frontend variant access before binding a socket session to a table.
      */
-    private boolean isAllowedAtMatchmadeTable(String playerId, String tableId) {
-        Optional<TableActor> actor = tableManager.getTable(tableId);
+    private boolean isTableAccessAllowed(WebSocketSession session, String playerId, String tableId, String reqId) {
+        Optional<TableActor> actorOpt = tableManager.getTable(tableId);
+        if (isServerManagedTable(tableId) && !isAllowedAtManagedTable(actorOpt, playerId, tableId)) {
+            sendError(session, "FORBIDDEN", "You are not seated at this table", reqId);
+            return false;
+        }
+        if (variantPolicy != null) {
+            String rulesetId = actorOpt.map(a -> a.getState().getRulesetId()).orElse("POINTS_13");
+            boolean relayed = Boolean.TRUE.equals(session.getAttributes().get(TableRelay.RELAYED_ATTRIBUTE));
+            String origin = relayed ? null : (String) session.getAttributes().get(JwtHandshakeInterceptor.HANDSHAKE_ORIGIN_ATTRIBUTE);
+            String gameCode = (String) session.getAttributes().get(JwtHandshakeInterceptor.AUTH_GAME_CODE_ATTRIBUTE);
+            if (!variantPolicy.isRulesetAllowed(origin, gameCode, rulesetId)) {
+                sendError(session, "FORBIDDEN", "This game variant is not enabled on this frontend.", reqId);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Paid, private, and tournament tables are created by backend services. A player may act there only
+     * if routed to that table or if they already hold a seat (e.g. reconnect).
+     */
+    private boolean isAllowedAtManagedTable(Optional<TableActor> actor, String playerId, String tableId) {
         if (actor.isEmpty()) {
             return false;
         }

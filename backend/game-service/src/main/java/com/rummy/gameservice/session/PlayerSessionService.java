@@ -14,8 +14,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Production session resume: soft-disconnect players can reclaim an in-progress table;
@@ -66,6 +71,34 @@ public class PlayerSessionService {
                 }
             }
         });
+    }
+
+    /**
+     * Returns an active resumable session filtered to allowed rulesets without clearing bindings for other variants.
+     */
+    public Optional<Map<String, Object>> findActiveSession(String playerId, Collection<String> allowedRulesets) {
+        Optional<Map<String, Object>> sessionOpt = findActiveSession(playerId);
+        if (sessionOpt.isEmpty() || allowedRulesets == null || allowedRulesets.isEmpty()) {
+            return sessionOpt;
+        }
+        Set<String> allowedUpper = new HashSet<>();
+        for (String rs : allowedRulesets) {
+            String canonical = com.rummy.gameservice.security.VariantAccessPolicy.canonicalUpper(rs);
+            if (!canonical.isEmpty()) {
+                allowedUpper.add(canonical);
+            }
+        }
+        if (allowedUpper.isEmpty()) {
+            return Optional.empty();
+        }
+        Object rawRuleset = sessionOpt.get().get("rulesetId");
+        if (rawRuleset instanceof String rulesetId && !rulesetId.isBlank()) {
+            String canonicalActive = com.rummy.gameservice.security.VariantAccessPolicy.canonicalUpper(rulesetId);
+            if (!allowedUpper.contains(canonicalActive)) {
+                return Optional.empty();
+            }
+        }
+        return sessionOpt;
     }
 
     /**
@@ -135,15 +168,16 @@ public class PlayerSessionService {
         if (playerOpt.isEmpty()) {
             // Matched but WS JOIN not done yet — still resumable; do NOT clear binding
             if (status == GameStatus.WAITING_FOR_PLAYERS) {
-                return Optional.of(Map.of(
-                        "active", true,
-                        "tableId", tableId,
-                        "serverInstanceId", routingRegistry.getServerInstanceId(),
-                        "gameStatus", status.name(),
-                        "playerStatus", PlayerStatus.WAITING.name(),
-                        "displayName", playerId,
-                        "gameId", state.getGameId()
-                ));
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("active", true);
+                out.put("tableId", tableId);
+                out.put("rulesetId", actor.getRulesetId());
+                out.put("serverInstanceId", routingRegistry.getServerInstanceId());
+                out.put("gameStatus", status.name());
+                out.put("playerStatus", PlayerStatus.WAITING.name());
+                out.put("displayName", playerId);
+                out.put("gameId", state.getGameId());
+                return Optional.of(out);
             }
             clearPlayerBinding(playerId);
             return Optional.empty();
@@ -151,15 +185,16 @@ public class PlayerSessionService {
 
         PlayerState player = playerOpt.get();
         // Still seated (ACTIVE / DROPPED spectating / READY / etc.) while hand not finished
-        return Optional.of(Map.of(
-                "active", true,
-                "tableId", tableId,
-                "serverInstanceId", routingRegistry.getServerInstanceId(),
-                "gameStatus", status.name(),
-                "playerStatus", player.getStatus().name(),
-                "displayName", player.getDisplayName() != null ? player.getDisplayName() : playerId,
-                "gameId", state.getGameId()
-        ));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("active", true);
+        out.put("tableId", tableId);
+        out.put("rulesetId", actor.getRulesetId());
+        out.put("serverInstanceId", routingRegistry.getServerInstanceId());
+        out.put("gameStatus", status.name());
+        out.put("playerStatus", player.getStatus().name());
+        out.put("displayName", player.getDisplayName() != null ? player.getDisplayName() : playerId);
+        out.put("gameId", state.getGameId());
+        return Optional.of(out);
     }
 
     /**

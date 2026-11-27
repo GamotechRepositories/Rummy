@@ -13,12 +13,14 @@ import com.rummy.gameservice.persistence.repository.GameResultRepository;
 import com.rummy.gameservice.persistence.repository.UserProfileRepository;
 import com.rummy.gameservice.persistence.repository.WalletTransactionRepository;
 import com.rummy.gameservice.security.AuthenticatedPlayer;
+import com.rummy.gameservice.security.VariantAccessPolicy;
 import com.rummy.gameservice.wallet.GameSettlementResult;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 
@@ -201,12 +203,18 @@ class GameHistoryVariantFilterTest {
         @SuppressWarnings("unchecked")
         List<GameResultDocument> dealsList = (List<GameResultDocument>) dealsBody.get("results");
         assertThat(dealsList).extracting(GameResultDocument::getGameId).containsExactly("D2_1", "D3_1");
+        UserProfileDocument dealsProfile = (UserProfileDocument) dealsBody.get("profile");
+        assertThat(dealsProfile.getGamesPlayed()).isEqualTo(2);
+        assertThat(dealsProfile.getGamesWon()).isEqualTo(1);
 
         ResponseEntity<Map<String, Object>> allResp = controller.getPlayerHistory(req, "P1", null);
         Map<String, Object> allBody = allResp.getBody();
         assertThat(allBody).isNotNull();
         assertThat(allBody.get("filtered")).isEqualTo(false);
         assertThat(allBody.get("winRate")).isEqualTo(40.0);
+        UserProfileDocument allProfile = (UserProfileDocument) allBody.get("profile");
+        assertThat(allProfile.getGamesPlayed()).isEqualTo(10);
+        assertThat(allProfile.getGamesWon()).isEqualTo(4);
 
         @SuppressWarnings("unchecked")
         List<GameResultDocument> allList = (List<GameResultDocument>) allBody.get("results");
@@ -268,5 +276,34 @@ class GameHistoryVariantFilterTest {
         @SuppressWarnings("unchecked")
         List<GameResultDocument> exclList = (List<GameResultDocument>) exclResp.getBody().get("results");
         assertThat(exclList).extracting(GameResultDocument::getGameId).containsExactly("G_DROP", "G_WIN", "G_PRV");
+    }
+
+    @Test
+    @DisplayName("getGameDetails rejects cross-variant replay requests while allowing matching variant origin")
+    void getGameDetailsEnforcesVariantPolicy() {
+        GameDocument poolGame = new GameDocument();
+        poolGame.setGameId("G_POOL_REPLAY");
+        poolGame.setRulesetId("POOL_101");
+        poolGame.setStatus("COMPLETED");
+        poolGame.setPlayers(List.of(new GameDocument.PlayerSnapshot("P1", "Player One", 0, 0, "ACTIVE", false, true)));
+        games.put("G_POOL_REPLAY", poolGame);
+
+        VariantAccessPolicy policy = new VariantAccessPolicy(
+                "https://points.example.com=POINTS_13;https://pool.example.com=POOL_101,POOL_201",
+                ""
+        );
+        GameHistoryController isolated = new GameHistoryController(persistenceService, policy);
+
+        MockHttpServletRequest pointsReq = new MockHttpServletRequest();
+        pointsReq.setAttribute(AuthenticatedPlayer.REQUEST_ATTRIBUTE, "P1");
+        pointsReq.addHeader("Origin", "https://points.example.com");
+        ResponseEntity<Map<String, Object>> denied = isolated.getGameDetails(pointsReq, "G_POOL_REPLAY");
+        assertThat(denied.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        MockHttpServletRequest poolReq = new MockHttpServletRequest();
+        poolReq.setAttribute(AuthenticatedPlayer.REQUEST_ATTRIBUTE, "P1");
+        poolReq.addHeader("Origin", "https://pool.example.com");
+        ResponseEntity<Map<String, Object>> allowed = isolated.getGameDetails(poolReq, "G_POOL_REPLAY");
+        assertThat(allowed.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 }

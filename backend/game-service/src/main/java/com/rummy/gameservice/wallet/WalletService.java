@@ -1,6 +1,8 @@
 package com.rummy.gameservice.wallet;
 
+import com.google.gson.JsonObject;
 import com.mongodb.MongoException;
+import in.oreng.gamesdk.ProviderSDKException;
 import com.rummy.gameservice.operator.OperatorRegistry;
 import com.rummy.gameservice.operator.OperatorWalletClient;
 import com.rummy.gameservice.operator.OperatorWalletException;
@@ -107,13 +109,25 @@ public class WalletService {
         this(null, null, null);
     }
 
+    @Autowired(required = false)
+    public void setOrengProvider(com.rummy.gameservice.operator.OrengProviderService orengProvider) {
+        this.orengProvider = orengProvider;
+    }
+
+    @Autowired(required = false)
+    public void setOperatorLaunches(com.rummy.gameservice.operator.OperatorLaunchService operatorLaunches) {
+        this.operatorLaunches = operatorLaunches;
+    }
+
     /** Players launched by an operator are paid through the operator's wallet API. */
     @Autowired(required = false)
     public void setOperatorWallet(OperatorRegistry operators, OperatorWalletClient operatorWallet, OperatorWalletOutbox outbox) {
         this.operators = operators;
         this.operatorWallet = operatorWallet;
         this.outbox = outbox;
-        outbox.setBalanceListener(this::recordOperatorBalance);
+        if (outbox != null) {
+            outbox.setBalanceListener(this::recordOperatorBalance);
+        }
     }
 
     private boolean isPersistent() {
@@ -121,7 +135,8 @@ public class WalletService {
     }
 
     private Optional<OperatorRegistry.PlayerRef> operatorPlayer(String playerId) {
-        return operators != null && operatorWallet != null ? operators.player(playerId) : Optional.empty();
+        boolean hasWalletGateway = operatorWallet != null || (orengProvider != null && orengProvider.isConfigured());
+        return operators != null && hasWalletGateway ? operators.player(playerId) : Optional.empty();
     }
 
     /**
@@ -140,7 +155,7 @@ public class WalletService {
             }
         }
         Optional<OperatorRegistry.PlayerRef> player = operatorPlayer(playerId);
-        if (player.isPresent()) {
+        if (player.isPresent() && operatorWallet != null) {
             try {
                 OperatorWalletClient.Reply reply = operatorWallet.balance(player.get());
                 if (reply.ok() && reply.balance() != null) {
@@ -387,6 +402,14 @@ public class WalletService {
         account.syncTotalBalance();
     }
 
+    private static boolean isInsufficientProviderFunds(ProviderSDKException e) {
+        if (Integer.valueOf(402).equals(e.getStatus())) {
+            return true;
+        }
+        String msg = e.getMessage();
+        return msg != null && msg.toLowerCase(Locale.ROOT).contains("insufficient");
+    }
+
     private static InsufficientBalanceException insufficientBalance(String playerId, BigDecimal balance, BigDecimal required) {
         return new InsufficientBalanceException("Insufficient balance for player " + playerId
                 + ". Balance: ₹" + (balance != null ? balance : "?") + ", Required: ₹" + required);
@@ -412,23 +435,49 @@ public class WalletService {
             if (stOpt.isPresent()) {
                 String sessionToken = stOpt.get();
                 if (delta.signum() < 0) {
+                    Optional<JsonObject> resp;
                     try {
-                        orengProvider.debit(sessionToken, amount, key, gameId, "");
+                        resp = orengProvider.debit(sessionToken, amount, key, gameId, "");
+                    } catch (ProviderSDKException e) {
+                        log.warn("[Wallet] Oreng debit failed: {} (status={})", e.getMessage(), e.getStatus());
+                        if (isInsufficientProviderFunds(e)) {
+                            BigDecimal known = getOrCreateWallet(player.playerId()).getBalance();
+                            throw insufficientBalance(player.playerId(), known, amount);
+                        }
+                        throw new OperatorWalletException("Wallet debit refused: " + e.getMessage(), false);
                     } catch (Exception e) {
                         log.warn("[Wallet] Oreng debit failed: {}", e.getMessage());
                         throw new OperatorWalletException("Wallet debit refused: " + e.getMessage(), false);
                     }
+                    BigDecimal bal = resp.flatMap(com.rummy.gameservice.operator.OrengProviderService::extractBalance).orElse(null);
+                    if (bal != null) {
+                        recordOperatorBalance(player.playerId(), bal);
+                    }
+                    return recordOperatorTransaction(player, delta, type, key, gameId, description, meta,
+                            new OperatorWalletClient.Reply(OperatorWalletClient.Status.OK, bal));
                 } else {
                     try {
-                        orengProvider.credit(sessionToken, amount, key, gameId, "");
+                        Optional<JsonObject> resp = orengProvider.credit(sessionToken, amount, key, gameId, "");
+                        BigDecimal bal = resp.flatMap(com.rummy.gameservice.operator.OrengProviderService::extractBalance).orElse(null);
+                        if (bal != null) {
+                            recordOperatorBalance(player.playerId(), bal);
+                        }
+                        return recordOperatorTransaction(player, delta, type, key, gameId, description, meta,
+                                new OperatorWalletClient.Reply(OperatorWalletClient.Status.OK, bal));
                     } catch (Exception e) {
-                        log.warn("[Wallet] Oreng credit failed: {}", e.getMessage());
+                        log.warn("[Wallet] Oreng credit failed for txId={} — queuing in outbox: {}", key, e.getMessage());
+                        if (outbox != null) {
+                            outbox.enqueueProviderCredit(player, sessionToken, key, amount, gameId, type, description, e.getMessage());
+                        }
+                        return recordOperatorTransaction(player, delta, type, key, gameId, description, meta, null);
                     }
                 }
-                return recordOperatorTransaction(player, delta, type, key, gameId, description, meta, null);
             }
         }
 
+        if (operatorWallet == null) {
+            throw new OperatorWalletException("Operator wallet client unavailable", false);
+        }
         OperatorWalletClient.Reply reply;
         if (delta.signum() < 0) {
             try {

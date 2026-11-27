@@ -24,21 +24,29 @@ public class AuthController {
     private final JwtService jwtService;
     private final Duration sessionTtl;
     private final boolean mockOperatorEnabled;
+    private final boolean mockOperatorKeyRequired;
 
     @Autowired
     public AuthController(JwtService jwtService,
                           @Value("${rummy.operator.session-ttl-hours:12}") long sessionTtlHours,
-                          @Value("${rummy.operator.mock.enabled:false}") boolean mockOperatorEnabled) {
+                          @Value("${rummy.operator.mock.enabled:false}") boolean mockOperatorEnabled,
+                          @Value("${rummy.operator.mock.access-key:}") String mockAccessKey) {
         this.jwtService = Objects.requireNonNull(jwtService);
         this.sessionTtl = Duration.ofHours(sessionTtlHours);
         this.mockOperatorEnabled = mockOperatorEnabled;
+        this.mockOperatorKeyRequired = mockAccessKey != null && !mockAccessKey.isBlank();
+    }
+
+    public AuthController(JwtService jwtService, long sessionTtlHours, boolean mockOperatorEnabled) {
+        this(jwtService, sessionTtlHours, mockOperatorEnabled, "");
     }
 
     /** Public configuration for frontend features (e.g. test login visibility). */
     @GetMapping("/config")
     public ResponseEntity<Map<String, Object>> publicConfig() {
         return ResponseEntity.ok(Map.of(
-                "mockOperatorEnabled", mockOperatorEnabled
+                "mockOperatorEnabled", mockOperatorEnabled,
+                "mockOperatorKeyRequired", mockOperatorKeyRequired
         ));
     }
 
@@ -59,8 +67,9 @@ public class AuthController {
                 ? PlayerNames.sanitize(requestedName)
                 : PlayerNames.sanitize(claims.get().get("name", String.class));
         String playerId = claims.get().getSubject();
+        String gameCode = claims.get().get(JwtService.GAME_CODE_CLAIM, String.class);
         return ResponseEntity.ok(Map.of(
-                "token", jwtService.generateToken(playerId, displayName, operatorId, sessionTtl),
+                "token", jwtService.generateToken(playerId, displayName, operatorId, gameCode, sessionTtl),
                 "playerId", playerId,
                 "displayName", displayName,
                 "tokenType", "Bearer",

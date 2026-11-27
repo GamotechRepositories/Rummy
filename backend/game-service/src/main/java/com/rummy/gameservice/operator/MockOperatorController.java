@@ -2,10 +2,12 @@ package com.rummy.gameservice.operator;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rummy.gameservice.config.WebCorsConfig;
 import jakarta.servlet.http.HttpServletRequest;
 import org.bson.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -21,6 +23,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.util.HtmlUtils;
 
 import java.math.BigDecimal;
@@ -33,7 +36,9 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
+import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * A test operator, so the game can be played without a real partner, locally or on a live server:
@@ -62,6 +67,7 @@ public class MockOperatorController {
     private final ObjectMapper objectMapper;
     private final String baseUrl;
     private final String accessKey;
+    private final CorsConfiguration returnOriginPolicy;
     private volatile String secret;
 
     public MockOperatorController(OperatorRegistry registry,
@@ -69,9 +75,22 @@ public class MockOperatorController {
                                   OperatorWalletClient walletClient,
                                   MongoTemplate mongo,
                                   ObjectMapper objectMapper,
+                                  String baseUrl,
+                                  String accessKey,
+                                  boolean requireKey) {
+        this(registry, launches, walletClient, mongo, objectMapper, baseUrl, accessKey, requireKey, "*");
+    }
+
+    @Autowired
+    public MockOperatorController(OperatorRegistry registry,
+                                  OperatorLaunchService launches,
+                                  OperatorWalletClient walletClient,
+                                  MongoTemplate mongo,
+                                  ObjectMapper objectMapper,
                                   @Value("${rummy.operator.mock.base-url:http://localhost:${server.port:8081}}") String baseUrl,
                                   @Value("${rummy.operator.mock.access-key:}") String accessKey,
-                                  @Value("${rummy.operator.mock.require-key:false}") boolean requireKey) {
+                                  @Value("${rummy.operator.mock.require-key:false}") boolean requireKey,
+                                  @Value("${rummy.security.allowed-origins:*}") String allowedOrigins) {
         this.accessKey = accessKey == null ? "" : accessKey.trim();
         if (requireKey && this.accessKey.length() < 12) {
             throw new IllegalStateException("The test operator is enabled but RUMMY_MOCK_OPERATOR_KEY is missing or shorter than 12 characters");
@@ -82,6 +101,8 @@ public class MockOperatorController {
         this.mongo = mongo;
         this.objectMapper = objectMapper;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        this.returnOriginPolicy = new CorsConfiguration();
+        this.returnOriginPolicy.setAllowedOriginPatterns(WebCorsConfig.parseOrigins(allowedOrigins));
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -121,7 +142,9 @@ public class MockOperatorController {
         doc.setUpdatedAt(now);
         registry.save(doc);
         secret = doc.getSecret();
-        walletClient.useLocalWalletUrl(OPERATOR_ID, walletUrl);
+        if (walletClient != null) {
+            walletClient.useLocalWalletUrl(OPERATOR_ID, walletUrl);
+        }
     }
 
     @GetMapping(value = {"", "/"}, produces = MediaType.TEXT_HTML_VALUE)
@@ -169,21 +192,52 @@ public class MockOperatorController {
     @GetMapping("/play")
     public ResponseEntity<?> play(@RequestParam(required = false) String player,
                                   @RequestParam(required = false) String name,
-                                  @RequestParam(required = false) String key) {
+                                  @RequestParam(required = false) String key,
+                                  @RequestParam(required = false) String returnTo) {
         if (!keyOk(key)) {
             return ResponseEntity.notFound().build();
         }
         ensureRegistered();
         if (player == null || player.isBlank()) {
-            player = "tester" + (1000 + new SecureRandom().nextInt(9000));
+            player = "tester_" + UUID.randomUUID().toString().replace("-", "").substring(0, 6);
         }
         player = player.trim();
         try {
             String displayName = name != null && !name.isBlank() ? name : player;
             OperatorLaunchService.Launch launch = launches.launch(OPERATOR_ID, player, displayName);
-            return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(launch.launchUrl())).build();
+            String redirectUrl = resolveRedirectUrl(launch.launchUrl(), returnTo);
+            return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(redirectUrl)).build();
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().contentType(MediaType.TEXT_PLAIN).body(e.getMessage());
+        }
+    }
+
+    private String resolveRedirectUrl(String defaultLaunchUrl, String rawReturnTo) {
+        String safeOrigin = safeAllowedOrigin(rawReturnTo);
+        if (safeOrigin == null) {
+            return defaultLaunchUrl;
+        }
+        int qIdx = defaultLaunchUrl.indexOf('?');
+        String query = qIdx >= 0 ? defaultLaunchUrl.substring(qIdx) : "";
+        return safeOrigin + "/" + query;
+    }
+
+    private String safeAllowedOrigin(String rawOrigin) {
+        if (rawOrigin == null || rawOrigin.isBlank()) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(rawOrigin.trim());
+            String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase(Locale.ROOT) : "";
+            String host = uri.getHost();
+            if ((!"http".equals(scheme) && !"https".equals(scheme)) || host == null || host.isBlank()) {
+                return null;
+            }
+            int port = uri.getPort();
+            String normalized = port > 0 ? scheme + "://" + host + ":" + port : scheme + "://" + host;
+            return returnOriginPolicy.checkOrigin(normalized) != null ? normalized : null;
+        } catch (IllegalArgumentException e) {
+            return null;
         }
     }
 

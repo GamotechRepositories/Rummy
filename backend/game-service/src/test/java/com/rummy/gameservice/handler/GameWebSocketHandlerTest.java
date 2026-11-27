@@ -4,15 +4,23 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rummy.engine.command.ReadyCommand;
+import com.rummy.engine.rules.RulesetRegistry;
 import com.rummy.gameservice.actor.TableActor;
 import com.rummy.gameservice.actor.TableManager;
 import com.rummy.gameservice.routing.TableRoutingRegistry;
+import com.rummy.gameservice.security.JwtHandshakeInterceptor;
+import com.rummy.gameservice.security.JwtService;
 import com.rummy.gameservice.security.RateLimitingService;
+import com.rummy.gameservice.security.VariantAccessPolicy;
 import com.rummy.gameservice.session.PlayerSessionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.server.ServletServerHttpRequest;
+import org.springframework.http.server.ServletServerHttpResponse;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -239,5 +247,101 @@ class GameWebSocketHandlerTest {
         // Process a dummy command on the table, session should not receive messages anymore
         table.processCommand(new ReadyCommand("req_dummy", table.getState().getGameId(), "USR_DISC", java.time.Instant.now()), "req_dummy");
         verify(session, after(300).never()).sendMessage(any());
+    }
+
+    @Test
+    @DisplayName("Private and tournament tables reject unseated intruders and missing ghost tables")
+    void testPrivateAndTournamentTableGuards() throws Exception {
+        tableManager.getOrCreateTable("TBL_PRV_ABC123", RulesetRegistry.requireRuleset("POOL_101"));
+        sessionAttributes.put("playerId", "USR_INTRUDER");
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type": "JOIN_TABLE", "tableId": "TBL_PRV_ABC123", "requestId": "r_prv_intruder",
+                 "payload": {"displayName": "Intruder", "seatIndex": 0}}
+                """));
+
+        ArgumentCaptor<TextMessage> firstCaptor = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, timeout(SEND_WAIT_MS).times(1)).sendMessage(firstCaptor.capture());
+        assertThat(objectMapper.readTree(firstCaptor.getValue().getPayload()).get("payload").get("errorCode").asText())
+                .isEqualTo("FORBIDDEN");
+        assertThat(tableManager.getTable("TBL_PRV_ABC123").orElseThrow().getState().getPlayers()).isEmpty();
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type": "JOIN_TABLE", "tableId": "TBL_TRN_MISSING_R1_1", "requestId": "r_trn_missing",
+                 "payload": {"displayName": "Ghost", "seatIndex": 0}}
+                """));
+
+        ArgumentCaptor<TextMessage> allCaptor = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, timeout(SEND_WAIT_MS).times(2)).sendMessage(allCaptor.capture());
+        assertThat(objectMapper.readTree(allCaptor.getAllValues().get(1).getPayload()).get("type").asText())
+                .isEqualTo("TABLE_CLOSED");
+        assertThat(tableManager.getTable("TBL_TRN_MISSING_R1_1")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("VariantAccessPolicy blocks cross-variant WebSocket JOIN_TABLE while allowing matching origin/gameCode")
+    void testWebSocketVariantIsolation() throws Exception {
+        VariantAccessPolicy policy = new VariantAccessPolicy(
+                "https://points.example.com=POINTS_13;https://pool.example.com=POOL_101,POOL_201",
+                "POINTS=POINTS_13;POOL=POOL_101,POOL_201"
+        );
+        TableRoutingRegistry routingRegistry = new TableRoutingRegistry(null, "test-server");
+        GameWebSocketHandler isolated = new GameWebSocketHandler(
+                tableManager, objectMapper, new RateLimitingService(100, 100.0),
+                routingRegistry, new PlayerSessionService(routingRegistry, tableManager), true);
+        isolated.setVariantAccessPolicy(policy);
+
+        tableManager.getOrCreateTable("TBL_MM_POOL1", RulesetRegistry.requireRuleset("POOL_101"));
+        routingRegistry.registerPlayerTable("USR_P1", "TBL_MM_POOL1");
+
+        // Wrong frontend Origin + gameCode tries to join Pool table -> FORBIDDEN
+        sessionAttributes.put("authenticatedPlayerId", "USR_P1");
+        sessionAttributes.put("playerId", "USR_P1");
+        sessionAttributes.put(JwtHandshakeInterceptor.HANDSHAKE_ORIGIN_ATTRIBUTE, "https://points.example.com");
+        sessionAttributes.put(JwtHandshakeInterceptor.AUTH_GAME_CODE_ATTRIBUTE, "POINTS");
+
+        isolated.handleTextMessage(session, new TextMessage("""
+                {"type": "JOIN_TABLE", "tableId": "TBL_MM_POOL1", "requestId": "r_cross",
+                 "payload": {"displayName": "Player One", "seatIndex": 0}}
+                """));
+
+        ArgumentCaptor<TextMessage> deniedCaptor = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, timeout(SEND_WAIT_MS).times(1)).sendMessage(deniedCaptor.capture());
+        assertThat(objectMapper.readTree(deniedCaptor.getValue().getPayload()).get("payload").get("errorCode").asText())
+                .isEqualTo("FORBIDDEN");
+        assertThat(tableManager.getTable("TBL_MM_POOL1").orElseThrow().getState().getPlayers()).isEmpty();
+
+        // Matching Pool Origin + gameCode joins cleanly
+        sessionAttributes.put(JwtHandshakeInterceptor.HANDSHAKE_ORIGIN_ATTRIBUTE, "https://pool.example.com");
+        sessionAttributes.put(JwtHandshakeInterceptor.AUTH_GAME_CODE_ATTRIBUTE, "POOL");
+
+        isolated.handleTextMessage(session, new TextMessage("""
+                {"type": "JOIN_TABLE", "tableId": "TBL_MM_POOL1", "requestId": "r_ok",
+                 "payload": {"displayName": "Player One", "seatIndex": 0}}
+                """));
+
+        assertThat(tableManager.getTable("TBL_MM_POOL1").orElseThrow().getState().getPlayers()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("JwtHandshakeInterceptor captures normalized Origin and JWT gameCode into WebSocket attributes")
+    void testHandshakeCapturesOriginAndGameCode() {
+        JwtService jwtService = new JwtService("SecretSigningKeyForTestingPurposesMustBeAtLeast32BytesLong!", 1);
+        String token = jwtService.generateToken("USR_42", "Riya", "OP1", "DEALS", java.time.Duration.ofHours(1));
+        JwtHandshakeInterceptor interceptor = new JwtHandshakeInterceptor(jwtService, true);
+
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/ws/game");
+        req.setQueryString("token=" + token);
+        req.addHeader("Origin", "https://deals.example.com");
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+
+        Map<String, Object> attrs = new HashMap<>();
+        boolean allowed = interceptor.beforeHandshake(
+                new ServletServerHttpRequest(req), new ServletServerHttpResponse(resp), handler, attrs);
+
+        assertThat(allowed).isTrue();
+        assertThat(attrs.get("authenticatedPlayerId")).isEqualTo("USR_42");
+        assertThat(attrs.get(JwtHandshakeInterceptor.HANDSHAKE_ORIGIN_ATTRIBUTE)).isEqualTo("https://deals.example.com");
+        assertThat(attrs.get(JwtHandshakeInterceptor.AUTH_GAME_CODE_ATTRIBUTE)).isEqualTo("DEALS");
     }
 }

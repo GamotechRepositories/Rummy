@@ -1202,6 +1202,10 @@ public final class TableActor {
         return tableId;
     }
 
+    public String getRulesetId() {
+        return rules.getRulesetId();
+    }
+
     private boolean holdingForPlayers() {
         if (state.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
             return false;

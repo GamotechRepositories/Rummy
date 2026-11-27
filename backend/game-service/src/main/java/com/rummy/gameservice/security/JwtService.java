@@ -26,6 +26,7 @@ public class JwtService {
     private static final Logger log = LoggerFactory.getLogger(JwtService.class);
     private static final int MIN_SECRET_BYTES = 32;
     public static final String OPERATOR_CLAIM = "op";
+    public static final String GAME_CODE_CLAIM = "gc";
 
     private final SecretKey signingKey;
     private final Duration tokenTtl;
@@ -70,13 +71,21 @@ public class JwtService {
 
     /** A player session token; {@code operatorId} is the operator that launched the player (may be null). */
     public String generateToken(String playerId, String displayName, String operatorId, Duration ttl) {
+        return generateToken(playerId, displayName, operatorId, null, ttl);
+    }
+
+    /** A player session token optionally scoped by operator {@code gameCode}. */
+    public String generateToken(String playerId, String displayName, String operatorId, String gameCode, Duration ttl) {
         Instant now = Instant.now();
         var builder = Jwts.builder()
                 .subject(playerId)
                 .claim("name", displayName)
                 .claim("role", "PLAYER");
-        if (operatorId != null) {
+        if (operatorId != null && !operatorId.isBlank()) {
             builder.claim(OPERATOR_CLAIM, operatorId);
+        }
+        if (gameCode != null && !gameCode.isBlank()) {
+            builder.claim(GAME_CODE_CLAIM, gameCode);
         }
         return builder
                 .issuedAt(Date.from(now))

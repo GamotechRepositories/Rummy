@@ -73,7 +73,6 @@ export const PrivateRoomLobby: React.FC<{
 
   const [room, setRoom] = useState<PrivateRoomData | null>(null);
   const [myRooms, setMyRooms] = useState<PrivateRoomData[]>([]);
-  const [historyRooms, setHistoryRooms] = useState<PrivateRoomData[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -126,7 +125,6 @@ export const PrivateRoomLobby: React.FC<{
         const data = await res.json();
         const list: PrivateRoomData[] = data.rooms || [];
         setMyRooms(list.filter((r) => r.status === 'WAITING' || r.status === 'RUNNING').slice(0, 4));
-        setHistoryRooms(list.filter((r) => r.status === 'COMPLETED' || r.status === 'CANCELLED' || r.status === 'EXPIRED').slice(0, 6));
       }
     } catch { /* ignore */ }
   }, [playerId]);
@@ -579,26 +577,6 @@ export const PrivateRoomLobby: React.FC<{
           </div>
         )}
       </div>
-
-      {historyRooms.length > 0 && (
-        <div className="prv-card" style={{ padding: '14px 18px', gap: '10px' }}>
-          <div className="prv-recent-title" style={{ marginBottom: 0 }}>Recent Private Room History</div>
-          <div className="prv-recent-list">
-            {historyRooms.map((r) => (
-              <div key={r.roomCode} className="prv-recent-item prv-history-row">
-                <span className="prv-recent-code">{r.roomCode}</span>
-                <span>{VARIANT_LABEL[r.rulesetId] || r.rulesetId}</span>
-                <span>{r.stakeTier > 0 ? `₹${r.stakeTier}` : 'Free'}</span>
-                <span style={{ color: r.status === 'COMPLETED' ? '#6ee7b7' : '#fda4af', fontWeight: 700, fontSize: '11px' }}>
-                  {r.status === 'COMPLETED'
-                    ? (r.winnerDisplayName ? `🏆 ${r.winnerDisplayName}` : 'COMPLETED')
-                    : `${r.status} (Refunded)`}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <InsufficientBalanceModal
         info={insufficientBalance}

@@ -72,19 +72,7 @@ public class OrengProviderService {
             return Optional.empty();
         }
         try {
-            JsonObject resp = sdk.getBalance(sessionToken);
-            if (resp != null) {
-                if (resp.has("balance") && !resp.get("balance").isJsonNull()) {
-                    return Optional.of(new BigDecimal(resp.get("balance").getAsString()));
-                }
-                if (resp.has("data") && resp.get("data").isJsonObject()) {
-                    JsonObject data = resp.getAsJsonObject("data");
-                    if (data.has("balance") && !data.get("balance").isJsonNull()) {
-                        return Optional.of(new BigDecimal(data.get("balance").getAsString()));
-                    }
-                }
-            }
-            return Optional.empty();
+            return extractBalance(sdk.getBalance(sessionToken));
         } catch (ProviderSDKException e) {
             log.warn("[OrengProvider] getBalance failed: {} (status: {})", e.getMessage(), e.getStatus());
             return Optional.empty();
@@ -92,6 +80,27 @@ public class OrengProviderService {
             log.error("[OrengProvider] getBalance unexpected error: {}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /** Extracts a balance field from either top-level {@code balance} or nested {@code data.balance}. */
+    public static Optional<BigDecimal> extractBalance(JsonObject resp) {
+        if (resp == null) {
+            return Optional.empty();
+        }
+        try {
+            if (resp.has("balance") && !resp.get("balance").isJsonNull()) {
+                return Optional.of(new BigDecimal(resp.get("balance").getAsString()));
+            }
+            if (resp.has("data") && resp.get("data").isJsonObject()) {
+                JsonObject data = resp.getAsJsonObject("data");
+                if (data.has("balance") && !data.get("balance").isJsonNull()) {
+                    return Optional.of(new BigDecimal(data.get("balance").getAsString()));
+                }
+            }
+        } catch (Exception ignored) {
+            // Unparseable optional balance field; operation status itself remains valid.
+        }
+        return Optional.empty();
     }
 
     public Optional<JsonObject> debit(String sessionToken, BigDecimal amount, String transactionId, String roundId, String tableId) {

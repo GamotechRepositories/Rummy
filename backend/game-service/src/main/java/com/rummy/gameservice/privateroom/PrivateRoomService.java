@@ -70,8 +70,10 @@ public class PrivateRoomService {
         String canonicalRuleset = StakeTiers.offeredRuleset(rawRulesetId)
                 .orElseThrow(() -> new IllegalArgumentException("Unsupported game variant: " + rawRulesetId));
 
-        if (stakeTier < 0) {
-            throw new IllegalArgumentException("Stake cannot be negative.");
+        if (stakeTier != 0 && !StakeTiers.stakesFor(canonicalRuleset).contains(stakeTier)) {
+            throw new IllegalArgumentException(
+                    "Invalid stake for " + friendlyVariantName(canonicalRuleset)
+                            + ". Choose Free (0) or one of: " + StakeTiers.stakesFor(canonicalRuleset));
         }
 
         ensureNoOtherWaitingRoom(hostPlayerId, null);

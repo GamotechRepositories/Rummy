@@ -2,8 +2,10 @@ package com.rummy.gameservice.tournament;
 
 import com.rummy.gameservice.operator.OperatorWalletException;
 import com.rummy.gameservice.security.AuthenticatedPlayer;
+import com.rummy.gameservice.security.VariantAccessPolicy;
 import com.rummy.gameservice.wallet.InsufficientBalanceException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,9 +23,18 @@ import java.util.Map;
 public class TournamentController {
 
     private final TournamentService tournamentService;
+    private final VariantAccessPolicy variantPolicy;
 
     public TournamentController(TournamentService tournamentService) {
+        this(tournamentService, null);
+    }
+
+    @Autowired
+    public TournamentController(
+            TournamentService tournamentService,
+            @Autowired(required = false) VariantAccessPolicy variantPolicy) {
         this.tournamentService = tournamentService;
+        this.variantPolicy = variantPolicy;
     }
 
     @GetMapping
@@ -33,6 +44,14 @@ public class TournamentController {
             @RequestParam(required = false) String variant) {
         String resolvedId = AuthenticatedPlayer.resolve(request, playerId);
         List<Map<String, Object>> list = tournamentService.listPublicTournaments(resolvedId, variant);
+        if (variantPolicy != null) {
+            VariantAccessPolicy.FilterScope scope = variantPolicy.resolveScope(request, variant);
+            if (scope.restricted()) {
+                list = list.stream()
+                        .filter(item -> scope.allows(String.valueOf(item.getOrDefault("variant", "DEALS_3"))))
+                        .toList();
+            }
+        }
         return ResponseEntity.ok(Map.of("success", true, "tournaments", list));
     }
 
@@ -42,6 +61,14 @@ public class TournamentController {
             @RequestParam(required = false) String playerId,
             @RequestParam(required = false) String variants) {
         String resolvedId = AuthenticatedPlayer.resolve(request, playerId);
+        if (variantPolicy != null) {
+            VariantAccessPolicy.FilterScope scope = variantPolicy.resolveScope(request, variants);
+            if (scope.restricted() && scope.rulesets().isEmpty()) {
+                return ResponseEntity.ok(Map.of("success", true, "tournaments", List.of()));
+            }
+            String effectiveCsv = scope.restricted() ? String.join(",", scope.rulesets()) : variants;
+            return ResponseEntity.ok(Map.of("success", true, "tournaments", tournamentService.listMyTournaments(resolvedId, effectiveCsv)));
+        }
         List<Map<String, Object>> list = tournamentService.listMyTournaments(resolvedId, variants);
         return ResponseEntity.ok(Map.of("success", true, "tournaments", list));
     }
@@ -53,7 +80,13 @@ public class TournamentController {
             @RequestParam(required = false) String playerId) {
         try {
             String resolvedId = AuthenticatedPlayer.resolve(request, playerId);
-            return ResponseEntity.ok(tournamentService.getTournamentStatusByTable(tableId, resolvedId));
+            Map<String, Object> status = tournamentService.getTournamentStatusByTable(tableId, resolvedId);
+            ResponseEntity<Map<String, Object>> denied = rejectIfDisallowed(
+                    request, String.valueOf(status.getOrDefault("variant", "DEALS_3")));
+            if (denied != null) {
+                return denied;
+            }
+            return ResponseEntity.ok(status);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -67,6 +100,11 @@ public class TournamentController {
         try {
             String requestedId = body.get("playerId") != null ? String.valueOf(body.get("playerId")) : null;
             String playerId = AuthenticatedPlayer.resolve(request, requestedId);
+            ResponseEntity<Map<String, Object>> denied = rejectIfDisallowed(
+                    request, tournamentService.getTournamentVariant(tournamentId).orElse(null));
+            if (denied != null) {
+                return denied;
+            }
             String displayName = body.get("displayName") != null ? String.valueOf(body.get("displayName")) : playerId;
             String operatorId = body.get("operatorId") != null ? String.valueOf(body.get("operatorId")) : "DEFAULT";
 
@@ -101,6 +139,11 @@ public class TournamentController {
             String requestedId = (body != null && body.get("playerId") != null)
                     ? String.valueOf(body.get("playerId")) : null;
             String playerId = AuthenticatedPlayer.resolve(request, requestedId);
+            ResponseEntity<Map<String, Object>> denied = rejectIfDisallowed(
+                    request, tournamentService.getTournamentVariant(tournamentId).orElse(null));
+            if (denied != null) {
+                return denied;
+            }
             Map<String, Object> res = tournamentService.checkInPlayer(tournamentId, playerId);
             return ResponseEntity.ok(res);
         } catch (IllegalStateException | IllegalArgumentException e) {
@@ -109,5 +152,16 @@ public class TournamentController {
                     "message", e.getMessage()
             ));
         }
+    }
+
+    private ResponseEntity<Map<String, Object>> rejectIfDisallowed(HttpServletRequest request, String trnVariant) {
+        if (variantPolicy != null && trnVariant != null && !variantPolicy.isRulesetAllowed(request, trnVariant)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "success", false,
+                    "error", "VARIANT_NOT_ALLOWED",
+                    "message", "This tournament variant is not enabled on this frontend."
+            ));
+        }
+        return null;
     }
 }

@@ -4,6 +4,7 @@ import com.rummy.gameservice.operator.MockOperatorController;
 import com.rummy.gameservice.operator.OperatorRegistry;
 import com.rummy.gameservice.operator.OperatorWalletException;
 import com.rummy.gameservice.security.AuthenticatedPlayer;
+import com.rummy.gameservice.security.VariantAccessPolicy;
 import com.rummy.gameservice.wallet.InsufficientBalanceException;
 import com.rummy.gameservice.wallet.WalletService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,14 +31,25 @@ public class MatchmakingController {
     private final MatchmakingService matchmakingService;
     private final WalletService walletService;
     private final OperatorRegistry operators;
+    private final VariantAccessPolicy variantPolicy;
 
     public MatchmakingController(
             MatchmakingService matchmakingService,
+            WalletService walletService,
+            OperatorRegistry operators) {
+        this(matchmakingService, walletService, operators, null);
+    }
+
+    @Autowired
+    public MatchmakingController(
+            MatchmakingService matchmakingService,
             @Autowired(required = false) WalletService walletService,
-            @Autowired(required = false) OperatorRegistry operators) {
+            @Autowired(required = false) OperatorRegistry operators,
+            @Autowired(required = false) VariantAccessPolicy variantPolicy) {
         this.matchmakingService = Objects.requireNonNull(matchmakingService);
         this.walletService = walletService;
         this.operators = operators;
+        this.variantPolicy = variantPolicy;
     }
 
     @PostMapping("/join")
@@ -51,6 +63,13 @@ public class MatchmakingController {
                     "success", false,
                     "error", "INVALID_REQUEST",
                     "message", "This game variant is not offered"
+            ));
+        }
+        if (variantPolicy != null && !variantPolicy.isRulesetAllowed(httpRequest, ruleset.get())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "success", false,
+                    "error", "VARIANT_NOT_ALLOWED",
+                    "message", "This game variant is not enabled on this frontend."
             ));
         }
         if (!StakeTiers.isOffered(ruleset.get(), request.getStakeTier(), request.getMaxPlayers())) {

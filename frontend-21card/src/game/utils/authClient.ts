@@ -57,9 +57,13 @@ function storeToken(response: TokenResponse): string {
   return response.token;
 }
 
-function clearToken(): void {
+export function clearAuthToken(): void {
   try {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(PLAYER_ID_KEY);
+    localStorage.removeItem(DISPLAY_NAME_KEY);
+    sessionStorage.removeItem(PLAYER_ID_KEY);
+    sessionStorage.removeItem(DISPLAY_NAME_KEY);
   } catch {
     // ignore
   }
@@ -113,7 +117,7 @@ export function ensureAuthToken(displayName?: string): Promise<string | null> {
     const expMs = existing ? (decodeClaims(existing)?.exp ?? 0) * 1000 : 0;
     const now = Date.now();
     if (!existing || expMs <= now) {
-      if (existing) clearToken();
+      if (existing) clearAuthToken();
       return null;
     }
     if (expMs - now > REFRESH_WHEN_REMAINING_MS) {
@@ -126,6 +130,10 @@ export function ensureAuthToken(displayName?: string): Promise<string | null> {
         body: JSON.stringify(displayName ? { name: displayName } : {}),
       });
       if (res.ok) return storeToken(await res.json());
+      if (res.status === 401 || res.status === 403) {
+        clearAuthToken();
+        return null;
+      }
     } catch {
       // backend offline — the current token is still valid for now
     }
@@ -141,5 +149,9 @@ export async function authFetch(input: string, init: RequestInit = {}): Promise<
   const token = await ensureAuthToken();
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  return fetch(input, { ...init, headers });
+  const res = await fetch(input, { ...init, headers });
+  if (res.status === 401) {
+    clearAuthToken();
+  }
+  return res;
 }

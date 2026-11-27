@@ -28,6 +28,10 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
     private static final Logger log = LoggerFactory.getLogger(JwtHandshakeInterceptor.class);
     /** The verified handshake JWT, reused when this connection is relayed to the node hosting its table. */
     public static final String AUTH_TOKEN_ATTRIBUTE = "rummy.authToken";
+    /** Normalized HTTP Origin (or Referer) of the WebSocket handshake for variant isolation checks. */
+    public static final String HANDSHAKE_ORIGIN_ATTRIBUTE = "rummy.handshakeOrigin";
+    /** Optional operator launch gameCode from JWT {@code gc} claim. */
+    public static final String AUTH_GAME_CODE_ATTRIBUTE = "authenticatedGameCode";
 
     private final JwtService jwtService;
     private final boolean enforceJwt;
@@ -47,6 +51,15 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
             WebSocketHandler wsHandler,
             Map<String, Object> attributes) {
 
+        String rawOrigin = request.getHeaders().getFirst("Origin");
+        if (rawOrigin == null || rawOrigin.isBlank()) {
+            rawOrigin = request.getHeaders().getFirst("Referer");
+        }
+        String normalizedOrigin = VariantAccessPolicy.normalizeOrigin(rawOrigin);
+        if (normalizedOrigin != null) {
+            attributes.put(HANDSHAKE_ORIGIN_ATTRIBUTE, normalizedOrigin);
+        }
+
         URI uri = request.getURI();
         String query = uri.getQuery();
         String token = extractQueryParam(query, "token");
@@ -64,6 +77,10 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
                 Claims claims = claimsOpt.get();
                 attributes.put("authenticatedPlayerId", claims.getSubject());
                 attributes.put("authenticatedPlayerName", claims.get("name", String.class));
+                String gameCode = claims.get(JwtService.GAME_CODE_CLAIM, String.class);
+                if (gameCode != null && !gameCode.isBlank()) {
+                    attributes.put(AUTH_GAME_CODE_ATTRIBUTE, gameCode);
+                }
                 attributes.put(AUTH_TOKEN_ATTRIBUTE, token);
                 log.debug("[WS-Auth] Authenticated WebSocket handshake for player: {}", claims.getSubject());
                 return true;

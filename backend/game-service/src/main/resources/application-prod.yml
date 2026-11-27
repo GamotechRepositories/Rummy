@@ -4,7 +4,7 @@
 
 rummy:
   redis:
-    enabled: true
+    enabled: ${RUMMY_REDIS_ENABLED:true}
   security:
     enforce-jwt: true
     allowed-origins: ${RUMMY_ALLOWED_ORIGINS}

@@ -3,10 +3,15 @@ package com.rummy.gameservice.privateroom;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rummy.gameservice.actor.TableManager;
+import com.rummy.gameservice.security.AuthenticatedPlayer;
+import com.rummy.gameservice.security.VariantAccessPolicy;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.lang.reflect.Proxy;
 import java.time.Instant;
@@ -113,5 +118,42 @@ class PrivateRoomVariantFilterTest {
                 .hasMessageContaining("Point Rummy");
 
         assertThat(store.get(0).getPlayers()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("createRoom rejects arbitrary stakes outside variant StakeTiers while allowing Free (0) and offered tiers")
+    void createRoomValidatesStakeAgainstTiers() {
+        assertThatThrownBy(() -> service.createRoom("HOST1", "Host", "POINTS_13", 2, 13))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid stake");
+
+        assertThatThrownBy(() -> service.createRoom("HOST1", "Host", "POINTS_13", 2, -5))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        Map<String, Object> freeRoom = service.createRoom("HOST1", "Host", "POINTS_13", 2, 0);
+        assertThat(freeRoom.get("success")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("PrivateRoomController.getRoom rejects rooms from other variants")
+    void getRoomEnforcesVariantPolicy() {
+        store.add(makeRoom("PTS777", "POINTS_13", "WAITING", "HOST1", Instant.now()));
+        VariantAccessPolicy policy = new VariantAccessPolicy(
+                "https://points.example.com=POINTS_13;https://pool.example.com=POOL_101,POOL_201",
+                ""
+        );
+        PrivateRoomController controller = new PrivateRoomController(service, policy);
+
+        MockHttpServletRequest poolReq = new MockHttpServletRequest();
+        poolReq.setAttribute(AuthenticatedPlayer.REQUEST_ATTRIBUTE, "HOST1");
+        poolReq.addHeader("Origin", "https://pool.example.com");
+        ResponseEntity<?> denied = controller.getRoom(poolReq, "PTS777", "HOST1");
+        assertThat(denied.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        MockHttpServletRequest pointsReq = new MockHttpServletRequest();
+        pointsReq.setAttribute(AuthenticatedPlayer.REQUEST_ATTRIBUTE, "HOST1");
+        pointsReq.addHeader("Origin", "https://points.example.com");
+        ResponseEntity<?> allowed = controller.getRoom(pointsReq, "PTS777", "HOST1");
+        assertThat(allowed.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 }

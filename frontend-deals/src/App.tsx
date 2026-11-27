@@ -14,6 +14,7 @@ import {
   readPersistedDisplayName,
 } from './game/utils/sessionResume';
 import {
+  clearAuthToken,
   ensureAuthToken,
   getAuthenticatedPlayerId,
   redeemLaunchCode,
@@ -45,7 +46,12 @@ async function redeemLaunchCodeInUrl(): Promise<'none' | 'ok' | 'failed'> {
   if (!code) return 'none';
   const previousPlayer = getAuthenticatedPlayerId();
   const session = await redeemLaunchCode(code);
-  if (!session) return 'failed';
+  if (!session) {
+    // Expired or already-used launch links must never fall back to an older cached player session.
+    clearAuthToken();
+    clearActiveSessionLocal();
+    return 'failed';
+  }
   if (previousPlayer && previousPlayer !== session.playerId) {
     // A different account was launched in this browser; the old player's table is not ours.
     clearActiveSessionLocal();
@@ -83,6 +89,7 @@ export function App() {
   });
   const [noSession, setNoSession] = useState<SessionProblem | null>(null);
   const [mockEnabled, setMockEnabled] = useState(false);
+  const [mockKeyRequired, setMockKeyRequired] = useState(false);
 
   useEffect(() => {
     fetch(`${getApiBaseUrl()}/api/auth/config`)
@@ -90,6 +97,9 @@ export function App() {
       .then((data) => {
         if (data?.mockOperatorEnabled) {
           setMockEnabled(true);
+        }
+        if (data?.mockOperatorKeyRequired) {
+          setMockKeyRequired(true);
         }
       })
       .catch(() => {});
@@ -104,10 +114,14 @@ export function App() {
     (async () => {
       try {
         const launch = await redeemLaunchFromUrl();
+        if (launch === 'failed') {
+          setNoSession('expired-link');
+          return;
+        }
         // Backend only trusts the player id inside the JWT, so obtain it before any API/WS call
         const token = await ensureAuthToken(readPersistedDisplayName() || useGameStore.getState().displayName);
         if (!token) {
-          setNoSession(launch === 'failed' ? 'expired-link' : 'none');
+          setNoSession('none');
           return;
         }
         hasSession = true;
@@ -199,7 +213,11 @@ export function App() {
           </p>
           {mockEnabled && (
             <a
-              href={`${getApiBaseUrl()}/mock-operator/`}
+              href={
+                mockKeyRequired
+                  ? `${getApiBaseUrl()}/mock-operator/`
+                  : `${getApiBaseUrl()}/mock-operator/play?returnTo=${encodeURIComponent(window.location.origin)}`
+              }
               style={{ display: 'inline-block', marginTop: 18, color: '#facc15', fontSize: 14 }}
             >
               Test login (test money)
