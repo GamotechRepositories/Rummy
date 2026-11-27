@@ -6,8 +6,10 @@ import { CardView } from './CardView';
 import { checkOverallDeclaration } from '../rules/clientValidator';
 import { Award, AlertTriangle, X, CheckCircle2, ShieldCheck, AlertCircle, ArrowLeft } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
+import { useModalScroll } from '../hooks/useModalScroll';
 
 export const DeclareModal: React.FC = () => {
+  const modalScroll = useModalScroll();
   const {
     isDeclareModalOpen,
     setDeclareModalOpen,
@@ -85,6 +87,10 @@ export const DeclareModal: React.FC = () => {
         role="dialog"
         aria-label="Declare Win"
         onClick={(e) => e.stopPropagation()}
+        onWheel={modalScroll.onWheel}
+        onTouchStart={modalScroll.onTouchStart}
+        onTouchMove={modalScroll.onTouchMove}
+        onTouchEnd={modalScroll.onTouchEnd}
         style={{
           maxWidth: '480px',
           width: '100%',
@@ -167,6 +173,13 @@ export const DeclareModal: React.FC = () => {
           </p>
         </div>
 
+        <div
+          className="royal-dialog-body"
+          onWheel={modalScroll.onWheel}
+          onTouchStart={modalScroll.onTouchStart}
+          onTouchMove={modalScroll.onTouchMove}
+          onTouchEnd={modalScroll.onTouchEnd}
+        >
         {/* Finish Card Showcase Box */}
         {finishCard && (
           <div
@@ -311,9 +324,10 @@ export const DeclareModal: React.FC = () => {
             </div>
           </div>
         )}
+        </div>
 
         {/* Action Buttons */}
-        <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
+        <div className="royal-dialog-actions" style={{ display: 'flex', gap: '12px', width: '100%' }}>
           <button
             type="button"
             onClick={() => {
@@ -393,6 +407,6 @@ export const DeclareModal: React.FC = () => {
         </div>
       </div>
     </div>,
-    document.body
+    document.getElementById('root') || document.body
   );
 };

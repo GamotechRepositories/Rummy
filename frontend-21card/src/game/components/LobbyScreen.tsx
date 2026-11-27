@@ -110,10 +110,7 @@ function StakeStepper({
 const StakeNavRight: React.FC = () => {
   const { simulatedLandscape, toggleFlip } = useLandscapeGate();
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-      <div className="stake-step">
-        Step 2 of 2: <strong>Configure Stakes</strong>
-      </div>
+    <div className="stake-nav-right">
       {simulatedLandscape && (
         <button
           type="button"
@@ -122,7 +119,6 @@ const StakeNavRight: React.FC = () => {
             toggleFlip();
           }}
           className="board-hud-flip-btn"
-          style={{ width: '28px', height: '28px', borderRadius: '6px', flexShrink: 0 }}
           title="Flip orientation 180°"
           aria-label="Flip screen 180 degrees"
         >

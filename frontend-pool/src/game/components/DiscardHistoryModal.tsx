@@ -4,6 +4,7 @@ import type { CardInstance, Suit } from '../types/game';
 import { CardView } from './CardView';
 import { History, X, ArrowUpDown, Sparkles } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
+import { useModalScroll } from '../hooks/useModalScroll';
 
 interface DiscardHistoryModalProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ export const DiscardHistoryModal: React.FC<DiscardHistoryModalProps> = ({
   discardHistory,
   cutJoker,
 }) => {
+  const modalScroll = useModalScroll();
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [selectedSuit, setSelectedSuit] = useState<SuitFilter>('ALL');
 
@@ -197,7 +199,13 @@ export const DiscardHistoryModal: React.FC<DiscardHistoryModalProps> = ({
         </div>
 
         {/* Scrollable Body */}
-        <div className="discard-history-body">
+        <div
+          className="discard-history-body"
+          onWheel={modalScroll.onWheel}
+          onTouchStart={modalScroll.onTouchStart}
+          onTouchMove={modalScroll.onTouchMove}
+          onTouchEnd={modalScroll.onTouchEnd}
+        >
           {items.length === 0 ? (
             <div className="discard-history-empty">
               <History size={36} className="empty-icon" />

@@ -93,14 +93,26 @@ export const LandscapeGate: React.FC<LandscapeGateProps> = ({
           aria-labelledby="rotate-title"
         >
           <div className="rotate-device-card">
+            <span className="rotate-device-suit rotate-device-suit--tl" aria-hidden>♠</span>
+            <span className="rotate-device-suit rotate-device-suit--tr" aria-hidden>♦</span>
+
             <div className="rotate-device-icon-wrap" aria-hidden>
-              <Smartphone className="rotate-device-phone" size={56} strokeWidth={1.6} />
-              <RefreshCw className="rotate-device-arrow" size={22} strokeWidth={2.4} />
+              <div className="rotate-device-crest-glow" />
+              <div className="rotate-device-crest">
+                <Smartphone className="rotate-device-phone" size={34} strokeWidth={1.75} />
+              </div>
+              <span className="rotate-device-arrow-badge">
+                <RefreshCw className="rotate-device-arrow" size={14} strokeWidth={2.5} />
+              </span>
             </div>
 
+            <span className="rotate-device-kicker">LANDSCAPE MODE</span>
             <h2 id="rotate-title" className="rotate-device-title">
-              Rotate your phone
+              Rotate Your Phone
             </h2>
+            <p className="rotate-device-copy">
+              Turn your device sideways or tap below to play in widescreen view.
+            </p>
 
             <button
               type="button"
@@ -114,7 +126,8 @@ export const LandscapeGate: React.FC<LandscapeGateProps> = ({
                 void requestLandscape();
               }}
             >
-              Enable landscape
+              <RotateCw size={16} strokeWidth={2.5} />
+              <span>Enable Landscape</span>
             </button>
           </div>
         </div>
