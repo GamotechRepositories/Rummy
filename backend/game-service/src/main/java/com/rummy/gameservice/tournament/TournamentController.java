@@ -1,5 +1,7 @@
 package com.rummy.gameservice.tournament;
 
+import com.rummy.gameservice.operator.OperatorController;
+import com.rummy.gameservice.operator.OperatorLaunchService;
 import com.rummy.gameservice.operator.OperatorWalletException;
 import com.rummy.gameservice.security.AuthenticatedPlayer;
 import com.rummy.gameservice.security.VariantAccessPolicy;
@@ -24,6 +26,12 @@ public class TournamentController {
 
     private final TournamentService tournamentService;
     private final VariantAccessPolicy variantPolicy;
+    private OperatorLaunchService operatorLaunches;
+
+    @Autowired(required = false)
+    public void setOperatorLaunches(OperatorLaunchService operatorLaunches) {
+        this.operatorLaunches = operatorLaunches;
+    }
 
     public TournamentController(TournamentService tournamentService) {
         this(tournamentService, null);
@@ -97,9 +105,10 @@ public class TournamentController {
             HttpServletRequest request,
             @PathVariable String tournamentId,
             @RequestBody Map<String, Object> body) {
+        String playerId = null;
         try {
             String requestedId = body.get("playerId") != null ? String.valueOf(body.get("playerId")) : null;
-            String playerId = AuthenticatedPlayer.resolve(request, requestedId);
+            playerId = AuthenticatedPlayer.resolve(request, requestedId);
             ResponseEntity<Map<String, Object>> denied = rejectIfDisallowed(
                     request, tournamentService.getTournamentVariant(tournamentId).orElse(null));
             if (denied != null) {
@@ -117,6 +126,9 @@ public class TournamentController {
                     "message", "Insufficient balance in your wallet to join this tournament."
             ));
         } catch (OperatorWalletException e) {
+            if (e.isSessionInvalid()) {
+                return OperatorController.sessionInvalidResponse(operatorLaunches, playerId, e);
+            }
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
                     "success", false,
                     "error", "WALLET_ERROR",

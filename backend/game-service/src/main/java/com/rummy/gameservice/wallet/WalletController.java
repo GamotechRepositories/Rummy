@@ -17,9 +17,8 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Player wallet API: balance and history. Money is added and withdrawn in the operator's own cashier,
- * not here. The wallet owner is always the authenticated player; a {@code playerId} parameter, when
- * sent, must match the token.
+ * Player wallet API: authoritative balance and history. Money movements run server-to-server via
+ * Operations ({@code /api/v1/wallet/*}) or direct operator webhooks; the browser never calls them directly.
  */
 @RestController
 @RequestMapping("/api/wallet")
@@ -39,14 +38,25 @@ public class WalletController {
                                                           @RequestParam(required = false) String playerId) {
         String owner = AuthenticatedPlayer.resolve(request, playerId);
         WalletAccountDocument account = walletService.getOrCreateWallet(owner);
+        WalletService.BalanceSnapshot snapshot = walletService.fetchBalanceSnapshot(owner);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("playerId", owner);
-        body.put("balance", walletService.balanceOf(owner));
+        body.put("balance", snapshot.balance());
         body.put("depositBalance", account.getDepositBalance());
         body.put("winningsBalance", account.getWinningsBalance());
         body.put("bonusBalance", account.getBonusBalance());
         body.put("withdrawableBalance", account.getWinningsBalance());
-        body.put("currency", WalletAccountDocument.CURRENCY);
+        body.put("currency", snapshot.currency() != null ? snapshot.currency() : WalletAccountDocument.CURRENCY);
+        body.put("lang", snapshot.lang() != null ? snapshot.lang() : "en");
+        if (snapshot.closeUrl() != null) {
+            body.put("closeUrl", snapshot.closeUrl());
+        }
+        if (snapshot.sessionInvalid()) {
+            body.put("sessionInvalid", true);
+            if (snapshot.sessionErrorCode() != null) {
+                body.put("sessionErrorCode", snapshot.sessionErrorCode());
+            }
+        }
         body.put("cashierUrl", cashierUrl(owner));
         return ResponseEntity.ok(body);
     }

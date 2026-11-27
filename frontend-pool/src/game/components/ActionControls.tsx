@@ -19,6 +19,7 @@ import { calculateHandPenalty, isJoker } from '../rules/clientValidator';
 import { TurnTimerRing } from './TurnTimerRing';
 import { photoForCharacter } from '../utils/avatarUtils';
 import { useModalScroll } from '../hooks/useModalScroll';
+import { formatCurrencySymbol, getCurrencyCode } from '../utils/authClient';
 
 export const ActionControls: React.FC = () => {
   const modalScroll = useModalScroll();
@@ -34,7 +35,9 @@ export const ActionControls: React.FC = () => {
     autoSortHand,
     dealInProgress,
     lastGameConfig,
+    currency,
   } = useGameStore();
+  const currencySym = formatCurrencySymbol(currency || getCurrencyCode());
   const [confirmDropOpen, setConfirmDropOpen] = React.useState(false);
   const [confirmRejoinOpen, setConfirmRejoinOpen] = React.useState(false);
   const [justDrawnFromDiscardId, setJustDrawnFromDiscardId] = React.useState<string | null>(null);
@@ -449,7 +452,7 @@ export const ActionControls: React.FC = () => {
                   }}
                 >
                   <Sparkles size={16} />
-                  Re-Join (₹{gameState.rejoinFee || gameState.stakeTier || lastGameConfig?.entryFee || 0})
+                  Re-Join ({currencySym}{gameState.rejoinFee || gameState.stakeTier || lastGameConfig?.entryFee || 0})
                 </button>
               )}
               <button
@@ -645,9 +648,9 @@ export const ActionControls: React.FC = () => {
                       </span>
                       <span className="table-menu-penalty-sub">
                         {dropRupees !== null
-                          ? `You lose ₹${dropRupees.toFixed(2)} (settled when hand ends)`
+                          ? `You lose ${currencySym}${dropRupees.toFixed(2)} (settled when hand ends)`
                           : isPool
-                            ? 'Points added to your cumulative score (not rupees)'
+                            ? 'Points added to your cumulative score (not cash)'
                             : 'Chips deducted from your deal stack'}
                       </span>
                     </div>
@@ -722,7 +725,7 @@ export const ActionControls: React.FC = () => {
                   <div className="table-menu-row">
                     <div className="table-menu-penalty-copy">
                       <span className="table-menu-penalty-title" style={{ color: '#6ee7b7' }}>
-                        Entry Fee: ₹{gameState.rejoinFee || gameState.stakeTier || lastGameConfig?.entryFee || 0}
+                        Entry Fee: {currencySym}{gameState.rejoinFee || gameState.stakeTier || lastGameConfig?.entryFee || 0}
                       </span>
                       <span className="table-menu-penalty-sub">
                         Starting Score: <strong>{gameState.rejoinScore} pts</strong> (Leader + 1)

@@ -1,6 +1,8 @@
 import React from 'react';
 import { Wallet, X } from 'lucide-react';
 import { useModalScroll } from '../hooks/useModalScroll';
+import { formatCurrencySymbol, getCurrencyCode } from '../utils/authClient';
+import { useGameStore } from '../store/useGameStore';
 
 export interface InsufficientBalanceInfo {
   requiredAmount?: number;
@@ -22,6 +24,8 @@ function formatInr(amount: number): string {
 /** Informs the player when their provider balance is below the stake or entry fee required to start. */
 export const InsufficientBalanceModal: React.FC<InsufficientBalanceModalProps> = ({ info, onClose }) => {
   const modalScroll = useModalScroll();
+  const currency = useGameStore((s) => s.currency);
+  const currencySym = formatCurrencySymbol(currency || getCurrencyCode());
 
   if (!info) return null;
 
@@ -67,7 +71,7 @@ export const InsufficientBalanceModal: React.FC<InsufficientBalanceModalProps> =
           </h3>
           <p className="royal-dialog-subtitle">
             {hasRequired
-              ? `You need ₹${formatInr(info.requiredAmount!)} to ${contextText}. Please add funds in your gaming account to continue.`
+              ? `You need ${currencySym}${formatInr(info.requiredAmount!)} to ${contextText}. Please add funds in your gaming account to continue.`
               : `Your gaming account balance is too low to ${contextText}. Please add funds in your gaming account to continue.`}
           </p>
         </div>
@@ -83,13 +87,13 @@ export const InsufficientBalanceModal: React.FC<InsufficientBalanceModalProps> =
               {hasRequired && (
                 <div className="table-menu-row">
                   <span>Required</span>
-                  <span className="table-menu-value--gold">₹ {formatInr(info.requiredAmount!)}</span>
+                  <span className="table-menu-value--gold">{currencySym} {formatInr(info.requiredAmount!)}</span>
                 </div>
               )}
               {hasBalance && (
                 <div className="table-menu-row">
                   <span>Available Balance</span>
-                  <span className="table-menu-value--penalty">₹ {formatInr(info.currentBalance!)}</span>
+                  <span className="table-menu-value--penalty">{currencySym} {formatInr(info.currentBalance!)}</span>
                 </div>
               )}
             </div>

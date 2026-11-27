@@ -21,24 +21,21 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
-import com.google.gson.JsonObject;
-
 /**
- * Delivers operator wallet calls that must not be lost: credits (winnings, refunds) that failed, and
- * rollbacks of debits whose outcome is unknown. Each entry is retried with backoff until the operator
- * accepts it; every node works the queue, a lease stops two nodes sending the same entry at once.
- * Retries reuse the original transaction id, so the operator applies each call once.
+ * Delivers operator / Operations wallet calls that must not be lost: credits (winnings, refunds),
+ * failed Operations 2052 transfers, and rollbacks of uncertain debits. Each entry is retried with
+ * backoff until accepted, always reusing the exact same {@code transactionId} / {@code tranid} so
+ * settlements and refunds remain idempotent even across late payouts after session closure.
  */
 @Service
 public class OperatorWalletOutbox {
 
     private static final Logger log = LoggerFactory.getLogger(OperatorWalletOutbox.class);
 
-    public enum Kind { CREDIT, ROLLBACK, PROVIDER_CREDIT }
+    public enum Kind { CREDIT, ROLLBACK, OPERATIONS_TRANSFER }
 
     private static final String PENDING = "PENDING";
     private static final String DONE = "DONE";
@@ -51,7 +48,7 @@ public class OperatorWalletOutbox {
     private final OperatorWalletClient client;
     private final Map<String, OperatorOutboxDocument> memory = new ConcurrentHashMap<>();
     private volatile BiConsumer<String, BigDecimal> balanceListener = (playerId, balance) -> { };
-    private OrengProviderService orengProvider;
+    private OperationsWalletClient operationsClient;
     private OperatorLaunchService operatorLaunches;
 
     @Autowired
@@ -60,15 +57,15 @@ public class OperatorWalletOutbox {
         this.client = Objects.requireNonNull(client);
     }
 
-    /** Package-private constructor for unit tests exercising provider-only outbox paths without HTTP client creation. */
+    /** Package-private constructor for unit tests exercising Operations-only outbox paths without legacy client creation. */
     OperatorWalletOutbox(MongoTemplate mongo) {
         this.mongo = mongo;
         this.client = null;
     }
 
     @Autowired(required = false)
-    public void setOrengProvider(OrengProviderService orengProvider) {
-        this.orengProvider = orengProvider;
+    public void setOperationsClient(OperationsWalletClient operationsClient) {
+        this.operationsClient = operationsClient;
     }
 
     @Autowired(required = false)
@@ -76,27 +73,53 @@ public class OperatorWalletOutbox {
         this.operatorLaunches = operatorLaunches;
     }
 
-    /** Told the player's new operator balance after a queued credit lands. */
+    /** Told the player's new authoritative balance after a queued credit lands. */
     public void setBalanceListener(BiConsumer<String, BigDecimal> listener) {
         this.balanceListener = listener != null ? listener : (playerId, balance) -> { };
     }
 
-    /** Queues a call; a second enqueue of the same call is ignored. */
+    /** Queues a direct-operator call; a second enqueue of the same call is ignored. */
     public void enqueue(Kind kind, OperatorRegistry.PlayerRef player, String transactionId, BigDecimal amount,
                         String gameId, String type, String description, String reason) {
-        insertEntry(kind, player, null, transactionId, amount, gameId, type, description, reason);
+        OperatorOutboxDocument doc = baseDoc(kind, player, transactionId, amount, gameId, type, description, reason);
+        saveEntry(doc);
     }
 
-    /** Queues a failed Oreng/provider wallet credit with its originating {@code sessionToken} for retry. */
-    public void enqueueProviderCredit(OperatorRegistry.PlayerRef player, String providerSessionToken,
-                                      String transactionId, BigDecimal amount, String gameId,
-                                      String type, String description, String reason) {
-        insertEntry(Kind.PROVIDER_CREDIT, player, providerSessionToken, transactionId, amount, gameId, type, description, reason);
+    /** Queues a failed Operations 2052 {@code credit-transfer} preserving the exact {@code tranid} and session fields. */
+    public void enqueueOperationsTransfer(OperatorRegistry.PlayerRef player,
+                                          ProviderSessionDocument session,
+                                          String tranid,
+                                          BigDecimal betAmount,
+                                          BigDecimal winAmount,
+                                          String gameType,
+                                          int ttype,
+                                          String roundId,
+                                          String ledgerType,
+                                          String description,
+                                          String reason) {
+        BigDecimal totalAmount = ttype == OperationsWalletClient.TTYPE_REFUND
+                ? (betAmount != null ? betAmount : BigDecimal.ZERO)
+                : (winAmount != null ? winAmount : BigDecimal.ZERO);
+        OperatorOutboxDocument doc = baseDoc(
+                Kind.OPERATIONS_TRANSFER, player, tranid, totalAmount, roundId, ledgerType, description, reason);
+        if (session != null) {
+            doc.setProviderSessionToken(session.getSessionToken());
+            doc.setPartnerCode(session.getPartnerCode());
+            doc.setUserId(session.getUserId());
+            doc.setGid(session.getGid());
+        } else {
+            doc.setPartnerCode(player.operatorId());
+        }
+        doc.setBetAmount(betAmount != null ? betAmount : BigDecimal.ZERO);
+        doc.setWinAmount(winAmount != null ? winAmount : BigDecimal.ZERO);
+        doc.setGameType(gameType);
+        doc.setTtype(ttype);
+        doc.setRoundId(roundId);
+        saveEntry(doc);
     }
 
-    private void insertEntry(Kind kind, OperatorRegistry.PlayerRef player, String providerSessionToken,
-                             String transactionId, BigDecimal amount, String gameId, String type,
-                             String description, String reason) {
+    private OperatorOutboxDocument baseDoc(Kind kind, OperatorRegistry.PlayerRef player, String transactionId,
+                                           BigDecimal amount, String gameId, String type, String description, String reason) {
         Instant now = Instant.now();
         OperatorOutboxDocument doc = new OperatorOutboxDocument();
         doc.setId(kind.name() + ":" + transactionId);
@@ -109,23 +132,26 @@ public class OperatorWalletOutbox {
         doc.setGameId(gameId);
         doc.setType(type);
         doc.setDescription(description);
-        doc.setProviderSessionToken(providerSessionToken);
         doc.setStatus(PENDING);
         doc.setNextAttemptAt(now.plusSeconds(2));
         doc.setLastError(reason);
         doc.setCreatedAt(now);
         doc.setUpdatedAt(now);
+        return doc;
+    }
+
+    private void saveEntry(OperatorOutboxDocument doc) {
         if (mongo == null) {
             memory.putIfAbsent(doc.getId(), doc);
         } else {
             try {
                 mongo.insert(doc);
             } catch (DuplicateKeyException ignored) {
-                // Already queued.
+                // Already queued with this tranid.
             }
         }
-        log.warn("[OperatorWallet] Queued {} {} for {} ({} {}): {}", kind, transactionId, player.operatorId(),
-                amount, OperatorWalletClient.CURRENCY, reason);
+        log.warn("[OperatorWallet] Queued {} {} for {} ({} {}): {}", doc.getKind(), doc.getTransactionId(),
+                doc.getOperatorId(), doc.getAmount(), OperatorWalletClient.CURRENCY, doc.getLastError());
     }
 
     public boolean isPending(Kind kind, String transactionId) {
@@ -155,8 +181,8 @@ public class OperatorWalletOutbox {
     }
 
     private boolean deliver(OperatorOutboxDocument doc) {
-        if (Kind.PROVIDER_CREDIT.name().equals(doc.getKind())) {
-            return deliverProviderCredit(doc);
+        if (Kind.OPERATIONS_TRANSFER.name().equals(doc.getKind())) {
+            return deliverOperationsTransfer(doc);
         }
         if (client == null) {
             handleFailure(doc, "OperatorWalletClient not configured");
@@ -184,27 +210,51 @@ public class OperatorWalletOutbox {
         return false;
     }
 
-    private boolean deliverProviderCredit(OperatorOutboxDocument doc) {
+    private boolean deliverOperationsTransfer(OperatorOutboxDocument doc) {
         String error;
-        if (orengProvider == null || !orengProvider.isConfigured()) {
-            error = "Oreng provider SDK not configured";
+        if (operationsClient == null || !operationsClient.isConfigured()) {
+            error = "Operations wallet client not configured";
         } else {
-            String token = doc.getProviderSessionToken();
-            if ((token == null || token.isBlank()) && operatorLaunches != null) {
-                token = operatorLaunches.getSessionTokenForPlayer(doc.getPlayerId()).orElse(null);
-            }
-            if (token == null || token.isBlank()) {
-                error = "Missing provider sessionToken for player " + doc.getPlayerId();
+            ProviderSessionDocument liveSession = operatorLaunches != null
+                    ? operatorLaunches.getProviderSession(doc.getPlayerId()).orElse(null)
+                    : null;
+            String token = nonBlank(doc.getProviderSessionToken(),
+                    liveSession != null ? liveSession.getSessionToken() : null);
+            String partnerCode = nonBlank(doc.getPartnerCode(),
+                    liveSession != null ? liveSession.getPartnerCode() : doc.getOperatorId());
+            String userId = nonBlank(doc.getUserId(),
+                    liveSession != null ? liveSession.getUserId() : null);
+            String gid = nonBlank(doc.getGid(),
+                    liveSession != null ? liveSession.getGid() : null);
+
+            if (token == null && (partnerCode == null || userId == null)) {
+                error = "Missing token and partner_code/user_id for player " + doc.getPlayerId();
             } else {
                 try {
-                    Optional<JsonObject> resp = orengProvider.credit(
-                            token, doc.getAmount(), doc.getTransactionId(), doc.getGameId(), "");
-                    markDone(doc);
-                    resp.flatMap(OrengProviderService::extractBalance)
-                            .ifPresent(bal -> balanceListener.accept(doc.getPlayerId(), bal));
-                    log.info("[OperatorWallet] Delivered queued PROVIDER_CREDIT {} to {}",
-                            doc.getTransactionId(), doc.getOperatorId());
-                    return true;
+                    BigDecimal bet = doc.getBetAmount() != null ? doc.getBetAmount() : BigDecimal.ZERO;
+                    BigDecimal win = doc.getWinAmount() != null ? doc.getWinAmount()
+                            : (doc.getAmount() != null ? doc.getAmount() : BigDecimal.ZERO);
+                    int ttype = doc.getTtype() > 0 ? doc.getTtype() : OperationsWalletClient.TTYPE_PLAY;
+                    String gameType = nonBlank(doc.getGameType(),
+                            ttype == OperationsWalletClient.TTYPE_REFUND
+                                    ? OperationsWalletClient.GAME_TYPE_REFUND
+                                    : OperationsWalletClient.GAME_TYPE_SPIN);
+                    String roundId = nonBlank(doc.getRoundId(), doc.getGameId());
+
+                    OperationsWalletClient.Reply reply = operationsClient.creditTransfer(
+                            new OperationsWalletClient.TransferRequest(
+                                    token, partnerCode, userId, gid, bet, win, gameType,
+                                    doc.getTransactionId(), ttype, roundId));
+                    if (reply.ok()) {
+                        markDone(doc);
+                        if (reply.balance() != null) {
+                            balanceListener.accept(doc.getPlayerId(), reply.balance());
+                        }
+                        log.info("[OperationsWallet] Delivered queued OPERATIONS_TRANSFER tranid={} for {}",
+                                doc.getTransactionId(), partnerCode);
+                        return true;
+                    }
+                    error = "Operations refused transfer (" + reply.errorCode() + "): " + reply.rawMessage();
                 } catch (Exception e) {
                     error = e.getMessage();
                 }
@@ -212,6 +262,13 @@ public class OperatorWalletOutbox {
         }
         handleFailure(doc, error);
         return false;
+    }
+
+    private static String nonBlank(String primary, String fallback) {
+        if (primary != null && !primary.isBlank()) {
+            return primary.trim();
+        }
+        return (fallback != null && !fallback.isBlank()) ? fallback.trim() : null;
     }
 
     private void handleFailure(OperatorOutboxDocument doc, String error) {

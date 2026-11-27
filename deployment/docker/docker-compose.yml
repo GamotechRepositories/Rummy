@@ -79,9 +79,8 @@ services:
       # Both nodes must share one secret or tokens from one node fail on the other.
       RUMMY_JWT_SECRET: ${RUMMY_JWT_SECRET:?set RUMMY_JWT_SECRET (32+ chars) in deployment/docker/.env}
       RUMMY_ADMIN_API_KEY: ${RUMMY_ADMIN_API_KEY:-}
-      PROVIDER_API_URL: ${PROVIDER_API_URL:-https://api.dpbossking.com/api/v1}
-      GAME_SERVER_API_KEY: ${GAME_SERVER_API_KEY:-}
-      GAME_CODE: ${GAME_CODE:-RUMMY}
+      OPERATIONS_API_URL: ${OPERATIONS_API_URL:-https://operations.dpbossking.com}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-}
     depends_on:
       mongo:
         condition: service_healthy
@@ -109,9 +108,8 @@ services:
       RUMMY_KAFKA_ENABLED: "false"
       RUMMY_JWT_SECRET: ${RUMMY_JWT_SECRET:?set RUMMY_JWT_SECRET (32+ chars) in deployment/docker/.env}
       RUMMY_ADMIN_API_KEY: ${RUMMY_ADMIN_API_KEY:-}
-      PROVIDER_API_URL: ${PROVIDER_API_URL:-https://api.dpbossking.com/api/v1}
-      GAME_SERVER_API_KEY: ${GAME_SERVER_API_KEY:-}
-      GAME_CODE: ${GAME_CODE:-RUMMY}
+      OPERATIONS_API_URL: ${OPERATIONS_API_URL:-https://operations.dpbossking.com}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-}
     depends_on:
       mongo:
         condition: service_healthy

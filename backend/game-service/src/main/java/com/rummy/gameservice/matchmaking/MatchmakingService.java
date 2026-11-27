@@ -573,9 +573,9 @@ public class MatchmakingService {
                     BigDecimal.valueOf(ticket.getStakeTier()),
                     "GAME_ENTRY_REFUND",
                     "STAKE_REFUND_" + ticket.getTicketId(),
-                    null,
+                    ticket.getTicketId(),
                     "Entry stake refunded: " + reason,
-                    Map.of("ticketId", ticket.getTicketId(), "reason", reason)
+                    Map.of("ticketId", ticket.getTicketId(), "escrowId", key, "reason", reason)
             );
         } catch (Exception e) {
             if (escrows != null) {

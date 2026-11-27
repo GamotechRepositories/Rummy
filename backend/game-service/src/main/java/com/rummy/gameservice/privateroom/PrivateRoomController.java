@@ -1,5 +1,7 @@
 package com.rummy.gameservice.privateroom;
 
+import com.rummy.gameservice.operator.OperatorController;
+import com.rummy.gameservice.operator.OperatorLaunchService;
 import com.rummy.gameservice.operator.OperatorWalletException;
 import com.rummy.gameservice.security.AuthenticatedPlayer;
 import com.rummy.gameservice.security.VariantAccessPolicy;
@@ -22,6 +24,12 @@ public class PrivateRoomController {
 
     private final PrivateRoomService roomService;
     private final VariantAccessPolicy variantPolicy;
+    private OperatorLaunchService operatorLaunches;
+
+    @Autowired(required = false)
+    public void setOperatorLaunches(OperatorLaunchService operatorLaunches) {
+        this.operatorLaunches = operatorLaunches;
+    }
 
     public PrivateRoomController(PrivateRoomService roomService) {
         this(roomService, null);
@@ -37,29 +45,33 @@ public class PrivateRoomController {
 
     @PostMapping("/create")
     public ResponseEntity<?> create(HttpServletRequest request, @RequestBody Map<String, Object> body) {
-        try {
-            String reqPlayerId = body.get("playerId") != null ? String.valueOf(body.get("playerId")) : null;
-            String playerId = AuthenticatedPlayer.resolve(request, reqPlayerId);
-            String displayName = body.get("displayName") != null ? String.valueOf(body.get("displayName")) : playerId;
-            String rulesetId = body.get("rulesetId") != null ? String.valueOf(body.get("rulesetId")) : "POINTS_13";
-            if (variantPolicy != null && !variantPolicy.isRulesetAllowed(request, rulesetId)) {
-                return forbiddenVariant("This game variant is not enabled on this frontend.");
-            }
-            int maxPlayers = body.get("maxPlayers") != null ? ((Number) body.get("maxPlayers")).intValue() : 6;
-            int stakeTier = body.get("stakeTier") != null ? ((Number) body.get("stakeTier")).intValue() : 0;
+            String playerId = null;
+            try {
+                String reqPlayerId = body.get("playerId") != null ? String.valueOf(body.get("playerId")) : null;
+                playerId = AuthenticatedPlayer.resolve(request, reqPlayerId);
+                String displayName = body.get("displayName") != null ? String.valueOf(body.get("displayName")) : playerId;
+                String rulesetId = body.get("rulesetId") != null ? String.valueOf(body.get("rulesetId")) : "POINTS_13";
+                if (variantPolicy != null && !variantPolicy.isRulesetAllowed(request, rulesetId)) {
+                    return forbiddenVariant("This game variant is not enabled on this frontend.");
+                }
+                int maxPlayers = body.get("maxPlayers") != null ? ((Number) body.get("maxPlayers")).intValue() : 6;
+                int stakeTier = body.get("stakeTier") != null ? ((Number) body.get("stakeTier")).intValue() : 0;
 
-            return ResponseEntity.ok(roomService.createRoom(playerId, displayName, rulesetId, maxPlayers, stakeTier));
-        } catch (InsufficientBalanceException e) {
-            return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED).body(Map.of(
-                    "success", false,
-                    "error", "INSUFFICIENT_BALANCE",
-                    "message", "Insufficient wallet balance for this room's entry/buy-in."
-            ));
-        } catch (OperatorWalletException e) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("success", false, "message", e.getMessage()));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
+                return ResponseEntity.ok(roomService.createRoom(playerId, displayName, rulesetId, maxPlayers, stakeTier));
+            } catch (InsufficientBalanceException e) {
+                return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED).body(Map.of(
+                        "success", false,
+                        "error", "INSUFFICIENT_BALANCE",
+                        "message", "Insufficient wallet balance for this room's entry/buy-in."
+                ));
+            } catch (OperatorWalletException e) {
+                if (e.isSessionInvalid()) {
+                    return OperatorController.sessionInvalidResponse(operatorLaunches, playerId, e);
+                }
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("success", false, "message", e.getMessage()));
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+            }
     }
 
     @PostMapping("/join/{roomCode}")
@@ -67,9 +79,10 @@ public class PrivateRoomController {
             HttpServletRequest request,
             @PathVariable String roomCode,
             @RequestBody(required = false) Map<String, Object> body) {
+        String playerId = null;
         try {
             String reqPlayerId = (body != null && body.get("playerId") != null) ? String.valueOf(body.get("playerId")) : null;
-            String playerId = AuthenticatedPlayer.resolve(request, reqPlayerId);
+            playerId = AuthenticatedPlayer.resolve(request, reqPlayerId);
             String displayName = (body != null && body.get("displayName") != null) ? String.valueOf(body.get("displayName")) : playerId;
             java.util.List<String> requested = null;
             if (body != null && body.get("allowedRulesets") instanceof java.util.Collection<?> rawList) {
@@ -96,6 +109,9 @@ public class PrivateRoomController {
                     "message", "Insufficient wallet balance to join this private room."
             ));
         } catch (OperatorWalletException e) {
+            if (e.isSessionInvalid()) {
+                return OperatorController.sessionInvalidResponse(operatorLaunches, playerId, e);
+            }
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("success", false, "message", e.getMessage()));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));

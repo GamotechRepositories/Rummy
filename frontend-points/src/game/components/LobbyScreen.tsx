@@ -25,13 +25,14 @@ import {
   Maximize2,
   Minimize2,
   Home,
+  LogOut,
 } from 'lucide-react';
 import { SoundToggle } from './SoundToggle';
 import { FullscreenToggle, toggleFullscreen } from './FullscreenToggle';
 import { LandscapeGate, useLandscapeGate } from './LandscapeGate';
 import { soundEngine } from '../audio/soundEngine';
 import { getApiBaseUrl } from '../utils/apiConfig';
-import { authFetch } from '../utils/authClient';
+import { authFetch, exitToOperatorLobby, formatCurrencySymbol } from '../utils/authClient';
 import { tryLockLandscape } from '../hooks/useRequiresLandscape';
 import { preloadTableShell } from '../utils/preloadTableShell';
 import { LOBBY_VARIANT_ART } from '../utils/preloadLobbyArt';
@@ -150,6 +151,10 @@ export const LobbyScreen: React.FC = () => {
     setLastGameConfig,
     walletBalance,
     setWalletBalance,
+    currency,
+    closeUrl,
+    setLaunchMeta,
+    setSessionInvalidInfo,
   } = useGameStore();
 
   const [localName, setLocalName] = useState(displayName);
@@ -270,11 +275,23 @@ export const LobbyScreen: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         setWalletBalance(Number(data.balance ?? 0));
+        setLaunchMeta({
+          currency: data.currency,
+          lang: data.lang,
+          closeUrl: data.closeUrl,
+        });
+        if (data.sessionInvalid) {
+          setSessionInvalidInfo({
+            message: 'Your game session has expired. Please return to the lobby and launch again.',
+            errorCode: data.sessionErrorCode,
+            closeUrl: data.closeUrl,
+          });
+        }
       }
     } catch {
       // Backend offline fallback
     }
-  }, [playerId]);
+  }, [playerId, setLaunchMeta, setSessionInvalidInfo, setWalletBalance]);
 
   useEffect(() => {
     fetchBalance();
@@ -551,8 +568,24 @@ export const LobbyScreen: React.FC = () => {
         <div className="lobby-top-actions">
           <div className="lobby-balance" title="Available Balance">
             <Coins size={14} />
-            <span>₹ {(walletBalance ?? 0).toLocaleString()}</span>
+            <span>{formatCurrencySymbol(currency)} {(walletBalance ?? 0).toLocaleString()}</span>
           </div>
+
+          {closeUrl && (
+            <button
+              type="button"
+              id="btn-lobby-exit"
+              className="lobby-icon-btn"
+              title="Exit to Lobby"
+              aria-label="Exit to Lobby"
+              onClick={() => {
+                soundEngine.play('click');
+                exitToOperatorLobby(closeUrl);
+              }}
+            >
+              <LogOut size={18} strokeWidth={2.2} />
+            </button>
+          )}
 
           <FullscreenToggle
             id="btn-lobby-fullscreen"
@@ -1449,6 +1482,21 @@ export const LobbyScreen: React.FC = () => {
                 <span>Fullscreen</span>
                 <span className="lobby-drawer-pill">{isFullscreen ? 'On' : 'Off'}</span>
               </button>
+
+              {closeUrl && (
+                <button
+                  type="button"
+                  id="btn-menu-exit"
+                  className="lobby-drawer-item"
+                  onClick={() => {
+                    soundEngine.play('click');
+                    exitToOperatorLobby(closeUrl);
+                  }}
+                >
+                  <LogOut size={16} />
+                  <span>Exit to Lobby</span>
+                </button>
+              )}
             </div>
           </aside>
         </div>

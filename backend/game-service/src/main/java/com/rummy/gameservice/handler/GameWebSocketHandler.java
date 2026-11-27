@@ -336,8 +336,10 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     sendError(session, "FORBIDDEN", "Clients cannot seat bots", reqId);
                     return;
                 }
-                String name = data != null && data.has("displayName") ? data.get("displayName").asText() : playerId;
-                String avatarId = data != null && data.has("avatarId") && !data.get("avatarId").isNull() ? data.get("avatarId").asText() : null;
+                String rawName = data != null && data.has("displayName") ? data.get("displayName").asText() : playerId;
+                String name = com.rummy.gameservice.security.PlayerNames.sanitize(rawName);
+                String rawAvatarId = data != null && data.has("avatarId") && !data.get("avatarId").isNull() ? data.get("avatarId").asText() : null;
+                String avatarId = sanitizeAvatarId(rawAvatarId);
                 int seat = data != null && data.has("seatIndex") ? data.get("seatIndex").asInt() : 0;
                 boolean isBot = false;
                 String targetPlayerId = playerId;
@@ -450,8 +452,13 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     sendError(session, "MISSING_FINISH_CARD", "finishCardInstanceId is required for DECLARE", reqId);
                     return;
                 }
+                Optional<PlayerState> declaringPlayer = tableActor.getState().getPlayer(playerId);
+                if (declaringPlayer.isEmpty()) {
+                    sendError(session, "FORBIDDEN", "You are not seated at this table", reqId);
+                    return;
+                }
                 String finishId = data.get("finishCardInstanceId").asText();
-                List<CardGroup> groups = parseCardGroups(data.get("groups"), tableActor.getState().requirePlayer(playerId).getHandSnapshot());
+                List<CardGroup> groups = parseCardGroups(data.get("groups"), declaringPlayer.get().getHandSnapshot());
                 DeclareCommand cmd = new DeclareCommand(reqId, gameId, playerId, finishId, groups, now);
                 tableActor.processCommand(cmd, reqId);
             }
@@ -472,7 +479,12 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     sendError(session, "MISSING_GROUPS", "groups are required for SUBMIT_MELD", reqId);
                     return;
                 }
-                List<CardGroup> groups = parseCardGroups(data.get("groups"), tableActor.getState().requirePlayer(playerId).getHandSnapshot());
+                Optional<PlayerState> meldingPlayer = tableActor.getState().getPlayer(playerId);
+                if (meldingPlayer.isEmpty()) {
+                    sendError(session, "FORBIDDEN", "You are not seated at this table", reqId);
+                    return;
+                }
+                List<CardGroup> groups = parseCardGroups(data.get("groups"), meldingPlayer.get().getHandSnapshot());
                 SubmitMeldCommand cmd = new SubmitMeldCommand(reqId, gameId, playerId, groups, now);
                 tableActor.processCommand(cmd, reqId);
             }
@@ -601,5 +613,16 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             }
         }
         return result;
+    }
+
+    private static String sanitizeAvatarId(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String cleaned = raw.trim();
+        if (cleaned.length() > 64 || !cleaned.matches("^[A-Za-z0-9_/-]{1,64}$")) {
+            return null;
+        }
+        return cleaned;
     }
 }

@@ -1,12 +1,12 @@
 package com.rummy.gameservice.wallet;
 
-import com.google.gson.JsonObject;
 import com.mongodb.MongoException;
-import in.oreng.gamesdk.ProviderSDKException;
+import com.rummy.gameservice.operator.OperationsWalletClient;
 import com.rummy.gameservice.operator.OperatorRegistry;
 import com.rummy.gameservice.operator.OperatorWalletClient;
 import com.rummy.gameservice.operator.OperatorWalletException;
 import com.rummy.gameservice.operator.OperatorWalletOutbox;
+import com.rummy.gameservice.operator.ProviderSessionDocument;
 import com.rummy.gameservice.persistence.document.WalletAccountDocument;
 import com.rummy.gameservice.persistence.document.WalletTransactionDocument;
 import com.rummy.gameservice.persistence.repository.WalletAccountRepository;
@@ -65,7 +65,7 @@ public class WalletService {
     private com.rummy.gameservice.matchmaking.BotBudgetService botBudgetService;
 
     @Autowired(required = false)
-    private com.rummy.gameservice.operator.OrengProviderService orengProvider;
+    private OperationsWalletClient operationsClient;
 
     @Autowired(required = false)
     private com.rummy.gameservice.operator.OperatorLaunchService operatorLaunches;
@@ -110,8 +110,8 @@ public class WalletService {
     }
 
     @Autowired(required = false)
-    public void setOrengProvider(com.rummy.gameservice.operator.OrengProviderService orengProvider) {
-        this.orengProvider = orengProvider;
+    public void setOperationsClient(OperationsWalletClient operationsClient) {
+        this.operationsClient = operationsClient;
     }
 
     @Autowired(required = false)
@@ -135,25 +135,90 @@ public class WalletService {
     }
 
     private Optional<OperatorRegistry.PlayerRef> operatorPlayer(String playerId) {
-        boolean hasWalletGateway = operatorWallet != null || (orengProvider != null && orengProvider.isConfigured());
+        boolean hasWalletGateway = operatorWallet != null
+                || (operationsClient != null && operationsClient.isConfigured());
         return operators != null && hasWalletGateway ? operators.player(playerId) : Optional.empty();
     }
 
+    public record BalanceSnapshot(
+            BigDecimal balance,
+            String currency,
+            String lang,
+            String closeUrl,
+            boolean sessionInvalid,
+            String sessionErrorCode
+    ) {}
+
     /**
-     * The player's spendable INR balance: live from the operator for operator players (falling back to
-     * the last known balance if the operator cannot be reached), else this platform's ledger balance.
+     * Fetches the player's spendable balance together with Operations session state (invalid token / close_url).
      */
-    public BigDecimal balanceOf(String playerId) {
-        if (orengProvider != null && orengProvider.isConfigured() && operatorLaunches != null) {
-            Optional<String> stOpt = operatorLaunches.getSessionTokenForPlayer(playerId);
-            if (stOpt.isPresent()) {
-                Optional<BigDecimal> bOpt = orengProvider.getBalance(stOpt.get());
-                if (bOpt.isPresent()) {
-                    recordOperatorBalance(playerId, bOpt.get());
-                    return bOpt.get();
+    public BalanceSnapshot fetchBalanceSnapshot(String playerId) {
+        String currency = WalletAccountDocument.CURRENCY;
+        String lang = "en";
+        String closeUrl = null;
+        if (operatorLaunches != null) {
+            Optional<ProviderSessionDocument> sessionOpt = operatorLaunches.getProviderSession(playerId);
+            if (sessionOpt.isPresent()) {
+                ProviderSessionDocument s = sessionOpt.get();
+                if (s.getCurrency() != null && !s.getCurrency().isBlank()) {
+                    currency = s.getCurrency();
+                }
+                if (s.getLang() != null && !s.getLang().isBlank()) {
+                    lang = s.getLang();
+                }
+                closeUrl = s.getCloseUrl();
+                if (operationsClient != null && operationsClient.isConfigured()) {
+                    try {
+                        OperationsWalletClient.Reply reply = operationsClient.getBalance(s.getSessionToken(), s.getPartnerCode());
+                        if (reply.ok() && reply.balance() != null) {
+                            recordOperatorBalance(playerId, reply.balance());
+                            return new BalanceSnapshot(reply.balance(), currency, lang, closeUrl, false, null);
+                        }
+                        if (reply.sessionInvalid()) {
+                            log.warn("[Wallet] Operations session invalid for {}: {} ({})",
+                                    playerId, reply.errorCode(), reply.rawMessage());
+                            BigDecimal fallback = getOrCreateWallet(playerId).getBalance();
+                            return new BalanceSnapshot(fallback, currency, lang, closeUrl, true, reply.errorCode());
+                        }
+                        log.warn("[Wallet] Operations balance returned status=false for {}: {}",
+                                playerId, reply.rawMessage());
+                    } catch (OperatorWalletException e) {
+                        log.warn("[Wallet] Balance from Operations unavailable for {}: {}", playerId, e.getMessage());
+                        if (e.isSessionInvalid()) {
+                            BigDecimal fallback = getOrCreateWallet(playerId).getBalance();
+                            return new BalanceSnapshot(fallback, currency, lang, closeUrl, true, e.getErrorCode());
+                        }
+                    }
                 }
             }
         }
+        return new BalanceSnapshot(balanceOfDirectOrLedger(playerId), currency, lang, closeUrl, false, null);
+    }
+
+    /**
+     * The player's spendable balance: authoritative from Operations (2051) or the direct operator,
+     * falling back to the last known balance if unavailable, else this platform's ledger balance.
+     */
+    public BigDecimal balanceOf(String playerId) {
+        if (operationsClient != null && operationsClient.isConfigured() && operatorLaunches != null) {
+            Optional<ProviderSessionDocument> sessionOpt = operatorLaunches.getProviderSession(playerId);
+            if (sessionOpt.isPresent()) {
+                ProviderSessionDocument s = sessionOpt.get();
+                try {
+                    OperationsWalletClient.Reply reply = operationsClient.getBalance(s.getSessionToken(), s.getPartnerCode());
+                    if (reply.ok() && reply.balance() != null) {
+                        recordOperatorBalance(playerId, reply.balance());
+                        return reply.balance();
+                    }
+                } catch (OperatorWalletException e) {
+                    log.warn("[Wallet] Operations balance unavailable for {}: {}", playerId, e.getMessage());
+                }
+            }
+        }
+        return balanceOfDirectOrLedger(playerId);
+    }
+
+    private BigDecimal balanceOfDirectOrLedger(String playerId) {
         Optional<OperatorRegistry.PlayerRef> player = operatorPlayer(playerId);
         if (player.isPresent() && operatorWallet != null) {
             try {
@@ -404,13 +469,15 @@ public class WalletService {
         account.syncTotalBalance();
     }
 
-    private static boolean isInsufficientProviderFunds(ProviderSDKException e) {
-        if (Integer.valueOf(402).equals(e.getStatus())) {
-            return true;
-        }
-        String msg = e.getMessage();
-        return msg != null && msg.toLowerCase(Locale.ROOT).contains("insufficient");
-    }
+    private static final Set<String> ABORT_REFUND_TYPES = Set.of(
+            "GAME_ABORT_REFUND",
+            "GAME_CRASH_REFUND",
+            "GAME_ENTRY_REFUND",
+            "REJOIN_REFUND",
+            "PRIVATE_ROOM_REFUND",
+            "TOURNAMENT_REFUND",
+            "ROLLBACK"
+    );
 
     private static InsufficientBalanceException insufficientBalance(String playerId, BigDecimal balance, BigDecimal required) {
         return new InsufficientBalanceException("Insufficient balance for player " + playerId
@@ -418,10 +485,14 @@ public class WalletService {
     }
 
     /**
-     * Debits or credits an operator player through the operator's wallet, then mirrors it in our ledger.
-     * A debit is final only once the operator confirms it; one whose outcome is unknown is rolled back
-     * (queued) and refused here. A credit the operator cannot take right now is queued and retried with
-     * the same transaction id until it lands, so winnings and refunds are never lost.
+     * Debits or credits an operator / Operations player through the configured wallet API, then mirrors it in our ledger.
+     * For Operations (2052 {@code /api/v1/wallet/credit-transfer}):
+     * <ul>
+     *   <li>Stakes/debits send {@code ttype=1, game_type="spin", bet=amount, win=0} with retry on transient ERR-0020/0021.</li>
+     *   <li>Wins/partial points refunds send {@code ttype=1, bet=0, win=amount}.</li>
+     *   <li>Aborted/crashed/cancelled refunds send {@code ttype=2, game_type="refund", bet=amount, win=0}.</li>
+     *   <li>Failed credits/refunds are queued in {@link OperatorWalletOutbox} with the exact same {@code tranid}.</li>
+     * </ul>
      */
     private WalletTransactionDocument applyOperatorChange(OperatorRegistry.PlayerRef player, BigDecimal delta, String type,
                                                           String key, String gameId, String description,
@@ -432,48 +503,10 @@ public class WalletService {
         }
         BigDecimal amount = delta.abs();
 
-        if (orengProvider != null && orengProvider.isConfigured() && operatorLaunches != null) {
-            Optional<String> stOpt = operatorLaunches.getSessionTokenForPlayer(player.playerId());
-            if (stOpt.isPresent()) {
-                String sessionToken = stOpt.get();
-                if (delta.signum() < 0) {
-                    Optional<JsonObject> resp;
-                    try {
-                        resp = orengProvider.debit(sessionToken, amount, key, gameId, "");
-                    } catch (ProviderSDKException e) {
-                        log.warn("[Wallet] Oreng debit failed: {} (status={})", e.getMessage(), e.getStatus());
-                        if (isInsufficientProviderFunds(e)) {
-                            BigDecimal known = getOrCreateWallet(player.playerId()).getBalance();
-                            throw insufficientBalance(player.playerId(), known, amount);
-                        }
-                        throw new OperatorWalletException("Wallet debit refused: " + e.getMessage(), false);
-                    } catch (Exception e) {
-                        log.warn("[Wallet] Oreng debit failed: {}", e.getMessage());
-                        throw new OperatorWalletException("Wallet debit refused: " + e.getMessage(), false);
-                    }
-                    BigDecimal bal = resp.flatMap(com.rummy.gameservice.operator.OrengProviderService::extractBalance).orElse(null);
-                    if (bal != null) {
-                        recordOperatorBalance(player.playerId(), bal);
-                    }
-                    return recordOperatorTransaction(player, delta, type, key, gameId, description, meta,
-                            new OperatorWalletClient.Reply(OperatorWalletClient.Status.OK, bal));
-                } else {
-                    try {
-                        Optional<JsonObject> resp = orengProvider.credit(sessionToken, amount, key, gameId, "");
-                        BigDecimal bal = resp.flatMap(com.rummy.gameservice.operator.OrengProviderService::extractBalance).orElse(null);
-                        if (bal != null) {
-                            recordOperatorBalance(player.playerId(), bal);
-                        }
-                        return recordOperatorTransaction(player, delta, type, key, gameId, description, meta,
-                                new OperatorWalletClient.Reply(OperatorWalletClient.Status.OK, bal));
-                    } catch (Exception e) {
-                        log.warn("[Wallet] Oreng credit failed for txId={} — queuing in outbox: {}", key, e.getMessage());
-                        if (outbox != null) {
-                            outbox.enqueueProviderCredit(player, sessionToken, key, amount, gameId, type, description, e.getMessage());
-                        }
-                        return recordOperatorTransaction(player, delta, type, key, gameId, description, meta, null);
-                    }
-                }
+        if (operationsClient != null && operationsClient.isConfigured() && operatorLaunches != null) {
+            Optional<ProviderSessionDocument> sessionOpt = operatorLaunches.getProviderSession(player.playerId());
+            if (sessionOpt.isPresent()) {
+                return applyOperationsChange(player, sessionOpt.get(), delta, amount, type, key, gameId, description, meta);
             }
         }
 
@@ -579,8 +612,133 @@ public class WalletService {
                 WalletAccountDocument.CURRENCY, description, meta);
     }
 
+    private WalletTransactionDocument applyOperationsChange(OperatorRegistry.PlayerRef player,
+                                                              ProviderSessionDocument session,
+                                                              BigDecimal delta,
+                                                              BigDecimal amount,
+                                                              String type,
+                                                              String key,
+                                                              String gameId,
+                                                              String description,
+                                                              Map<String, Object> meta) {
+        if (delta.signum() < 0) {
+            String roundId = resolveRoundId(gameId, key, meta);
+            OperationsWalletClient.Reply reply;
+            try {
+                reply = operationsClient.creditTransfer(new OperationsWalletClient.TransferRequest(
+                        session.getSessionToken(),
+                        session.getPartnerCode(),
+                        session.getUserId(),
+                        session.getGid(),
+                        amount,
+                        BigDecimal.ZERO,
+                        OperationsWalletClient.GAME_TYPE_SPIN,
+                        key,
+                        OperationsWalletClient.TTYPE_PLAY,
+                        roundId
+                ));
+            } catch (OperatorWalletException e) {
+                if (e.isUncertain()) {
+                    log.error("[OperationsWallet] RECONCILE: debit tranid={} (roundId={}) remained uncertain after retries: {}",
+                            key, roundId, e.getMessage());
+                }
+                throw e;
+            }
+            if (!reply.ok()) {
+                if (reply.insufficientFunds()) {
+                    BigDecimal known = getOrCreateWallet(player.playerId()).getBalance();
+                    throw insufficientBalance(player.playerId(), known, amount);
+                }
+                String msg = reply.rawMessage() != null ? reply.rawMessage() : "Operations refused bet";
+                throw new OperatorWalletException(msg, false, reply.sessionInvalid(), reply.errorCode());
+            }
+            if (reply.balance() != null) {
+                recordOperatorBalance(player.playerId(), reply.balance());
+            }
+            Map<String, Object> debitMeta = new HashMap<>(meta != null ? meta : Map.of());
+            debitMeta.put("debitRoundId", roundId);
+            return recordOperatorTransaction(player, delta, type, key, gameId, description, debitMeta,
+                    new OperatorWalletClient.Reply(OperatorWalletClient.Status.OK, reply.balance()));
+        }
+
+        boolean isAbortRefund = type != null && ABORT_REFUND_TYPES.contains(type.toUpperCase(Locale.ROOT));
+        int ttype = isAbortRefund ? OperationsWalletClient.TTYPE_REFUND : OperationsWalletClient.TTYPE_PLAY;
+        String gameType = isAbortRefund
+                ? OperationsWalletClient.GAME_TYPE_REFUND
+                : ("TOURNAMENT_PRIZE".equalsIgnoreCase(type)
+                    ? OperationsWalletClient.GAME_TYPE_BONUS
+                    : OperationsWalletClient.GAME_TYPE_SPIN);
+        BigDecimal bet = isAbortRefund ? amount : BigDecimal.ZERO;
+        BigDecimal win = isAbortRefund ? BigDecimal.ZERO : amount;
+        String roundId = isAbortRefund
+                ? resolveRefundRoundId(gameId, key, meta)
+                : resolveRoundId(gameId, key, meta);
+
+        try {
+            OperationsWalletClient.Reply reply = operationsClient.creditTransfer(new OperationsWalletClient.TransferRequest(
+                    session.getSessionToken(),
+                    session.getPartnerCode(),
+                    session.getUserId(),
+                    session.getGid(),
+                    bet,
+                    win,
+                    gameType,
+                    key,
+                    ttype,
+                    roundId
+            ));
+            if (reply.ok()) {
+                if (reply.balance() != null) {
+                    recordOperatorBalance(player.playerId(), reply.balance());
+                }
+                return recordOperatorTransaction(player, delta, type, key, gameId, description, meta,
+                        new OperatorWalletClient.Reply(OperatorWalletClient.Status.OK, reply.balance()));
+            }
+            String refuseReason = "Operations returned status=false (" + reply.errorCode() + "): " + reply.rawMessage();
+            log.warn("[OperationsWallet] Transfer tranid={} failed — queuing in outbox: {}", key, refuseReason);
+            if (outbox != null) {
+                outbox.enqueueOperationsTransfer(
+                        player, session, key, bet, win, gameType, ttype, roundId, type, description, refuseReason);
+            }
+            return recordOperatorTransaction(player, delta, type, key, gameId, description, meta, null);
+        } catch (Exception e) {
+            log.warn("[OperationsWallet] Transfer tranid={} error — queuing in outbox: {}", key, e.getMessage());
+            if (outbox != null) {
+                outbox.enqueueOperationsTransfer(
+                        player, session, key, bet, win, gameType, ttype, roundId, type, description, e.getMessage());
+            }
+            return recordOperatorTransaction(player, delta, type, key, gameId, description, meta, null);
+        }
+    }
+
+    private String resolveRoundId(String gameId, String key, Map<String, Object> meta) {
+        if (gameId != null && !gameId.isBlank()) {
+            return gameId;
+        }
+        if (meta != null && meta.get("ticketId") != null) {
+            String t = String.valueOf(meta.get("ticketId")).trim();
+            if (!t.isEmpty()) return t;
+        }
+        return key;
+    }
+
+    private String resolveRefundRoundId(String gameId, String key, Map<String, Object> meta) {
+        if (meta != null && meta.get("escrowId") != null) {
+            Optional<WalletTransactionDocument> orig = findTransaction(String.valueOf(meta.get("escrowId")));
+            if (orig.isPresent()) {
+                if (orig.get().getMetadata() != null && orig.get().getMetadata().get("debitRoundId") != null) {
+                    return String.valueOf(orig.get().getMetadata().get("debitRoundId"));
+                }
+                if (orig.get().getGameId() != null && !orig.get().getGameId().isBlank()) {
+                    return orig.get().getGameId();
+                }
+            }
+        }
+        return resolveRoundId(gameId, key, meta);
+    }
+
     /** Updates the last known operator balance of a player (best effort). */
-    private void recordOperatorBalance(String playerId, BigDecimal balance) {
+    public void recordOperatorBalance(String playerId, BigDecimal balance) {
         if (!isPersistent()) {
             memoryAccounts.computeIfAbsent(playerId, WalletAccountDocument::new).setBalance(balance);
             return;

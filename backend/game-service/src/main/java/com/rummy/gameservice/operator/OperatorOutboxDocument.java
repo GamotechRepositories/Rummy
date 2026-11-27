@@ -8,7 +8,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-/** An operator wallet call that must eventually succeed: a credit that failed, or the rollback of an uncertain debit. */
+/** An operator / operations wallet call that must eventually succeed: a credit/refund transfer or a rollback. */
 @Document(collection = "operator_wallet_outbox")
 @CompoundIndex(name = "status_due_idx", def = "{'status': 1, 'nextAttemptAt': 1}")
 public class OperatorOutboxDocument {
@@ -25,6 +25,14 @@ public class OperatorOutboxDocument {
     private String type;
     private String description;
     private String providerSessionToken;
+    private String partnerCode;
+    private String userId;
+    private String gid;
+    private BigDecimal betAmount;
+    private BigDecimal winAmount;
+    private String gameType;
+    private int ttype;
+    private String roundId;
     private String status;
     private int attempts;
     private Instant nextAttemptAt;
@@ -56,6 +64,22 @@ public class OperatorOutboxDocument {
     public void setDescription(String description) { this.description = description; }
     public String getProviderSessionToken() { return providerSessionToken; }
     public void setProviderSessionToken(String providerSessionToken) { this.providerSessionToken = providerSessionToken; }
+    public String getPartnerCode() { return partnerCode; }
+    public void setPartnerCode(String partnerCode) { this.partnerCode = partnerCode; }
+    public String getUserId() { return userId; }
+    public void setUserId(String userId) { this.userId = userId; }
+    public String getGid() { return gid; }
+    public void setGid(String gid) { this.gid = gid; }
+    public BigDecimal getBetAmount() { return betAmount; }
+    public void setBetAmount(BigDecimal betAmount) { this.betAmount = betAmount; }
+    public BigDecimal getWinAmount() { return winAmount; }
+    public void setWinAmount(BigDecimal winAmount) { this.winAmount = winAmount; }
+    public String getGameType() { return gameType; }
+    public void setGameType(String gameType) { this.gameType = gameType; }
+    public int getTtype() { return ttype; }
+    public void setTtype(int ttype) { this.ttype = ttype; }
+    public String getRoundId() { return roundId; }
+    public void setRoundId(String roundId) { this.roundId = roundId; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public int getAttempts() { return attempts; }

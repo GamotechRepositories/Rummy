@@ -12,3 +12,4 @@ data:
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
   MATCHMAKING_AI_FALLBACK_MS: "4000"
   MATCHMAKING_MAX_QUEUE_MS: "25000"
+  OPERATIONS_API_URL: "https://operations.dpbossking.com"

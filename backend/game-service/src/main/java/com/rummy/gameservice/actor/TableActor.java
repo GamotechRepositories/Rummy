@@ -1648,7 +1648,12 @@ public final class TableActor {
                     escrows.discard(feeKey);
                 }
                 log.warn("[TableActor:{}] Failed to deduct rejoin fee for {}: {}", tableId, playerId, e.getMessage());
-                sendErrorToPlayer(playerId, "INSUFFICIENT_FUNDS", "Failed to debit rejoin fee: " + e.getMessage(), requestId);
+                if (e instanceof com.rummy.gameservice.operator.OperatorWalletException owe && owe.isSessionInvalid()) {
+                    sendErrorToPlayer(playerId, "SESSION_INVALID",
+                            "Your game session has expired. Please return to the lobby and launch the game again.", requestId);
+                } else {
+                    sendErrorToPlayer(playerId, "INSUFFICIENT_FUNDS", "Failed to debit rejoin fee: " + e.getMessage(), requestId);
+                }
                 return false;
             }
             rejoinFeesCharged.put(playerId, feeNumber);

@@ -2,7 +2,16 @@ import { useGameStore } from '../store/useGameStore';
 import type { CardInstance, PlayerGameView, WsClientMessage, WsServerMessage } from '../types/game';
 import { soundEngine } from '../audio/soundEngine';
 import { getWsBaseUrl, getApiBaseUrl } from '../utils/apiConfig';
-import { ensureAuthToken, getAuthToken, authFetch } from '../utils/authClient';
+import {
+  ensureAuthToken,
+  getAuthToken,
+  authFetch,
+  clearAuthToken,
+  getCloseUrl,
+  sanitizeHttpUrl,
+  SESSION_INVALID_EVENT,
+  type SessionInvalidDetail,
+} from '../utils/authClient';
 import { clearActiveSessionRemote } from '../utils/sessionResume';
 
 class GameSocketClient {
@@ -224,11 +233,23 @@ class GameSocketClient {
           useGameStore.getState().setGameSettlement(msg.payload as any);
           const pid = useGameStore.getState().playerId;
           if (pid) {
-            void authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${pid}`)
+            void authFetch(`${getApiBaseUrl()}/api/wallet/balance?playerId=${encodeURIComponent(pid)}`)
               .then((res) => (res.ok ? res.json() : null))
               .then((data) => {
                 if (data && data.balance != null) {
                   useGameStore.getState().setWalletBalance(Number(data.balance));
+                }
+                if (data && data.sessionInvalid) {
+                  const closeUrl = sanitizeHttpUrl(data.closeUrl) ?? getCloseUrl();
+                  const detail: SessionInvalidDetail = {
+                    message: 'Your game session has expired. Please return to the lobby and launch the game again.',
+                    errorCode: typeof data.sessionErrorCode === 'string' ? data.sessionErrorCode : undefined,
+                    closeUrl,
+                  };
+                  useGameStore.getState().setSessionInvalidInfo(detail);
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent<SessionInvalidDetail>(SESSION_INVALID_EVENT, { detail }));
+                  }
                 }
               })
               .catch(() => {});
@@ -293,6 +314,25 @@ class GameSocketClient {
           (msg.payload as { errorCode?: string }).errorCode === 'TABLE_RECOVERING'
         ) {
           this.scheduleRecoveryJoin();
+          break;
+        }
+        if (
+          msg.payload &&
+          typeof msg.payload === 'object' &&
+          (msg.payload as { errorCode?: string }).errorCode === 'SESSION_INVALID'
+        ) {
+          const err = msg.payload as { message?: string };
+          const detail: SessionInvalidDetail = {
+            message: err.message || 'Your game session has expired. Please return to the lobby and launch the game again.',
+            errorCode: 'SESSION_INVALID',
+            closeUrl: getCloseUrl(),
+          };
+          clearAuthToken();
+          useGameStore.getState().setSessionInvalidInfo(detail);
+          soundEngine.play('error');
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent<SessionInvalidDetail>(SESSION_INVALID_EVENT, { detail }));
+          }
           break;
         }
         if (msg.payload && typeof msg.payload === 'object' && 'message' in msg.payload) {

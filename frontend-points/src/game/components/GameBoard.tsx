@@ -16,7 +16,7 @@ import { PoolScoreboardModal } from './PoolScoreboardModal';
 import { useLandscapeGate } from './LandscapeGate';
 import { useModalScroll } from '../hooks/useModalScroll';
 import { photoForCharacter } from '../utils/avatarUtils';
-import { authFetch } from '../utils/authClient';
+import { authFetch, formatCurrencySymbol } from '../utils/authClient';
 import { getApiBaseUrl } from '../utils/apiConfig';
 
 function formatCompactRs(amount: number): string {
@@ -63,6 +63,9 @@ export const GameBoard: React.FC = () => {
     avatarId,
     walletBalance,
     setWalletBalance,
+    currency,
+    setLaunchMeta,
+    setSessionInvalidInfo,
     playerId,
   } = useGameStore();
 
@@ -76,8 +79,22 @@ export const GameBoard: React.FC = () => {
         );
         if (!res.ok || cancelled) return;
         const data = await res.json();
-        if (!cancelled && data && data.balance != null) {
-          setWalletBalance(Number(data.balance));
+        if (!cancelled && data) {
+          if (data.balance != null) {
+            setWalletBalance(Number(data.balance));
+          }
+          setLaunchMeta({
+            currency: data.currency,
+            lang: data.lang,
+            closeUrl: data.closeUrl,
+          });
+          if (data.sessionInvalid) {
+            setSessionInvalidInfo({
+              message: 'Your game session has expired. Please return to the lobby and launch again.',
+              errorCode: data.sessionErrorCode,
+              closeUrl: data.closeUrl,
+            });
+          }
         }
       } catch {
         // Ignore transient wallet refresh errors while seated at the table
@@ -93,6 +110,8 @@ export const GameBoard: React.FC = () => {
     gameState?.gameId,
     gameState?.gameStatus,
     gameState?.dealNumber,
+    setLaunchMeta,
+    setSessionInvalidInfo,
     setWalletBalance,
   ]);
 
@@ -335,20 +354,21 @@ export const GameBoard: React.FC = () => {
     (gameState?.totalDeals && gameState.totalDeals > 1)
   );
 
+  const currencySym = formatCurrencySymbol(currency);
   const isPointsTable = isPointsRummy || isRummy21;
   const pointValue = entryFee / (isRummy21 ? 120 : 80);
   const stakeLabel = isPointsTable
-    ? `₹${pointValue >= 1 ? pointValue.toFixed(0) : pointValue.toFixed(2)}/pt`
-    : `Entry ₹${entryFee}`;
+    ? `${currencySym}${pointValue >= 1 ? pointValue.toFixed(0) : pointValue.toFixed(2)}/pt`
+    : `Entry ${currencySym}${entryFee}`;
 
   const isScheduledTournament = Boolean(gameState?.tableId?.startsWith('TBL_TRN_'));
   const isCashGame = !isScheduledTournament && entryFee > 0;
   const cashGameAmount = formatCompactRs(entryFee);
   const cashGameTitle = isPointsTable
-    ? `Cash Game: ₹${cashGameAmount} (₹${pointValue >= 1 ? pointValue.toFixed(0) : pointValue.toFixed(2)}/pt)`
-    : `Cash Game: ₹${cashGameAmount} Entry`;
+    ? `Cash Game: ${currencySym}${cashGameAmount} (${currencySym}${pointValue >= 1 ? pointValue.toFixed(0) : pointValue.toFixed(2)}/pt)`
+    : `Cash Game: ${currencySym}${cashGameAmount} Entry`;
   const playerLabel = displayName?.trim() || 'Player';
-  const balanceLabel = walletBalance !== null ? `₹${formatCompactRs(walletBalance)}` : '₹ —';
+  const balanceLabel = walletBalance !== null ? `${currencySym}${formatCompactRs(walletBalance)}` : `${currencySym} —`;
   const leaveRupees = isPointsTable ? (leavePenalty * pointValue).toFixed(2) : null;
 
   if (!gameState) {
@@ -472,7 +492,7 @@ export const GameBoard: React.FC = () => {
                         <span className="board-info-cash-label-full">CASH GAME</span>
                         <span className="board-info-cash-label-short">GAME</span>
                       </span>
-                      <span className="board-info-cash-amt">₹{cashGameAmount}</span>
+                      <span className="board-info-cash-amt">{currencySym}{cashGameAmount}</span>
                     </div>
                   </>
                 )}
@@ -687,7 +707,7 @@ export const GameBoard: React.FC = () => {
                   ? (leaveCountsAsDrop
                     ? 'Your hand is currently live. Leaving now counts as a drop (unlost stake settles when hand ends).'
                     : !isPointsTable && entryFee > 0 && !isScheduledTournament
-                      ? `Leaving a live table forfeits your ₹${entryFee.toFixed(2)} entry fee to the prize pool (no partial refund).`
+                      ? `Leaving a live table forfeits your ${currencySym}${entryFee.toFixed(2)} entry fee to the prize pool (no partial refund).`
                       : 'Your hand is currently live. Leaving the table mid-game will forfeit the round.')
                   : gameState?.viewerDropped
                   ? (isPointsTable && entryFee > 0
@@ -718,7 +738,7 @@ export const GameBoard: React.FC = () => {
                 ) : (
                   <div className="table-menu-row">
                     <span>Entry fee</span>
-                    <span className="table-menu-value--gold">₹{entryFee.toFixed(2)}</span>
+                    <span className="table-menu-value--gold">{currencySym}{entryFee.toFixed(2)}</span>
                   </div>
                 )}
                 <div className="table-menu-row">
@@ -735,7 +755,7 @@ export const GameBoard: React.FC = () => {
                         {leaveCountsAsDrop
                           ? (leaveOnFirstTurn ? 'First drop points will apply' : 'Middle drop points will apply')
                           : 'Max penalty points will apply'}
-                        {leaveRupees !== null && ` · You lose ₹${leaveRupees}`}
+                        {leaveRupees !== null && ` · You lose ${currencySym}${leaveRupees}`}
                       </span>
                     </div>
                     <span className="table-menu-value--penalty">+{leavePenalty} PTS</span>

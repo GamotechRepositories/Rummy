@@ -16,42 +16,71 @@ import {
 import {
   clearAuthToken,
   ensureAuthToken,
+  exitToOperatorLobby,
   getAuthenticatedPlayerId,
-  redeemLaunchCode,
-  takeLaunchCodeFromUrl,
+  getCloseUrl,
+  redeemLaunchSession,
+  saveLaunchMeta,
+  SESSION_INVALID_EVENT,
+  takeLaunchParamsFromUrl,
+  type SessionInvalidDetail,
 } from './game/utils/authClient';
 import { getApiBaseUrl } from './game/utils/apiConfig';
 
-type SessionProblem = 'none' | 'expired-link';
+interface SessionProblem {
+  kind: 'none' | 'expired-link' | 'session-invalid';
+  message?: string;
+  errorCode?: string;
+  closeUrl?: string | null;
+}
 
 function hasLaunchCodeInUrl(): boolean {
   try {
     const params = new URLSearchParams(window.location.search);
-    return params.has('sessionToken') || params.has('launch');
+    return params.has('token') || params.has('launch');
   } catch {
     return false;
   }
 }
 
-let launchRedemption: Promise<'none' | 'ok' | 'failed'> | null = null;
+let launchRedemption: Promise<
+  | { status: 'none' }
+  | { status: 'ok' }
+  | { status: 'failed'; problem: SessionProblem }
+> | null = null;
 
-/** Opens the session from an operator launch link, if the page was opened with one (once per page load). */
-function redeemLaunchFromUrl(): Promise<'none' | 'ok' | 'failed'> {
+/** Opens the session from an Operations / operator launch URL once per page load. */
+function redeemLaunchFromUrl() {
   if (!launchRedemption) launchRedemption = redeemLaunchCodeInUrl();
   return launchRedemption;
 }
 
-async function redeemLaunchCodeInUrl(): Promise<'none' | 'ok' | 'failed'> {
-  const code = takeLaunchCodeFromUrl();
-  if (!code) return 'none';
+async function redeemLaunchCodeInUrl(): Promise<
+  | { status: 'none' }
+  | { status: 'ok' }
+  | { status: 'failed'; problem: SessionProblem }
+> {
+  const params = takeLaunchParamsFromUrl();
+  if (!params) return { status: 'none' };
+
   const previousPlayer = getAuthenticatedPlayerId();
-  const session = await redeemLaunchCode(code);
-  if (!session) {
-    // Expired or already-used launch links must never fall back to an older cached player session.
+  const result = await redeemLaunchSession(params);
+  if (!result.ok) {
+    // Expired or invalid launch links must never fall back to an older cached player session.
     clearAuthToken();
     clearActiveSessionLocal();
-    return 'failed';
+    return {
+      status: 'failed',
+      problem: {
+        kind: result.error === 'SESSION_INVALID' ? 'session-invalid' : 'expired-link',
+        message: result.message,
+        errorCode: result.errorCode,
+        closeUrl: result.closeUrl ?? getCloseUrl(),
+      },
+    };
   }
+
+  const session = result.session;
   if (previousPlayer && previousPlayer !== session.playerId) {
     // A different account was launched in this browser; the old player's table is not ours.
     clearActiveSessionLocal();
@@ -60,7 +89,15 @@ async function redeemLaunchCodeInUrl(): Promise<'none' | 'ok' | 'failed'> {
   if (session.displayName) {
     useGameStore.getState().setDisplayName(session.displayName);
   }
-  return 'ok';
+  useGameStore.getState().setLaunchMeta({
+    currency: session.currency,
+    lang: session.lang,
+    closeUrl: session.closeUrl,
+  });
+  if (session.balance != null) {
+    useGameStore.getState().setWalletBalance(Number(session.balance));
+  }
+  return { status: 'ok' };
 }
 
 function restoreLocalSessionIfAny(): boolean {
@@ -79,7 +116,7 @@ function restoreLocalSessionIfAny(): boolean {
 }
 
 export function App() {
-  const { gameState, hasJoinedTable, resumePending } = useGameStore();
+  const { gameState, hasJoinedTable, resumePending, sessionInvalidInfo, closeUrl } = useGameStore();
   // Restore local table synchronously so first paint can show GameBoard (not blank)
   const [bootDone, setBootDone] = useState(() => {
     if (!hasLaunchCodeInUrl()) {
@@ -90,6 +127,17 @@ export function App() {
   const [noSession, setNoSession] = useState<SessionProblem | null>(null);
   const [mockEnabled, setMockEnabled] = useState(false);
   const [mockKeyRequired, setMockKeyRequired] = useState(false);
+
+  useEffect(() => {
+    const onSessionInvalid = (ev: Event) => {
+      const detail = (ev as CustomEvent<SessionInvalidDetail>).detail;
+      if (detail) {
+        useGameStore.getState().setSessionInvalidInfo(detail);
+      }
+    };
+    window.addEventListener(SESSION_INVALID_EVENT, onSessionInvalid);
+    return () => window.removeEventListener(SESSION_INVALID_EVENT, onSessionInvalid);
+  }, []);
 
   useEffect(() => {
     fetch(`${getApiBaseUrl()}/api/auth/config`)
@@ -114,14 +162,14 @@ export function App() {
     (async () => {
       try {
         const launch = await redeemLaunchFromUrl();
-        if (launch === 'failed') {
-          setNoSession('expired-link');
+        if (launch.status === 'failed') {
+          setNoSession(launch.problem);
           return;
         }
         // Backend only trusts the player id inside the JWT, so obtain it before any API/WS call
         const token = await ensureAuthToken(readPersistedDisplayName() || useGameStore.getState().displayName);
         if (!token) {
-          setNoSession('none');
+          setNoSession({ kind: 'none', closeUrl: getCloseUrl() });
           return;
         }
         hasSession = true;
@@ -195,6 +243,24 @@ export function App() {
   const inGame = hasJoinedTable && (gameState !== null || resumePending);
 
   if (bootDone && noSession) {
+    const effectiveCloseUrl = noSession.closeUrl ?? closeUrl ?? getCloseUrl();
+    if (effectiveCloseUrl) {
+      saveLaunchMeta({ closeUrl: effectiveCloseUrl });
+    }
+    const title =
+      noSession.kind === 'session-invalid'
+        ? 'Your game session has expired'
+        : noSession.kind === 'expired-link'
+          ? 'This game link has expired'
+          : 'Open Royal Rummy from your gaming account';
+    const description =
+      noSession.message ||
+      (noSession.kind === 'session-invalid'
+        ? 'Please return to the gaming lobby and open the game again.'
+        : noSession.kind === 'expired-link'
+          ? 'Game links work once and only for a short time. Go back to your gaming account and open the game again.'
+          : 'Royal Rummy is played through your gaming account. Sign in there and choose Rummy to start playing.');
+
     return (
       <div className="app-frame" style={{ display: 'grid', placeItems: 'center', color: '#f8fafc', padding: 24 }}>
         <div style={{ textAlign: 'center', maxWidth: 420 }}>
@@ -203,14 +269,23 @@ export function App() {
             alt="Royal Rummy"
             style={{ height: 64, maxWidth: '80vw', objectFit: 'contain', marginBottom: 16 }}
           />
-          <h2 style={{ margin: '0 0 10px', fontSize: 20 }}>
-            {noSession === 'expired-link' ? 'This game link has expired' : 'Open Royal Rummy from your gaming account'}
-          </h2>
-          <p style={{ margin: 0, fontSize: 14, color: '#94a3b8', lineHeight: 1.5 }}>
-            {noSession === 'expired-link'
-              ? 'Game links work once and only for a short time. Go back to your gaming account and open the game again.'
-              : 'Royal Rummy is played through your gaming account. Sign in there and choose Rummy to start playing.'}
-          </p>
+          <h2 style={{ margin: '0 0 10px', fontSize: 20 }}>{title}</h2>
+          <p style={{ margin: 0, fontSize: 14, color: '#94a3b8', lineHeight: 1.5 }}>{description}</p>
+          {noSession.errorCode && (
+            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#64748b' }}>Code: {noSession.errorCode}</p>
+          )}
+          {effectiveCloseUrl && (
+            <div style={{ marginTop: 20 }}>
+              <button
+                type="button"
+                className="royal-btn-gold"
+                onClick={() => exitToOperatorLobby(effectiveCloseUrl)}
+                style={{ padding: '10px 22px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+              >
+                Return to Lobby
+              </button>
+            </div>
+          )}
           {mockEnabled && (
             <a
               href={
@@ -258,6 +333,28 @@ export function App() {
           </LandscapeGate>
         ) : (
           <LobbyScreen />
+        )}
+        {sessionInvalidInfo && (
+          <div className="royal-dialog-backdrop" role="presentation" style={{ zIndex: 9999 }}>
+            <div className="royal-dialog-card" role="alertdialog" aria-modal="true" aria-labelledby="session-expired-title">
+              <div className="royal-dialog-header">
+                <h3 id="session-expired-title" className="royal-dialog-title">Session Expired</h3>
+                <p className="royal-dialog-subtitle">
+                  {sessionInvalidInfo.message}
+                  {sessionInvalidInfo.errorCode ? ` (${sessionInvalidInfo.errorCode})` : ''}
+                </p>
+              </div>
+              <div className="royal-dialog-actions">
+                <button
+                  type="button"
+                  className="royal-btn-gold"
+                  onClick={() => exitToOperatorLobby(sessionInvalidInfo.closeUrl ?? closeUrl)}
+                >
+                  Return to Lobby
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </AppErrorBoundary>

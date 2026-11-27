@@ -152,11 +152,13 @@ rummy:
   bot:
     enabled: ${RUMMY_BOT_ENABLED:true}
     daily-loss-cap: ${RUMMY_BOT_DAILY_LOSS_CAP:10000}
+  operations:
+    api-url: ${OPERATIONS_API_URL:https://operations.dpbossking.com}
+    internal-service-key: ${INTERNAL_SERVICE_KEY:}
+    default-gid: ${OPERATIONS_DEFAULT_GID:}
+    wallet-timeout-ms: ${RUMMY_OPERATIONS_WALLET_TIMEOUT_MS:5000}
   provider:
-    api-url: ${PROVIDER_API_URL:https://api.dpbossking.com/api/v1}
-    game-server-api-key: ${GAME_SERVER_API_KEY:}
     game-code-rulesets: ${RUMMY_GAME_CODE_RULESETS:}
-    game-code: ${GAME_CODE:RUMMY}
 
 matchmaking:
   ai-fallback-timeout-ms: ${MATCHMAKING_AI_FALLBACK_MS:15000}

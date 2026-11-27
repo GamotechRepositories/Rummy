@@ -33,7 +33,7 @@ spec:
           envFrom:
             - configMapRef:
                 name: rummy-config
-            # SPRING_DATA_MONGODB_URI, RUMMY_JWT_SECRET, RUMMY_ADMIN_API_KEY — see secrets.example.yaml
+            # SPRING_DATA_MONGODB_URI, RUMMY_JWT_SECRET, RUMMY_ADMIN_API_KEY, INTERNAL_SERVICE_KEY — see secrets.example.yaml
             - secretRef:
                 name: rummy-secrets
           env:

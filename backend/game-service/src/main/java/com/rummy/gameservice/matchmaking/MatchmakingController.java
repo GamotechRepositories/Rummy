@@ -1,6 +1,8 @@
 package com.rummy.gameservice.matchmaking;
 
 import com.rummy.gameservice.operator.MockOperatorController;
+import com.rummy.gameservice.operator.OperatorController;
+import com.rummy.gameservice.operator.OperatorLaunchService;
 import com.rummy.gameservice.operator.OperatorRegistry;
 import com.rummy.gameservice.operator.OperatorWalletException;
 import com.rummy.gameservice.security.AuthenticatedPlayer;
@@ -32,6 +34,12 @@ public class MatchmakingController {
     private final WalletService walletService;
     private final OperatorRegistry operators;
     private final VariantAccessPolicy variantPolicy;
+    private OperatorLaunchService operatorLaunches;
+
+    @Autowired(required = false)
+    public void setOperatorLaunches(OperatorLaunchService operatorLaunches) {
+        this.operatorLaunches = operatorLaunches;
+    }
 
     public MatchmakingController(
             MatchmakingService matchmakingService,
@@ -88,6 +96,9 @@ public class MatchmakingController {
         } catch (InsufficientBalanceException e) {
             return insufficientBalance(request);
         } catch (OperatorWalletException e) {
+            if (e.isSessionInvalid()) {
+                return OperatorController.sessionInvalidResponse(operatorLaunches, request.getPlayerId(), e);
+            }
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .header(HttpHeaders.RETRY_AFTER, "5")
                     .body(Map.of(

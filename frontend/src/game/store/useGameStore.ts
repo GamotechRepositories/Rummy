@@ -13,6 +13,7 @@ import {
   readPersistedLastConfig,
 } from '../utils/sessionResume';
 import { persistAvatarId, readOrCreateAvatarId } from '../utils/avatarUtils';
+import { getCloseUrl, getCurrencyCode, getLangCode, type SessionInvalidDetail } from '../utils/authClient';
 
 interface GameStoreState {
   tableId: string;
@@ -39,9 +40,15 @@ interface GameStoreState {
   resumePending: boolean;
   dealInProgress: boolean;
   walletBalance: number | null;
+  currency: string;
+  lang: string;
+  closeUrl: string | null;
+  sessionInvalidInfo: SessionInvalidDetail | null;
 
   // Actions
   setWalletBalance: (balance: number | null) => void;
+  setLaunchMeta: (meta: { currency?: string | null; lang?: string | null; closeUrl?: string | null }) => void;
+  setSessionInvalidInfo: (info: SessionInvalidDetail | null) => void;
   setConnectionStatus: (status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING') => void;
   setSession: (tableId: string, playerId: string, displayName: string) => void;
   setDisplayName: (displayName: string) => void;
@@ -208,8 +215,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   resumePending: false,
   dealInProgress: false,
   walletBalance: null,
+  currency: getCurrencyCode(),
+  lang: getLangCode(),
+  closeUrl: getCloseUrl(),
+  sessionInvalidInfo: null,
 
   setWalletBalance: (balance) => set({ walletBalance: balance }),
+  setLaunchMeta: (meta) =>
+    set((state) => ({
+      currency: meta.currency ? meta.currency : state.currency,
+      lang: meta.lang ? meta.lang : state.lang,
+      closeUrl: meta.closeUrl !== undefined ? (meta.closeUrl || state.closeUrl) : state.closeUrl,
+    })),
+  setSessionInvalidInfo: (info) => set({ sessionInvalidInfo: info }),
 
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 
