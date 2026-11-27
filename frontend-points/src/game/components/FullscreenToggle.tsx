@@ -7,6 +7,8 @@ export interface FullscreenToggleProps {
   className?: string;
   style?: React.CSSProperties;
   showLabel?: boolean;
+  id?: string;
+  strokeWidth?: number;
 }
 
 function isFullscreenActive(): boolean {
@@ -75,6 +77,8 @@ export const FullscreenToggle: React.FC<FullscreenToggleProps> = ({
   className,
   style,
   showLabel = false,
+  id = 'btn-fullscreen-toggle',
+  strokeWidth = 2,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(isFullscreenActive);
 
@@ -107,29 +111,34 @@ export const FullscreenToggle: React.FC<FullscreenToggleProps> = ({
 
   const title = isFullscreen ? 'Exit Fullscreen (Minimize)' : 'Enter Fullscreen';
   const label = isFullscreen ? 'Minimize' : 'Fullscreen';
+  const iconSize = compact ? 14 : 16;
 
   return (
     <button
       type="button"
-      id="btn-fullscreen-toggle"
+      id={id}
       className={className ?? 'btn-secondary'}
       title={title}
       aria-label={title}
       onClick={handleClick}
-      style={{
-        padding: compact ? '4px 8px' : '6px 10px',
-        fontSize: 12,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-        ...style,
-      }}
+      style={
+        className
+          ? style
+          : {
+              padding: compact ? '4px 8px' : '6px 10px',
+              fontSize: 12,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              ...style,
+            }
+      }
     >
       {isFullscreen ? (
-        <Minimize2 size={compact ? 14 : 16} />
+        <Minimize2 size={iconSize} strokeWidth={strokeWidth} />
       ) : (
-        <Maximize2 size={compact ? 14 : 16} />
+        <Maximize2 size={iconSize} strokeWidth={strokeWidth} />
       )}
       {showLabel && <span>{label}</span>}
     </button>

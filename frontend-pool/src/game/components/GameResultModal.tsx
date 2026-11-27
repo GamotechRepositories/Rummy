@@ -3,6 +3,7 @@ import { useGameStore } from '../store/useGameStore';
 import { socketClient } from '../websocket/GameSocketClient';
 import confetti from 'canvas-confetti';
 import {
+  ArrowLeft,
   RotateCcw,
   LogOut,
   CheckCircle2,
@@ -29,18 +30,6 @@ interface GameResultModalProps {
   isOpen: boolean;
   onOpenScoreboard?: () => void;
 }
-
-const splitButtonStyle = (color: string): React.CSSProperties => ({
-  background: color,
-  color: '#fff',
-  border: 'none',
-  borderRadius: '8px',
-  padding: '7px 14px',
-  fontWeight: 800,
-  fontSize: '12px',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-});
 
 const GROUP_CONFIG: Record<GroupValidationType, { label: string; color: string; bg: string }> = {
   PURE_SEQUENCE: { label: 'Pure', color: '#34d399', bg: 'rgba(52, 211, 153, 0.15)' },
@@ -71,6 +60,20 @@ interface ShowdownGroup {
   type: GroupValidationType;
   cards: CardInstance[];
   pts: number;
+}
+
+function formatAmount(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  return rounded.toLocaleString('en-IN', {
+    minimumFractionDigits: Number.isInteger(rounded) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function shortTableRef(tableId?: string | null): string {
+  if (!tableId) return 'T1';
+  const clean = tableId.replace(/[^a-zA-Z0-9]/g, '');
+  return clean.length > 8 ? clean.slice(-8).toUpperCase() : clean.toUpperCase();
 }
 
 /**
@@ -286,6 +289,14 @@ function applyRummyGroupPenalties(
 }
 
 export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboard }) => {
+  const gameState = useGameStore((s) => s.gameState);
+  if (!isOpen || !gameState || gameState.gameStatus !== 'COMPLETED') return null;
+
+  const modalKey = `${gameState.tableId ?? ''}-${gameState.gameId ?? ''}-${gameState.dealNumber ?? 1}`;
+  return <GameResultView key={modalKey} isOpen={isOpen} onOpenScoreboard={onOpenScoreboard} />;
+};
+
+const GameResultView: React.FC<GameResultModalProps> = ({ isOpen, onOpenScoreboard }) => {
   const { containerRef, onWheel, onTouchStart, onTouchMove, onTouchEnd } = useModalScroll();
   const {
     gameState,
@@ -306,7 +317,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
   } = useGameStore();
 
   const [expandedPlayerIds, setExpandedPlayerIds] = useState<Record<string, boolean>>({});
-  const [showAllCards, setShowAllCards] = useState<boolean>(true);
+  const [showAllCards, setShowAllCards] = useState<boolean>(false);
   const [trnResult, setTrnResult] = useState<{
     tournamentId: string;
     title: string;
@@ -326,6 +337,8 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
   } | null>(null);
 
   const isScheduledTournament = Boolean(tableId && tableId.startsWith('TBL_TRN_'));
+  const isPrivateRoom = Boolean(tableId && tableId.startsWith('TBL_PRV_'));
+  const privateRoomCode = isPrivateRoom && tableId ? tableId.slice('TBL_PRV_'.length) : '';
 
   const isCompleted = gameState?.gameStatus === 'COMPLETED';
   const winnerId = gameState?.winnerId;
@@ -600,7 +613,7 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
   const togglePlayerExpanded = (pId: string) => {
     setExpandedPlayerIds((prev) => ({
       ...prev,
-      [pId]: prev[pId] !== undefined ? !prev[pId] : false,
+      [pId]: prev[pId] !== undefined ? !prev[pId] : !showAllCards,
     }));
   };
 
@@ -635,6 +648,150 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
     leaveTable();
   };
 
+  const computePlayerSettlement = (p: (typeof allPlayers)[number]) => {
+    const playerDetail = gameSettlement?.playerDetails?.[p.playerId];
+    let pLoss = playerDetail?.lossAmount;
+    let pRefund = playerDetail?.refundAmount;
+
+    if (pLoss === undefined) {
+      if (p.isWinner) {
+        pLoss = 0;
+        pRefund = 0;
+      } else if (isPointsBased) {
+        const ptVal = stakeTier / maxPenaltyCap;
+        const penalty = p.score > 0
+          ? Math.min(maxPenaltyCap, p.score)
+          : (p.status === 'DROPPED' ? (isRummy21 ? 30 : 20) : maxPenaltyCap);
+        pLoss = Math.min(stakeTier, penalty * ptVal);
+        pRefund = Math.max(0, stakeTier - pLoss);
+      } else {
+        pLoss = isIntermediateDeal ? 0 : stakeTier;
+        pRefund = 0;
+      }
+    }
+
+    const netRs = splitPayouts?.[p.playerId] != null
+      ? Number(splitPayouts[p.playerId])
+      : p.isWinner
+        ? Number(displayPrize)
+        : -Number(pLoss ?? 0);
+
+    const totalCredit = playerDetail?.initialStake != null
+      ? Number(playerDetail.initialStake) + Number(displayPrize)
+      : isPointsBased
+        ? Number(stakeTier) + Number(displayPrize)
+        : Number(displayPrize);
+
+    return { pLoss: Number(pLoss ?? 0), pRefund, netRs, totalCredit };
+  };
+
+  const viewerPlayer = allPlayers.find((p) => p.isMe) ?? allPlayers[0];
+  const viewerSettlement = viewerPlayer ? computePlayerSettlement(viewerPlayer) : null;
+  const isFreePrivateRoom = isPrivateRoom && stakeTier === 0 && displayGrossPot === 0;
+
+  const dealNum = gameState.dealNumber ?? 1;
+  const ribbonTitle = isScheduledTournament
+    ? 'TOURNAMENT RESULT'
+    : isPrivateRoom
+      ? 'PRIVATE ROOM RESULT'
+      : isIntermediateDeal
+        ? (isTieBreaker ? `PLAYOFF DEAL ${dealNum} RESULT` : `DEAL ${dealNum} RESULT`)
+        : isTournamentWinner
+          ? (isDeals ? (isTieBreaker ? 'PLAYOFF CHAMPION' : 'DEALS CHAMPION') : 'POOL CHAMPION')
+          : 'GAME RESULT';
+
+  const ribbonSubtitle = isScheduledTournament
+    ? `${(trnResult?.title || variantDisplayName).toUpperCase()} · ${trnResult?.status === 'COMPLETED' ? 'FINAL STANDINGS' : `ROUND ${trnResult?.roundNumber ?? 1}`}`
+    : isPrivateRoom
+      ? `ROOM #${privateRoomCode || 'PRIVATE'} · ${variantDisplayName.toUpperCase()} · ${allPlayers.length} PLAYERS`
+      : `${variantDisplayName.toUpperCase()} · ${allPlayers.length} PLAYERS`;
+
+  const heroPositive = Boolean(
+    (isScheduledTournament && trnResult && !trnResult.isFinalTable && trnResult.status !== 'COMPLETED' && (gameState.tournamentWinnerId === playerId || trnResult.qualified)) ||
+    (isScheduledTournament && trnResult?.status === 'COMPLETED' && (trnResult.myPrizeRs ?? 0) > 0) ||
+    (isTournamentWinner && !isScheduledTournament && gameState.tournamentWinnerId === playerId) ||
+    (!isTournamentWinner && isWinner)
+  );
+
+  const trnFinalHeroTitle = isDeals
+    ? (gameState.tournamentWinnerId === playerId
+      ? (isTieBreaker ? 'Playoff Champion!' : 'Tournament Champion!')
+      : `${winnerName} Won the ${isTieBreaker ? 'Playoff' : 'Deals Match'}`)
+    : isPool
+      ? (gameState.tournamentWinnerId === playerId ? 'Tournament Champion!' : `${winnerName} Won the Pool Tournament`)
+      : isScheduledTournament
+        ? (gameState.tournamentWinnerId === playerId ? 'Table Winner!' : `${winnerName} Won the Table`)
+        : (isWinner ? 'You Won the Hand!' : `${winnerName} Won the Hand`);
+
+  const trnFinalHeroSub = gameState.tournamentWinnerId === playerId
+    ? (isDeals
+      ? (isTieBreaker
+        ? `Outstanding victory! You won the sudden-death tie-breaker playoff after ${totalDeals} deals!`
+        : `Congratulations! You had the most chips after ${totalDeals} deals and won the match!`)
+      : isPool
+        ? 'Congratulations! You are the last surviving player standing and won the pool pot!'
+        : isPoints13
+          ? 'Congratulations! You won your Point Rummy tournament table!'
+          : 'Congratulations! You won your tournament table!')
+    : (isDeals || isPool
+      ? (isTieBreaker
+        ? `Playoff finished after ${dealNum} deals. Review scores below.`
+        : `Final standings after ${dealNum} deals. Review scores below.`)
+      : isPoints13
+        ? 'Point Rummy tournament hand completed. Review scores below.'
+        : 'Tournament hand completed. Review scores below.');
+
+  const heroTitle = isScheduledTournament && isTournamentWinner && trnResult && !trnResult.isFinalTable && trnResult.status !== 'COMPLETED'
+    ? (gameState.tournamentWinnerId === playerId || trnResult.qualified
+      ? 'Qualified for Next Round!'
+      : trnResult.roundDone
+        ? 'Eliminated from Tournament'
+        : `Round ${trnResult.roundNumber} Complete`)
+    : isScheduledTournament && trnResult?.status === 'COMPLETED'
+      ? ((trnResult.myPrizeRs ?? 0) > 0 ? `You Won ${trnResult.title}!` : `${trnResult.title} — Tournament Ended`)
+      : isTournamentWinner
+        ? trnFinalHeroTitle
+        : isIntermediateDeal
+          ? (isWinner ? `You Won Deal ${dealNum}!` : `${winnerName} Won Deal ${dealNum}`)
+          : (isWinner ? 'You Won the Hand!' : `${winnerName} Won the Hand`);
+
+  const heroSubtitle = isScheduledTournament && isTournamentWinner && trnResult && !trnResult.isFinalTable && trnResult.status !== 'COMPLETED'
+    ? (gameState.tournamentWinnerId === playerId || trnResult.qualified
+      ? `You won your table! Waiting for other tables to finish (${trnResult.finishedTables ?? 1}/${trnResult.totalTablesInRound ?? 1})…`
+      : trnResult.roundDone
+        ? 'You are not eligible for the next round. Better luck next time!'
+        : `Checking qualification across remaining tables (${trnResult.finishedTables ?? 1}/${trnResult.totalTablesInRound ?? 1})…`)
+    : isScheduledTournament && trnResult?.status === 'COMPLETED'
+      ? ((trnResult.myPrizeRs ?? 0) > 0
+        ? `Congratulations! You are the Tournament Champion — ₹ ${formatAmount(Number(trnResult.myPrizeRs))} has been credited to your wallet!`
+        : `You finished Rank #${trnResult.myRank ?? '-'} in ${trnResult.title}. Better luck next time!`)
+      : isTournamentWinner
+        ? trnFinalHeroSub
+        : isIntermediateDeal
+          ? (isDeals
+            ? (isTieBreaker
+              ? `Sudden-death playoff deal ${dealNum} completed! Playoff chips transferred.`
+              : `Deal ${dealNum} of ${totalDeals} completed. Chips transferred to the deal winner!`)
+            : `Deal completed. Penalties added to cumulative scores. Reach ${threshold} to get eliminated.`)
+          : isWinner
+            ? 'Valid declaration with 0 penalty points. All players’ cards and settlements are shown below.'
+            : 'Hand completed. Review all players’ showdown cards and final settlement below.';
+
+  const useThreeColumnStrip = isIntermediateDeal && !isPrivateRoom;
+  const viewerNetAmount = viewerSettlement?.netRs ?? 0;
+  const viewerNetFormatted = isFreePrivateRoom
+    ? 'Free'
+    : viewerNetAmount > 0
+      ? `+₹ ${formatAmount(viewerNetAmount)}`
+      : viewerNetAmount < 0
+        ? `-₹ ${formatAmount(Math.abs(viewerNetAmount))}`
+        : '₹ 0';
+  const viewerNetToneClass = !isFreePrivateRoom && viewerNetAmount > 0
+    ? 'his-tx-amount--credit'
+    : !isFreePrivateRoom && viewerNetAmount < 0
+      ? 'his-tx-amount--debit'
+      : '';
+
   return (
     <div
       ref={containerRef}
@@ -646,146 +803,59 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      {/* Top Navigation Bar */}
-      <header className="result-top-bar">
-        <div className="result-top-left">
+      <div className="res-panel">
+        {/* Top Row — matching HistoryPage .his-topbar-row */}
+        <header className="his-topbar-row res-topbar-row">
           <button
             type="button"
-            className="result-back-btn"
+            className="stake-back"
             onClick={handleLeave}
             title="Leave table and return to lobby"
           >
-            <LogOut size={15} />
+            <span className="stake-back-icon" aria-hidden="true">
+              <ArrowLeft size={14} strokeWidth={2.75} />
+            </span>
             Leave Table
           </button>
-        </div>
 
-        <div className="result-top-center">
-          <span className="result-top-title">
-            {isIntermediateDeal
-              ? (isTieBreaker
-                  ? `⚡ TIE-BREAKER DEAL ${gameState.dealNumber ?? 1} SHOWDOWN ⚡`
-                  : `♠ DEAL ${gameState.dealNumber ?? 1} SHOWDOWN ♠`)
-              : isTournamentWinner
-              ? (isDeals ? (isTieBreaker ? '🏆 PLAYOFF CHAMPION 🏆' : '🏆 DEALS CHAMPION 🏆') : '🏆 POOL TOURNAMENT CHAMPION 🏆')
-              : '♠ GAME SHOWDOWN ♠'}
-          </span>
-          <span className="result-top-pill">
-            {variantDisplayName} • {allPlayers.length} Players
-          </span>
-        </div>
+          <div className="res-topbar-right">
+            <SoundToggle compact />
+            <FullscreenToggle compact />
+            <span className="his-refresh-btn res-table-pill" title={`Table ${gameState.tableId ?? 'T1'}`}>
+              {isPrivateRoom && privateRoomCode
+                ? `Room #${privateRoomCode}`
+                : isScheduledTournament
+                  ? `Tournament · R${trnResult?.roundNumber ?? 1}`
+                  : `Table #${shortTableRef(gameState.tableId)}`}
+            </span>
+          </div>
+        </header>
 
-        <div className="result-top-right">
-          <SoundToggle compact />
-          <FullscreenToggle compact />
-          <span className="result-table-id-pill">
-            Table {gameState.tableId ?? 'T1'}
-          </span>
-        </div>
-      </header>
+        {/* Main Flat Royal Rummy Ledger Card — matching .stake-card.his-card */}
+        <main className="stake-card his-card res-card">
+          <span className="stake-suit stake-suit-tl" aria-hidden="true">♠</span>
+          <span className="stake-suit stake-suit-tr" aria-hidden="true">♦</span>
+          <span className="stake-suit stake-suit-bl" aria-hidden="true">♣</span>
+          <span className="stake-suit stake-suit-br" aria-hidden="true">♥</span>
 
-      {/* Main Page Scrollable Content */}
-      <main className="result-page-content">
-        {/* Winner Hero Banner */}
-        <section className="result-hero-banner">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
-            <h1 className="result-hero-title">
-              {isScheduledTournament && isTournamentWinner && trnResult && !trnResult.isFinalTable ? (
-                gameState.tournamentWinnerId === playerId || trnResult.qualified ? (
-                  <>
-                    <Sparkles size={22} color="#fbbf24" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
-                    Qualified for Next Round!
-                  </>
-                ) : trnResult.roundDone ? (
-                  'Eliminated from Tournament'
-                ) : (
-                  `Round ${trnResult.roundNumber} Complete`
-                )
-              ) : isScheduledTournament && trnResult?.status === 'COMPLETED' ? (
-                (trnResult.myPrizeRs ?? 0) > 0 ? (
-                  <>
-                    <Sparkles size={22} color="#fbbf24" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
-                    You Won {trnResult.title}!
-                  </>
-                ) : (
-                  `${trnResult.title} — Tournament Ended`
-                )
-              ) : isTournamentWinner ? (
-                gameState.tournamentWinnerId === playerId ? (
-                  <>
-                    <Sparkles size={22} color="#fbbf24" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
-                    {isTieBreaker ? 'Playoff Champion!' : 'Tournament Champion!'}
-                  </>
-                ) : (
-                  `🏆 ${winnerName} Won the ${isDeals ? (isTieBreaker ? 'Playoff' : 'Deals Match') : 'Pool Tournament'}!`
-                )
-              ) : isIntermediateDeal ? (
-                isWinner ? (
-                  <>
-                    <Sparkles size={22} color="#fbbf24" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
-                    You Won Deal {gameState.dealNumber ?? 1}!
-                  </>
-                ) : (
-                  `${winnerName} Won Deal ${gameState.dealNumber ?? 1}`
-                )
-              ) : isWinner ? (
-                <>
-                  <Sparkles size={22} color="#fbbf24" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
-                  You Won the Hand!
-                </>
-              ) : (
-                `${winnerName} Won the Hand`
-              )}
+          <div className="stake-emblem res-emblem">
+            <div className="stake-ribbon">
+              <h2>{ribbonTitle}</h2>
+              <p>{ribbonSubtitle}</p>
+            </div>
+          </div>
+
+          {/* Outcome Headline & Contextual Banners */}
+          <section className="res-hero">
+            <h1 className={`res-hero-title${heroPositive ? ' res-hero-title--win' : ''}`}>
+              {heroPositive && <Sparkles size={20} color="#f6dc8a" aria-hidden="true" />}
+              <span>{heroTitle}</span>
             </h1>
-            <p className="result-hero-subtitle">
-              {isScheduledTournament && isTournamentWinner && trnResult && !trnResult.isFinalTable
-                ? (gameState.tournamentWinnerId === playerId || trnResult.qualified
-                    ? `You won your table! Waiting for other tables to finish (${trnResult.finishedTables ?? 1}/${trnResult.totalTablesInRound ?? 1})…`
-                    : trnResult.roundDone
-                    ? 'You are not eligible for the next round. Better luck next time!'
-                    : `Checking qualification across remaining tables (${trnResult.finishedTables ?? 1}/${trnResult.totalTablesInRound ?? 1})…`)
-                : isScheduledTournament && trnResult?.status === 'COMPLETED'
-                ? ((trnResult.myPrizeRs ?? 0) > 0
-                    ? `🏆 Congratulations! You are the Tournament Champion — ₹${Number(trnResult.myPrizeRs).toLocaleString()} has been credited to your wallet!`
-                    : `You finished Rank #${trnResult.myRank ?? '-'} in ${trnResult.title}. Better luck next time!`)
-                : isTournamentWinner
-                ? (gameState.tournamentWinnerId === playerId
-                    ? (isDeals
-                        ? (isTieBreaker
-                            ? `Outstanding victory! You won the sudden-death tie-breaker playoff after ${totalDeals} deals!`
-                            : `Congratulations! You had the most chips after ${totalDeals} deals and won the match!`)
-                        : 'Congratulations! You are the last surviving player standing and won the pool pot!')
-                    : (isTieBreaker
-                        ? `Playoff finished after ${gameState.dealNumber ?? 1} deals. Review scores below.`
-                        : `Final standings after ${gameState.dealNumber ?? 1} deals. Review scores below.`))
-                : isIntermediateDeal
-                ? (isDeals
-                    ? (isTieBreaker
-                        ? `⚡ Sudden-death playoff deal ${gameState.dealNumber ?? 1} completed! Playoff chips transferred.`
-                        : `Deal ${gameState.dealNumber ?? 1} of ${totalDeals} completed. Chips transferred to the deal winner!`)
-                    : `Deal completed. Penalties added to cumulative scores. Reach ${threshold} to get eliminated.`)
-                : isWinner
-                ? 'Valid declaration with 0 penalty points. All players’ cards and settlements are shown below.'
-                : 'Hand completed. Review all players’ showdown cards and final settlement below.'}
-            </p>
+            <p className="res-hero-subtitle">{heroSubtitle}</p>
 
             {isIntermediateDeal && (
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(245, 158, 11, 0.15)',
-                  border: '1px solid rgba(251, 191, 36, 0.4)',
-                  borderRadius: '999px',
-                  padding: '5px 16px',
-                  fontSize: '12.5px',
-                  fontWeight: 800,
-                  color: '#fef08a',
-                  marginTop: '8px',
-                }}
-              >
-                <RotateCcw size={14} style={{ animation: 'spin 4s linear infinite' }} />
+              <div className="res-countdown-pill">
+                <RotateCcw size={13} className="his-spin" />
                 {split?.requestedBy ? (
                   <span>Split decision in <strong>{dealCountdown}s</strong>...</span>
                 ) : (
@@ -793,871 +863,776 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
                 )}
               </div>
             )}
+          </section>
 
-            {isPool && viewerEliminated && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  padding: '10px 18px',
-                  borderRadius: '12px',
-                  background: gameState?.canRejoin
-                    ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.22), rgba(16, 185, 129, 0.18))'
-                    : 'rgba(239, 68, 68, 0.18)',
-                  border: gameState?.canRejoin
-                    ? '1.5px solid rgba(16, 185, 129, 0.5)'
-                    : '1px solid rgba(239, 68, 68, 0.45)',
-                  color: '#fef2f2',
-                  fontSize: '12.5px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  maxWidth: '620px',
-                  width: '100%',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}>
-                  <AlertCircle size={16} color={gameState?.canRejoin ? '#34d399' : '#ef4444'} />
-                  <div>
-                    <div>
-                      <strong>Eliminated ({viewerCum}/{threshold} pts).</strong>
-                    </div>
-                    <div style={{ fontSize: '11.5px', color: '#cbd5e1' }}>
-                      {gameState?.canRejoin
-                        ? `Eligible to Re-Join at ${gameState.rejoinScore} pts!`
-                        : 'Re-Join is not available now.'}
-                    </div>
+          {isPool && viewerEliminated && (
+            <div className="res-notice res-notice--row res-notice--danger">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertCircle size={16} color={gameState?.canRejoin ? '#6ee7b7' : '#fda4af'} />
+                <div>
+                  <div className="res-notice-head">Eliminated ({viewerCum}/{threshold} pts)</div>
+                  <div className="res-notice-sub">
+                    {gameState?.canRejoin
+                      ? `Eligible to Re-Join at ${gameState.rejoinScore} pts!`
+                      : 'Re-Join is not available now.'}
                   </div>
                 </div>
+              </div>
 
-                {gameState?.canRejoin && (
+              {gameState?.canRejoin && (
+                <button
+                  type="button"
+                  className="res-inline-btn res-inline-btn--accept"
+                  onClick={() => {
+                    soundEngine.play('click');
+                    socketClient.rejoinTable();
+                  }}
+                >
+                  Re-Join (₹{rejoinFee})
+                </button>
+              )}
+            </div>
+          )}
+
+          {split && (
+            <div className="res-notice res-notice--info">
+              <div className="res-notice-head">
+                {split.requestedBy
+                  ? `${nameOf(split.requestedBy)} asked to split the prize`
+                  : 'Split the prize and end the game?'}
+              </div>
+              <div className="res-split-grid">
+                {Object.entries(split.payouts).map(([pid, amount]) => (
+                  <React.Fragment key={pid}>
+                    <span>{nameOf(pid)}</span>
+                    <strong className="his-tx-amount--credit">₹ {formatAmount(Number(amount))}</strong>
+                    <span className="res-notice-sub">
+                      {split.requestedBy ? (split.acceptedBy.includes(pid) ? '✓ Accepted' : 'Waiting…') : ''}
+                    </span>
+                  </React.Fragment>
+                ))}
+              </div>
+              <div className="res-notice-sub">
+                Shares follow drops left: each extra drop is worth one entry fee (₹{stakeTier}), the rest is shared equally. Everyone must accept.
+              </div>
+              <div className="res-notice-actions">
+                {split.canRequest && (
                   <button
                     type="button"
+                    className="res-inline-btn"
                     onClick={() => {
                       soundEngine.play('click');
-                      socketClient.rejoinTable();
-                    }}
-                    style={{
-                      background: 'linear-gradient(135deg, #10b981, #059669)',
-                      color: '#fff',
-                      border: '1px solid #6ee7b7',
-                      borderRadius: '8px',
-                      padding: '7px 14px',
-                      fontWeight: 800,
-                      fontSize: '12px',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      boxShadow: '0 0 10px rgba(16, 185, 129, 0.4)',
+                      socketClient.requestSplit();
                     }}
                   >
-                    ✨ Re-Join (₹{rejoinFee})
+                    Request Split
                   </button>
                 )}
-              </div>
-            )}
-
-            {split && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  background: 'rgba(59, 130, 246, 0.14)',
-                  border: '1px solid rgba(96, 165, 250, 0.45)',
-                  color: '#e0f2fe',
-                  fontSize: '12.5px',
-                  maxWidth: '620px',
-                  width: '100%',
-                  textAlign: 'left',
-                }}
-              >
-                <div style={{ fontWeight: 800, marginBottom: '8px' }}>
-                  {split.requestedBy
-                    ? `${nameOf(split.requestedBy)} asked to split the prize`
-                    : 'Split the prize and end the game?'}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '4px 14px', marginBottom: '8px' }}>
-                  {Object.entries(split.payouts).map(([pid, amount]) => (
-                    <React.Fragment key={pid}>
-                      <span>{nameOf(pid)}</span>
-                      <strong style={{ color: '#86efac' }}>₹{Number(amount).toFixed(2)}</strong>
-                      <span style={{ color: '#cbd5e1' }}>
-                        {split.requestedBy ? (split.acceptedBy.includes(pid) ? '✓ Accepted' : 'Waiting…') : ''}
-                      </span>
-                    </React.Fragment>
-                  ))}
-                </div>
-                <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '8px' }}>
-                  Shares follow drops left: each extra drop is worth one entry fee (₹{stakeTier}), the rest is shared
-                  equally. Everyone must accept.
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {split.canRequest && (
+                {split.awaitingMyAnswer && (
+                  <>
                     <button
                       type="button"
+                      className="res-inline-btn res-inline-btn--accept"
                       onClick={() => {
                         soundEngine.play('click');
-                        socketClient.requestSplit();
+                        socketClient.respondSplit(true);
                       }}
-                      style={splitButtonStyle('#2563eb')}
                     >
-                      Request Split
+                      Accept
                     </button>
-                  )}
-                  {split.awaitingMyAnswer && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          soundEngine.play('click');
-                          socketClient.respondSplit(true);
-                        }}
-                        style={splitButtonStyle('#059669')}
-                      >
-                        Accept
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          soundEngine.play('click');
-                          socketClient.respondSplit(false);
-                        }}
-                        style={splitButtonStyle('#dc2626')}
-                      >
-                        Decline
-                      </button>
-                    </>
-                  )}
-                  {split.requestedBy && !split.awaitingMyAnswer && (
-                    <span style={{ color: '#cbd5e1' }}>Waiting for the other players to answer…</span>
-                  )}
-                </div>
+                    <button
+                      type="button"
+                      className="res-inline-btn res-inline-btn--decline"
+                      onClick={() => {
+                        soundEngine.play('click');
+                        socketClient.respondSplit(false);
+                      }}
+                    >
+                      Decline
+                    </button>
+                  </>
+                )}
+                {split.requestedBy && !split.awaitingMyAnswer && (
+                  <span className="res-notice-sub">Waiting for the other players to answer…</span>
+                )}
               </div>
-            )}
+            </div>
+          )}
 
-            {splitPayouts && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  background: 'rgba(16, 185, 129, 0.14)',
-                  border: '1px solid rgba(52, 211, 153, 0.45)',
-                  color: '#ecfdf5',
-                  fontSize: '12.5px',
-                  maxWidth: '620px',
-                  width: '100%',
-                  textAlign: 'left',
-                }}
-              >
-                <div style={{ fontWeight: 800, marginBottom: '8px' }}>
-                  {isDeals ? 'Still level on chips after the tie-breakers: prize shared' : 'Prize split agreed'}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '4px 14px' }}>
-                  {Object.entries(splitPayouts).map(([pid, amount]) => (
-                    <React.Fragment key={pid}>
-                      <span>{nameOf(pid)}</span>
-                      <strong style={{ color: '#86efac' }}>+₹{Number(amount).toFixed(2)}</strong>
-                    </React.Fragment>
-                  ))}
-                </div>
+          {splitPayouts && (
+            <div className="res-notice res-notice--success">
+              <div className="res-notice-head">
+                {isDeals ? 'Still level on chips after the tie-breakers: prize shared' : 'Prize split agreed'}
               </div>
-            )}
-          </div>
+              <div className="res-split-grid res-split-grid--done">
+                {Object.entries(splitPayouts).map(([pid, amount]) => (
+                  <React.Fragment key={pid}>
+                    <span>{nameOf(pid)}</span>
+                    <strong className="his-tx-amount--credit">+₹ {formatAmount(Number(amount))}</strong>
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          )}
 
-          {/* Unified Pot Strip */}
-          <div className="result-pot-strip">
+          {/* Flat 3- or 4-Column Summary Strip (Exact HistoryPage .his-summary-strip layout) */}
+          <div className={`his-summary-strip res-summary-strip${useThreeColumnStrip ? ' res-summary-strip--three' : ''}`}>
             {isIntermediateDeal ? (
               isDeals ? (
                 <>
-                  <div className="result-pot-strip-item">
-                    <span className="result-pot-strip-label">Tournament Prize</span>
-                    <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>
-                      ₹{Number(displayPrize).toFixed(2)}
-                    </span>
+                  {isPrivateRoom && (
+                    <div className="his-stat">
+                      <span className="his-stat-label">Room Code</span>
+                      <strong className="his-stat-value his-stat-value--gold">#{privateRoomCode || 'PRV'}</strong>
+                    </div>
+                  )}
+                  <div className="his-stat">
+                    <span className="his-stat-label">{isPrivateRoom ? 'Prize Pot' : 'Tournament Prize'}</span>
+                    <strong className="his-stat-value his-stat-value--gold">₹ {formatAmount(Number(displayPrize))}</strong>
                   </div>
-
-                  <div className="result-pot-strip-divider" />
-
-                  <div className="result-pot-strip-item">
-                    <span className="result-pot-strip-label">Current Deal</span>
-                    <span className="result-pot-strip-val" style={{ color: isTieBreaker ? '#fbbf24' : '#60a5fa' }}>
-                      {isTieBreaker
-                        ? `Deal ${gameState.dealNumber ?? 1} (⚡ Sudden-Death)`
-                        : `Deal ${gameState.dealNumber ?? 1} of ${totalDeals}`}
-                    </span>
+                  <div className="his-stat">
+                    <span className="his-stat-label">Current Deal</span>
+                    <strong className="his-stat-value">
+                      {isTieBreaker ? `Deal ${dealNum} (Playoff)` : `Deal ${dealNum} of ${totalDeals}`}
+                    </strong>
                   </div>
-
-                  <div className="result-pot-strip-divider" />
-
-                  <div className="result-pot-strip-item val-winner">
-                    <span className="result-pot-strip-label" style={{ color: '#86efac' }}>Chip Leader</span>
-                    <span className="result-pot-strip-val val-green">
-                      {allPlayers[0]?.name ?? 'Leader'} ({allPlayers[0]?.chipBalance ?? 0} 🪙)
-                    </span>
+                  <div className="his-stat">
+                    <span className="his-stat-label">Chip Leader</span>
+                    <strong className="his-stat-value his-tx-amount--credit">
+                      {allPlayers[0]?.name ?? 'Leader'} ({allPlayers[0]?.chipBalance ?? 0})
+                    </strong>
                   </div>
                 </>
               ) : (
                 <>
-                  <div className="result-pot-strip-item">
-                    <span className="result-pot-strip-label">Pool Prize Pot</span>
-                    <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>
-                      ₹{Number(displayPrize).toFixed(2)}
-                    </span>
+                  {isPrivateRoom && (
+                    <div className="his-stat">
+                      <span className="his-stat-label">Room Code</span>
+                      <strong className="his-stat-value his-stat-value--gold">#{privateRoomCode || 'PRV'}</strong>
+                    </div>
+                  )}
+                  <div className="his-stat">
+                    <span className="his-stat-label">Pool Prize Pot</span>
+                    <strong className="his-stat-value his-stat-value--gold">₹ {formatAmount(Number(displayPrize))}</strong>
                   </div>
-
-                  <div className="result-pot-strip-divider" />
-
-                  <div className="result-pot-strip-item">
-                    <span className="result-pot-strip-label">Elimination Limit</span>
-                    <span className="result-pot-strip-val val-red">{threshold} pts</span>
+                  <div className="his-stat">
+                    <span className="his-stat-label">Elimination Limit</span>
+                    <strong className="his-stat-value his-tx-amount--debit">{threshold} pts</strong>
                   </div>
-
-                  <div className="result-pot-strip-divider" />
-
-                  <div className="result-pot-strip-item val-winner">
-                    <span className="result-pot-strip-label" style={{ color: '#86efac' }}>Survivors Remaining</span>
-                    <span className="result-pot-strip-val val-green">
+                  <div className="his-stat">
+                    <span className="his-stat-label">Survivors</span>
+                    <strong className="his-stat-value his-tx-amount--credit">
                       {allPlayers.filter((p) => !p.isEliminated).length} / {allPlayers.length}
-                    </span>
+                    </strong>
                   </div>
                 </>
               )
             ) : isScheduledTournament ? (
               trnResult?.status === 'COMPLETED' ? (
                 <>
-                  <div className="result-pot-strip-item">
-                    <span className="result-pot-strip-label">Fixed Prize Pool</span>
-                    <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>
-                      ₹{Number(trnResult.fixedPrizeRs ?? 0).toLocaleString()}
-                    </span>
+                  <div className="his-stat">
+                    <span className="his-stat-label">Fixed Prize Pool</span>
+                    <strong className="his-stat-value his-stat-value--gold">
+                      ₹ {formatAmount(Number(trnResult.fixedPrizeRs ?? 0))}
+                    </strong>
                   </div>
-
-                  <div className="result-pot-strip-divider" />
-
-                  <div className="result-pot-strip-item">
-                    <span className="result-pot-strip-label">Your Final Rank</span>
-                    <span className="result-pot-strip-val">
-                      {trnResult.myRank ? `#${trnResult.myRank}` : '—'}
-                    </span>
+                  <div className="his-stat">
+                    <span className="his-stat-label">Your Final Rank</span>
+                    <strong className="his-stat-value">{trnResult.myRank ? `#${trnResult.myRank}` : '—'}</strong>
                   </div>
-
-                  <div className="result-pot-strip-divider" />
-
-                  <div className="result-pot-strip-item val-winner">
-                    <span className="result-pot-strip-label" style={{ color: (trnResult.myPrizeRs ?? 0) > 0 ? '#86efac' : '#94a3b8' }}>
-                      {(trnResult.myPrizeRs ?? 0) > 0 ? 'Prize Credited' : 'Your Prize'}
-                    </span>
-                    <span className={`result-pot-strip-val ${(trnResult.myPrizeRs ?? 0) > 0 ? 'val-green' : ''}`}>
+                  <div className="his-stat">
+                    <span className="his-stat-label">{(trnResult.myPrizeRs ?? 0) > 0 ? 'Prize Credited' : 'Your Prize'}</span>
+                    <strong className={`his-stat-value ${(trnResult.myPrizeRs ?? 0) > 0 ? 'his-tx-amount--credit' : ''}`}>
                       {(trnResult.myPrizeRs ?? 0) > 0
-                        ? `+₹${Number(trnResult.myPrizeRs).toLocaleString()}`
-                        : '₹0.00'}
-                    </span>
+                        ? `+₹ ${formatAmount(Number(trnResult.myPrizeRs))}`
+                        : '₹ 0'}
+                    </strong>
+                  </div>
+                  <div className="his-stat">
+                    <span className="his-stat-label">Result</span>
+                    <strong className={`his-stat-value ${(trnResult.myPrizeRs ?? 0) > 0 ? 'his-tx-amount--credit' : 'his-tx-amount--debit'}`}>
+                      {(trnResult.myPrizeRs ?? 0) > 0 ? 'Champion' : 'Completed'}
+                    </strong>
                   </div>
                 </>
               ) : (
                 <>
-                  <div className="result-pot-strip-item">
-                    <span className="result-pot-strip-label">Tournament</span>
-                    <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>
-                      {trnResult?.title || 'Tournament'}
-                    </span>
+                  <div className="his-stat">
+                    <span className="his-stat-label">Tournament</span>
+                    <strong className="his-stat-value his-stat-value--gold">{trnResult?.title || 'Tournament'}</strong>
                   </div>
-
-                  <div className="result-pot-strip-divider" />
-
-                  <div className="result-pot-strip-item val-winner">
-                    <span className="result-pot-strip-label" style={{ color: '#86efac' }}>Round Status</span>
-                    <span className="result-pot-strip-val" style={{ fontSize: '13px', color: '#fde047' }}>
+                  <div className="his-stat">
+                    <span className="his-stat-label">Round</span>
+                    <strong className="his-stat-value">
+                      {trnResult ? `Round ${trnResult.roundNumber}${trnResult.totalRounds > 1 ? ` / ${trnResult.totalRounds}` : ''}` : 'Round 1'}
+                    </strong>
+                  </div>
+                  <div className="his-stat">
+                    <span className="his-stat-label">Tables Done</span>
+                    <strong className="his-stat-value">
+                      {trnResult ? `${trnResult.finishedTables ?? 1} / ${trnResult.totalTablesInRound ?? 1}` : '1 / 1'}
+                    </strong>
+                  </div>
+                  <div className="his-stat">
+                    <span className="his-stat-label">Round Status</span>
+                    <strong
+                      className={`his-stat-value ${trnResult?.roundDone
+                        ? (trnResult.qualified ? 'his-tx-amount--credit' : 'his-tx-amount--debit')
+                        : 'his-stat-value--gold'
+                        }`}
+                    >
                       {trnResult?.roundDone
-                        ? (trnResult.qualified ? '🎉 Qualified! Moving to Next Round…' : '❌ Eliminated')
-                        : '⏳ Waiting for other tables to finish…'}
-                    </span>
+                        ? (trnResult.qualified ? 'Qualified' : 'Eliminated')
+                        : 'Checking…'}
+                    </strong>
                   </div>
                 </>
               )
+            ) : isFreePrivateRoom ? (
+              <>
+                <div className="his-stat">
+                  <span className="his-stat-label">Room Code</span>
+                  <strong className="his-stat-value his-stat-value--gold">#{privateRoomCode || 'PRV'}</strong>
+                </div>
+                <div className="his-stat">
+                  <span className="his-stat-label">Room Mode</span>
+                  <strong className="his-stat-value">Free Practice</strong>
+                </div>
+                <div className="his-stat">
+                  <span className="his-stat-label">Winner</span>
+                  <strong className="his-stat-value his-tx-amount--credit">{winnerName}</strong>
+                </div>
+                <div className="his-stat">
+                  <span className="his-stat-label">Your Result</span>
+                  <strong className={`his-stat-value ${isWinner ? 'his-tx-amount--credit' : 'his-tx-amount--debit'}`}>
+                    {isWinner ? 'Won' : myStatus === 'DROPPED' ? 'Dropped' : 'Lost'}
+                  </strong>
+                </div>
+              </>
             ) : (
               <>
-                <div className="result-pot-strip-item">
-                  <span className="result-pot-strip-label">Gross Pot</span>
-                  <span className="result-pot-strip-val">₹{Number(displayGrossPot).toFixed(2)}</span>
+                <div className="his-stat">
+                  <span className="his-stat-label">Gross Pot</span>
+                  <strong className="his-stat-value">₹ {formatAmount(Number(displayGrossPot))}</strong>
                 </div>
-
-                <div className="result-pot-strip-divider" />
-
-                <div className="result-pot-strip-item">
-                  <span className="result-pot-strip-label">Platform Fee (15%)</span>
-                  <span className="result-pot-strip-val" style={{ color: '#fbbf24' }}>₹{Number(displayRake).toFixed(2)}</span>
+                <div className="his-stat">
+                  <span className="his-stat-label">Fee (15%)</span>
+                  <strong className="his-stat-value his-stat-value--gold">₹ {formatAmount(Number(displayRake))}</strong>
                 </div>
-
-                <div className="result-pot-strip-divider" />
-
-                <div className="result-pot-strip-item val-winner">
-                  <span className="result-pot-strip-label" style={{ color: '#86efac' }}>
-                    {splitPayouts ? 'Prize (Split)' : isPool ? 'Pool Champion Prize' : isDeals ? 'Deals Champion Prize' : 'Net Winnings'}
+                <div className="his-stat">
+                  <span className="his-stat-label">
+                    {splitPayouts ? 'Prize (Split)' : isPool ? 'Pool Prize' : isDeals ? 'Deals Prize' : 'Winner Payout'}
                   </span>
-                  <span className="result-pot-strip-val val-green">+₹{Number(displayPrize).toFixed(2)}</span>
-                  {isPointsBased && (
-                    <span style={{ fontSize: '10.5px', color: '#86efac', fontWeight: 700, marginTop: '1px' }}>
-                      (Total Credit: ₹{(Number(stakeTier) + Number(displayPrize)).toFixed(2)})
+                  <strong className="his-stat-value his-tx-amount--credit">+₹ {formatAmount(Number(displayPrize))}</strong>
+                  {(isPointsBased || isPool || isDeals) && (
+                    <span className="res-stat-sub">
+                      Total Credit: ₹ {formatAmount(isPointsBased ? Number(stakeTier) + Number(displayPrize) : Number(displayPrize))}
                     </span>
                   )}
-                  {(isPool || isDeals) && (
-                    <span style={{ fontSize: '10.5px', color: '#86efac', fontWeight: 700, marginTop: '1px' }}>
-                      (Total Credit: ₹{Number(displayPrize).toFixed(2)})
-                    </span>
-                  )}
+                </div>
+                <div className="his-stat">
+                  <span className="his-stat-label">Your Net</span>
+                  <strong className={`his-stat-value ${viewerNetToneClass}`}>{viewerNetFormatted}</strong>
                 </div>
               </>
             )}
           </div>
-        </section>
 
-        {/* Final Tournament Rankings & Payouts */}
-        {isScheduledTournament && trnResult?.status === 'COMPLETED' && trnResult.finalRankings.length > 0 && (
-          <section className="result-multi-deal-card" aria-label="Tournament Final Payouts">
-            <div className="result-multi-deal-header">
-              <div className="result-multi-deal-title">
-                <Trophy size={16} color="#fbbf24" />
-                <span>FINAL TOURNAMENT PAYOUTS ({trnResult.title})</span>
-              </div>
-              <span className="result-multi-deal-chip-tag">
-                Fixed Prize: ₹{Number(trnResult.fixedPrizeRs).toLocaleString()}
-              </span>
-            </div>
-            <div className="result-multi-deal-scroll">
-              <table className="result-multi-deal-table" style={{ width: '100%', tableLayout: 'auto' }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', padding: '10px 16px', width: '70px' }}>RANK</th>
-                    <th style={{ textAlign: 'left', padding: '10px 16px' }}>PLAYER</th>
-                    <th style={{ textAlign: 'center', padding: '10px 16px' }}>STATUS</th>
-                    <th style={{ textAlign: 'right', padding: '10px 16px', width: '150px' }}>PRIZE CREDITED</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trnResult.finalRankings.map((fr) => {
-                    const isChamp = fr.prizeRs > 0;
-                    const isMe = fr.playerId === playerId;
-                    return (
-                      <tr
-                        key={fr.rank}
-                        className={isMe ? 'is-me' : ''}
-                        style={isChamp ? { background: 'rgba(16, 185, 129, 0.12)' } : undefined}
-                      >
-                        <td style={{ padding: '11px 16px', fontWeight: 900, color: fr.rank === 1 ? '#fbbf24' : '#94a3b8' }}>
-                          {fr.rank === 1 ? '🥇 #1' : `#${fr.rank}`}
-                        </td>
-                        <td style={{ padding: '11px 16px', fontWeight: 700, color: '#fff' }}>
-                          {fr.displayName || fr.playerId} {isMe ? '(You)' : ''}
-                        </td>
-                        <td style={{ padding: '11px 16px', textAlign: 'center' }}>
-                          {isChamp ? (
-                            <span style={{ color: '#fbbf24', fontWeight: 900, fontSize: '11px', background: 'rgba(251, 191, 36, 0.16)', border: '1px solid rgba(251, 191, 36, 0.45)', borderRadius: '999px', padding: '3px 10px', whiteSpace: 'nowrap' }}>
-                              👑 TOURNAMENT WINNER
-                            </span>
-                          ) : (
-                            <span style={{ color: '#94a3b8', fontSize: '11.5px', fontWeight: 600 }}>
-                              Runner-up
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: '11px 16px', textAlign: 'right', fontWeight: 900, fontSize: '14px', color: isChamp ? '#4ade80' : '#64748b' }}>
-                          {isChamp ? `+₹${Number(fr.prizeRs).toLocaleString()}` : '₹0.00'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-
-        {/* Multi-Deal Scoreboard Breakdown Table */}
-        {isMultiDealGame && (
-          <section className="result-multi-deal-card" aria-label="Tournament All Deals Scoreboard">
-            <div className="result-multi-deal-header">
-              <div className="result-multi-deal-title">
-                <Trophy size={16} color="#fbbf24" />
-                <span>
-                  {isDeals
-                    ? (isTieBreaker
-                        ? 'DEALS SUDDEN-DEATH PLAYOFF SCORECARD'
-                        : `${totalDeals} DEALS TOURNAMENT SCORECARD`)
-                    : `POOL ${threshold} ROUNDS BREAKDOWN`}
+          {/* Final Tournament Standings & Payouts — Flat History Row List */}
+          {isScheduledTournament && trnResult?.status === 'COMPLETED' && trnResult.finalRankings.length > 0 && (
+            <section className="res-section" aria-label="Tournament Final Payouts">
+              <div className="res-section-head">
+                <div className="res-section-title">
+                  <Trophy size={14} />
+                  <span>Final Tournament Payouts ({trnResult.title})</span>
+                </div>
+                <span className="his-row-tag">
+                  Fixed Prize: ₹ {formatAmount(Number(trnResult.fixedPrizeRs ?? 0))}
                 </span>
               </div>
-              <span className="result-multi-deal-badge">
-                {isDeals
-                  ? (isTieBreaker
-                      ? '⚡ Sudden-Death Tie-Breaker Active'
-                      : `🪙 Starting Chips: ${totalDeals * 80}`)
-                  : `Elimination Limit: ${threshold} pts`}
-              </span>
-            </div>
 
-            <div className="result-multi-deal-table-wrap">
-              <table className="royal-scoreboard-table">
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', minWidth: '150px' }}>Player</th>
-                    {Array.from({ length: maxRecordedDeals }).map((_, idx) => (
-                      <th key={idx} style={{ textAlign: 'center', minWidth: '70px' }}>
-                        {isDeals && idx + 1 > scheduledDeals ? (
-                          <span style={{ color: '#fbbf24' }}>Playoff {idx + 1}</span>
-                        ) : (
-                          `Deal ${idx + 1}`
-                        )}
-                      </th>
-                    ))}
-                    <th style={{ textAlign: 'center', minWidth: '110px' }}>
-                      {isDeals ? 'Chips Balance' : 'Total Points'}
-                    </th>
-                    {!isIntermediateDeal && !isScheduledTournament && (
-                      <th style={{ textAlign: 'center', minWidth: '100px' }}>Net Payout</th>
-                    )}
-                    <th style={{ textAlign: 'right', minWidth: '95px' }}>Rank & Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allPlayers.map((p, rankIdx) => {
-                    const isTournamentChamp =
-                      Boolean(gameState.tournamentWinnerId && gameState.tournamentWinnerId === p.playerId) ||
-                      (!gameState.tournamentWinnerId && p.isWinner);
-                    const isDanger = isPool && !p.isEliminated && (p.cumulativeScore ?? 0) >= threshold * 0.75;
-                    const percent = isPool ? Math.min(100, Math.round(((p.cumulativeScore ?? 0) / threshold) * 100)) : 0;
-
-                    let scoreColor = '#34d399';
-                    if (p.isEliminated) scoreColor = '#ef4444';
-                    else if (isDanger) scoreColor = '#f87171';
-                    else if ((p.cumulativeScore ?? 0) >= threshold * 0.5) scoreColor = '#fbbf24';
-
-                    const rowClass = `${p.isMe ? 'royal-scoreboard-row--viewer' : ''} ${p.isEliminated ? 'royal-scoreboard-row--eliminated' : ''}`;
-
-                    return (
-                      <tr key={p.playerId} className={rowClass}>
-                        {/* Player Info */}
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div
-                              style={{
-                                width: '28px',
-                                height: '28px',
-                                borderRadius: '50%',
-                                overflow: 'hidden',
-                                border: `1.5px solid ${isTournamentChamp ? '#fbbf24' : 'rgba(255,255,255,0.2)'}`,
-                                background: '#1e293b',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                flexShrink: 0,
-                              }}
-                            >
-                              {p.avatarPhoto ? (
-                                <img src={p.avatarPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              ) : (
-                                <span style={{ fontSize: '11px', color: '#94a3b8' }}>#</span>
-                              )}
-                            </div>
-
-                            <div style={{ textAlign: 'left' }}>
-                              <div style={{ fontWeight: 800, color: p.isMe ? '#fde047' : '#f8fafc', fontSize: '12.5px' }}>
-                                {p.name}
-                                {p.isMe && <span style={{ color: '#fbbf24', marginLeft: '4px', fontSize: '10.5px' }}>(You)</span>}
-                              </div>
-                              <div style={{ fontSize: '10.5px', color: '#94a3b8', marginTop: '1px' }}>
-                                {isTournamentChamp && <span style={{ color: '#fbbf24', marginRight: '6px' }}>👑 Champion</span>}
-                                {!isDeals && isDanger && <span style={{ color: '#f87171', marginRight: '6px' }}>Danger</span>}
-                                {p.isBot && <span style={{ color: '#64748b' }}>AI</span>}
-                              </div>
-                            </div>
+              <div className="his-list">
+                {trnResult.finalRankings.map((fr) => {
+                  const isChamp = fr.prizeRs > 0;
+                  const isMe = fr.playerId === playerId;
+                  return (
+                    <div
+                      key={fr.rank}
+                      className={`his-row${isChamp ? ' res-row--winner' : ''}`}
+                    >
+                      <div className="res-row-player">
+                        <span className={`res-rank-pill${fr.rank === 1 || isChamp ? ' res-rank-pill--winner' : ''}`}>
+                          #{fr.rank}
+                        </span>
+                        <div className="his-row-main">
+                          <div className="his-row-title-line">
+                            <span className="his-row-variant">{fr.displayName || fr.playerId}</span>
+                            {isMe && <span className="his-row-tag">YOU</span>}
                           </div>
-                        </td>
-
-                        {/* Deal Columns */}
-                        {Array.from({ length: maxRecordedDeals }).map((_, dIdx) => {
-                          const dNum = dIdx + 1;
-                          const pts = getPlayerDealScore(p.playerId, dNum, p.score, p.isWinner);
-                          return (
-                            <td key={dIdx} style={{ textAlign: 'center' }}>
-                              {pts === 0 ? (
-                                <span className="royal-score-pill royal-score-pill--win">0 pts</span>
-                              ) : pts !== null ? (
-                                <span className="royal-score-pill royal-score-pill--penalty">+{pts} pts</span>
-                              ) : (
-                                <span style={{ color: '#64748b' }}>—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-
-                        {/* Chips / Total Points */}
-                        <td style={{ textAlign: 'center' }}>
-                          {isDeals ? (
-                            <div style={{ fontWeight: 900, fontSize: '13.5px', color: '#fbbf24', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                              <span>🪙</span>
-                              <span>{p.chipBalance ?? 0}</span>
-                            </div>
-                          ) : (
-                            <>
-                              <div style={{ fontWeight: 800, fontSize: '13px', color: scoreColor }}>
-                                {p.cumulativeScore ?? 0} <span style={{ fontSize: '10.5px', color: '#64748b' }}>/ {threshold}</span>
-                              </div>
-                              <div className="royal-score-bar-bg">
-                                <div
-                                  className={`royal-score-bar-fill ${isDanger || p.isEliminated ? 'royal-score-bar-fill--danger' : ''}`}
-                                  style={{ width: `${percent}%` }}
-                                />
-                              </div>
-                            </>
-                          )}
-                        </td>
-
-                        {/* Net Payout (hidden for scheduled tournaments — prize is fixed winner-takes-all) */}
-                        {!isIntermediateDeal && !isScheduledTournament && (
-                          <td style={{ textAlign: 'center' }}>
-                            {isTournamentChamp ? (
-                              <span style={{ color: '#34d399', fontWeight: 900, fontSize: '13px' }}>
-                                +₹{Number(displayPrize).toFixed(2)}
-                              </span>
-                            ) : (
-                              <span style={{ color: '#f87171', fontWeight: 800, fontSize: '12.5px' }}>
-                                -₹{Number(stakeTier).toFixed(2)}
-                              </span>
-                            )}
-                          </td>
-                        )}
-
-                        {/* Rank & Status */}
-                        <td style={{ textAlign: 'right' }}>
-                          {isTournamentChamp ? (
-                            <span style={{ color: '#fbbf24', fontWeight: 900, fontSize: '11px', background: 'rgba(251, 191, 36, 0.15)', border: '1px solid rgba(251, 191, 36, 0.4)', borderRadius: '6px', padding: '2px 7px' }}>
-                              👑 {isDeals ? 'CHAMPION' : 'WINNER'}
-                            </span>
-                          ) : p.isEliminated ? (
-                            <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '11px' }}>
-                              ELIMINATED
-                            </span>
-                          ) : (
-                            <span style={{ color: '#94a3b8', fontWeight: 800, fontSize: '11.5px' }}>
-                              Rank #{rankIdx + 1}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-
-        {/* Scoreboard Sheet - Single Unified Sheet (No individual cards per player) */}
-        <section className="result-scoreboard-sheet">
-          <div className="result-sheet-header">
-            <div className="result-sheet-title">
-              <Layers size={15} />
-              <span>{isMultiDealGame ? `DEAL ${gameState.dealNumber ?? 1} SHOWDOWN CARDS` : 'SHOWDOWN SCOREBOARD'}</span>
-            </div>
-
-            <button
-              type="button"
-              className="result-toggle-btn"
-              onClick={() => {
-                const next = !showAllCards;
-                setShowAllCards(next);
-                setExpandedPlayerIds(
-                  allPlayers.reduce((acc, p) => ({ ...acc, [p.playerId]: next }), {})
-                );
-              }}
-            >
-              {showAllCards ? (
-                <>
-                  <EyeOff size={13} /> Collapse Cards
-                </>
-              ) : (
-                <>
-                  <Eye size={13} /> Expand All Cards
-                </>
-              )}
-            </button>
-          </div>
-
-          <div className="result-sheet-table-head">
-            <span>PLAYER & STATUS</span>
-            <span style={{ textAlign: 'right' }}>{isScheduledTournament ? 'POINTS & CHIPS' : 'POINTS & NET PAYOUT'}</span>
-          </div>
-
-          <div className="result-sheet-rows-list">
-            {allPlayers.map((p, pRankIdx) => {
-              const won = p.isWinner;
-              const expanded = isPlayerExpanded(p.playerId);
-
-              // Group calculation matching the game table style
-              let playerGroups: ShowdownGroup[] = [];
-              const submittedMeld = gameState.submittedMelds?.[p.playerId];
-
-              if (won) {
-                playerGroups = autoGroupShowdownCards(
-                  p.hand,
-                  gameState.cutJoker,
-                  true,
-                  gameState.winningGroups,
-                  isRummy21
-                );
-              } else if (submittedMeld && submittedMeld.length > 0) {
-                const mapped = submittedMeld.map((g) => {
-                  const groupType = evaluateCardGroup(g.cards, gameState.cutJoker);
-                  return {
-                    type: groupType,
-                    cards: sortGroupCardsForDisplay(g.cards, groupType, gameState.cutJoker),
-                    pts: 0,
-                  };
-                });
-                playerGroups = applyRummyGroupPenalties(mapped, gameState.cutJoker, false, isRummy21);
-              } else if (
-                p.isMe &&
-                myVisualGroups &&
-                myVisualGroups.length > 0 &&
-                myVisualGroups.some((g) => g.cards.length > 0)
-              ) {
-                const mapped = myVisualGroups.map((g) => ({
-                  type: g.groupType,
-                  cards: sortGroupCardsForDisplay(g.cards, g.groupType, gameState.cutJoker),
-                  pts: 0,
-                }));
-                playerGroups = applyRummyGroupPenalties(mapped, gameState.cutJoker, false, isRummy21);
-              } else {
-                playerGroups = autoGroupShowdownCards(
-                  p.hand,
-                  gameState.cutJoker,
-                  false,
-                  undefined,
-                  isRummy21
-                );
-              }
-
-              const playerDetail = gameSettlement?.playerDetails?.[p.playerId];
-              let pLoss = playerDetail?.lossAmount;
-              let pRefund = playerDetail?.refundAmount;
-
-              if (pLoss === undefined) {
-                if (p.isWinner) {
-                  pLoss = 0;
-                  pRefund = 0;
-                } else if (isPointsBased) {
-                  const ptVal = stakeTier / maxPenaltyCap;
-                  const penalty = p.score > 0
-                    ? Math.min(maxPenaltyCap, p.score)
-                    : (p.status === 'DROPPED' ? (isRummy21 ? 30 : 20) : maxPenaltyCap);
-                  pLoss = Math.min(stakeTier, penalty * ptVal);
-                  pRefund = Math.max(0, stakeTier - pLoss);
-                } else {
-                  pLoss = isIntermediateDeal ? 0 : stakeTier;
-                  pRefund = 0;
-                }
-              }
-
-              return (
-                <div
-                  key={p.playerId}
-                  className={`result-sheet-row ${won ? 'winner-row' : ''}`}
-                >
-                  {/* Player Summary Line */}
-                  <div
-                    className="result-row-summary"
-                    onClick={() => togglePlayerExpanded(p.playerId)}
-                  >
-                    <div className="result-row-player">
-                      <div
-                        className={`result-row-rank ${
-                          won ? 'result-row-rank--winner' : 'result-row-rank--normal'
-                        }`}
-                      >
-                        #{pRankIdx + 1}
+                          <div className="his-row-date">Rank #{fr.rank}</div>
+                        </div>
                       </div>
 
-                      <div className="result-row-meta">
-                        <div className="result-row-name-line">
-                          <span className="result-row-name">{p.name}</span>
-                          {p.isMe && <span className="result-you-badge">YOU</span>}
-                        </div>
-
-                        <div className="result-row-status">
-                          {won ? (
-                            <span className="result-row-status--winner">
-                              <CheckCircle2 size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                              {isIntermediateDeal
-                                ? 'Deal Winner (0 pts)'
-                                : isPool
-                                ? 'Pool Champion (0 pts)'
-                                : isDeals
-                                ? 'Deals Champion (0 pts)'
-                                : 'Winner (0 pts)'}
-                            </span>
-                          ) : p.isEliminated ? (
-                            <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '11px' }}>
-                              <AlertCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                              ELIMINATED ({p.score} penalty)
-                            </span>
-                          ) : p.status === 'DROPPED' ? (
-                            <span className="result-row-status--dropped">
-                              <AlertCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                              Dropped ({p.score} penalty)
-                            </span>
-                          ) : (
-                            <span className="result-row-status--lost">
-                              <AlertCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                              Lost ({p.score} penalty)
-                            </span>
-                          )}
-                        </div>
+                      <div className="his-row-meta">
+                        <span className={isChamp ? 'his-tx-amount his-tx-amount--credit' : 'his-row-score'}>
+                          {isChamp ? `+₹ ${formatAmount(Number(fr.prizeRs))}` : '₹ 0'}
+                        </span>
+                        <span className={`his-badge ${isChamp ? 'his-badge--won' : 'his-badge--neutral'}`}>
+                          {isChamp ? 'Tournament Winner' : 'Runner-up'}
+                        </span>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
-                    <div className="result-row-finances">
-                      {isIntermediateDeal ? (
-                        <>
-                          <div
-                            className={`result-row-delta ${
-                              p.isEliminated ? 'result-row-delta--loss' : won ? 'result-row-delta--win' : 'result-row-delta--loss'
-                            }`}
-                            style={p.isEliminated ? { color: '#ef4444' } : undefined}
-                          >
-                            {isDeals
-                              ? (won ? 'Won Deal' : `-${p.score} chips`)
-                              : (p.isEliminated ? 'OUT' : won ? '0 pts' : `+${p.score} pts`)}
-                          </div>
+          {/* Multi-Deal Scoreboard Breakdown */}
+          {isMultiDealGame && (
+            <section className="res-section" aria-label="Tournament All Deals Scoreboard">
+              <div className="res-section-head">
+                <div className="res-section-title">
+                  <Trophy size={14} />
+                  <span>
+                    {isDeals
+                      ? (isTieBreaker ? 'Deals Sudden-Death Playoff Scorecard' : `${totalDeals} Deals Scorecard`)
+                      : `Pool ${threshold} Rounds Breakdown`}
+                  </span>
+                </div>
+                <span className="his-row-tag">
+                  {isDeals
+                    ? (isTieBreaker ? 'Sudden-Death Tie-Breaker' : `Starting Chips: ${totalDeals * 80}`)
+                    : `Elimination Limit: ${threshold} pts`}
+                </span>
+              </div>
 
-                          <div className="result-row-score-sub">
+              <div className="res-ledger-scroll">
+                <table className="royal-scoreboard-table res-ledger-table">
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', minWidth: '140px' }}>Player</th>
+                      {Array.from({ length: maxRecordedDeals }).map((_, idx) => (
+                        <th key={idx} style={{ textAlign: 'center', minWidth: '68px' }}>
+                          {isDeals && idx + 1 > scheduledDeals ? (
+                            <span className="res-sub-gold">Playoff {idx + 1}</span>
+                          ) : (
+                            `Deal ${idx + 1}`
+                          )}
+                        </th>
+                      ))}
+                      <th style={{ textAlign: 'center', minWidth: '105px' }}>
+                        {isDeals ? 'Chips Balance' : 'Total Points'}
+                      </th>
+                      {!isIntermediateDeal && !isScheduledTournament && (
+                        <th style={{ textAlign: 'center', minWidth: '100px' }}>Net Payout</th>
+                      )}
+                      <th style={{ textAlign: 'right', minWidth: '90px' }}>Rank &amp; Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allPlayers.map((p, rankIdx) => {
+                      const isTournamentChamp =
+                        Boolean(gameState.tournamentWinnerId && gameState.tournamentWinnerId === p.playerId) ||
+                        (!gameState.tournamentWinnerId && p.isWinner);
+                      const isDanger = isPool && !p.isEliminated && (p.cumulativeScore ?? 0) >= threshold * 0.75;
+                      const percent = isPool ? Math.min(100, Math.round(((p.cumulativeScore ?? 0) / threshold) * 100)) : 0;
+
+                      let scoreColor = '#6ee7b7';
+                      if (p.isEliminated || isDanger) scoreColor = '#fda4af';
+                      else if ((p.cumulativeScore ?? 0) >= threshold * 0.5) scoreColor = '#f6dc8a';
+
+                      const rowClass = `${p.isMe ? 'royal-scoreboard-row--viewer' : ''} ${p.isEliminated ? 'royal-scoreboard-row--eliminated' : ''}`;
+
+                      return (
+                        <tr key={p.playerId} className={rowClass}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div
+                                style={{
+                                  width: '26px',
+                                  height: '26px',
+                                  borderRadius: '50%',
+                                  overflow: 'hidden',
+                                  border: `1.5px solid ${isTournamentChamp ? '#f6dc8a' : 'rgba(212, 175, 55, 0.25)'}`,
+                                  background: '#1a0a0c',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {p.avatarPhoto ? (
+                                  <img src={p.avatarPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                  <span style={{ fontSize: '11px', color: '#f6dc8a' }}>#</span>
+                                )}
+                              </div>
+
+                              <div style={{ textAlign: 'left' }}>
+                                <div className="his-row-variant" style={{ color: p.isMe ? '#f6dc8a' : '#fff8ea', fontSize: '12.5px' }}>
+                                  {p.name}
+                                  {p.isMe && <span className="his-row-tag" style={{ marginLeft: '6px' }}>YOU</span>}
+                                </div>
+                                <div className="his-row-date">
+                                  {isTournamentChamp && <span className="res-sub-gold" style={{ marginRight: '6px' }}>Champion</span>}
+                                  {!isDeals && isDanger && <span className="his-tx-amount--debit" style={{ marginRight: '6px' }}>Danger</span>}
+                                  {p.isBot && <span>AI</span>}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {Array.from({ length: maxRecordedDeals }).map((_, dIdx) => {
+                            const dNum = dIdx + 1;
+                            const pts = getPlayerDealScore(p.playerId, dNum, p.score, p.isWinner);
+                            return (
+                              <td key={dIdx} style={{ textAlign: 'center' }}>
+                                {pts === 0 ? (
+                                  <span className="royal-score-pill royal-score-pill--win">0 pts</span>
+                                ) : pts !== null ? (
+                                  <span className="royal-score-pill royal-score-pill--penalty">+{pts} pts</span>
+                                ) : (
+                                  <span style={{ color: 'rgba(231, 222, 203, 0.45)' }}>—</span>
+                                )}
+                              </td>
+                            );
+                          })}
+
+                          <td style={{ textAlign: 'center' }}>
                             {isDeals ? (
-                              <span style={{ fontWeight: 800, color: '#fbbf24' }}>
-                                🪙 {p.chipBalance ?? 0} chips
-                              </span>
-                            ) : (
-                              <span style={{ fontWeight: 800, color: p.isEliminated ? '#ef4444' : '#fbbf24' }}>
-                                {p.cumulativeScore}/{threshold}
-                              </span>
-                            )}
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div
-                            className={`result-row-delta ${
-                              won ? 'result-row-delta--win' : 'result-row-delta--loss'
-                            }`}
-                          >
-                            {isIntermediateDeal ? (
-                              isDeals ? (
-                                won ? `+${p.score || 0} chips` : `-${p.score || 0} chips`
-                              ) : (
-                                won ? `0 pts (Deal Won)` : `+${p.score || 0} pts`
-                              )
-                            ) : (
-                              splitPayouts?.[p.playerId] != null
-                                ? `+₹${Number(splitPayouts[p.playerId]).toFixed(2)}`
-                                : won ? `+₹${Number(displayPrize).toFixed(2)}` : `-₹${Number(pLoss).toFixed(2)}`
-                            )}
-                          </div>
-
-                          <div className="result-row-score-sub">
-                            {isDeals ? (
-                              <span style={{ color: '#fbbf24', fontWeight: 800 }}>
-                                🪙 {p.chipBalance ?? 0} chips ({p.score} pts)
+                              <span className="res-sub-gold" style={{ fontSize: '13px', fontWeight: 800 }}>
+                                {p.chipBalance ?? 0} chips
                               </span>
                             ) : (
                               <>
-                                <span>{p.score} pts</span>
-                                {isPool && (
-                                  <span style={{ color: '#fbbf24', marginLeft: '6px' }}>
-                                    (Total: {p.cumulativeScore})
-                                  </span>
-                                )}
+                                <div style={{ fontWeight: 800, fontSize: '12.5px', color: scoreColor }}>
+                                  {p.cumulativeScore ?? 0}{' '}
+                                  <span style={{ fontSize: '10.5px', color: 'rgba(231, 222, 203, 0.55)' }}>/ {threshold}</span>
+                                </div>
+                                <div className="royal-score-bar-bg">
+                                  <div
+                                    className={`royal-score-bar-fill ${isDanger || p.isEliminated ? 'royal-score-bar-fill--danger' : ''}`}
+                                    style={{ width: `${percent}%` }}
+                                  />
+                                </div>
                               </>
                             )}
-                            {pRefund !== undefined && pRefund > 0 && !isPool && !isDeals && !isIntermediateDeal && (
-                              <span style={{ color: '#34d399', marginLeft: '6px' }}>
-                                (+₹{Number(pRefund).toFixed(2)} refund)
-                              </span>
+                          </td>
+
+                          {!isIntermediateDeal && !isScheduledTournament && (
+                            <td style={{ textAlign: 'center' }}>
+                              {isFreePrivateRoom ? (
+                                <span className="his-row-score">Free</span>
+                              ) : isTournamentChamp ? (
+                                <span className="his-tx-amount his-tx-amount--credit">+₹ {formatAmount(Number(displayPrize))}</span>
+                              ) : (
+                                <span className="his-tx-amount his-tx-amount--debit">-₹ {formatAmount(Number(stakeTier))}</span>
+                              )}
+                            </td>
+                          )}
+
+                          <td style={{ textAlign: 'right' }}>
+                            {isTournamentChamp ? (
+                              <span className="his-badge his-badge--won">{isDeals ? 'Champion' : 'Winner'}</span>
+                            ) : p.isEliminated ? (
+                              <span className="his-badge his-badge--lost">Eliminated</span>
+                            ) : (
+                              <span className="his-row-date">Rank #{rankIdx + 1}</span>
                             )}
-                            {won && !isIntermediateDeal && (
-                              <span style={{ color: '#34d399', marginLeft: '6px' }}>
-                                (Total Credit: ₹{isPointsBased
-                                  ? (Number(playerDetail?.initialStake ?? stakeTier) + Number(displayPrize)).toFixed(2)
-                                  : Number(displayPrize).toFixed(2)})
-                              </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {/* Showdown Scoreboard — Flat History Ledger Rows + Showdown Cards */}
+          <section className="res-section" aria-label="Showdown Scoreboard">
+            <div className="res-section-head">
+              <div className="res-section-title">
+                <Layers size={14} />
+                <span>{isMultiDealGame ? `Deal ${dealNum} Showdown Cards` : 'Showdown Scoreboard'}</span>
+              </div>
+
+              <button
+                type="button"
+                className="his-chip res-toggle-chip"
+                onClick={() => {
+                  const next = !showAllCards;
+                  setShowAllCards(next);
+                  setExpandedPlayerIds(
+                    allPlayers.reduce((acc, p) => ({ ...acc, [p.playerId]: next }), {})
+                  );
+                }}
+              >
+                {showAllCards ? (
+                  <>
+                    <EyeOff size={12} /> Collapse Cards
+                  </>
+                ) : (
+                  <>
+                    <Eye size={12} /> Expand All Cards
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="res-table-subhead">
+              <span>Player &amp; Status</span>
+              <span>{isScheduledTournament ? 'Points & Chips' : 'Points & Net Payout'}</span>
+            </div>
+
+            <div className="his-list res-showdown-list">
+              {allPlayers.map((p, pRankIdx) => {
+                const won = p.isWinner;
+                const expanded = isPlayerExpanded(p.playerId);
+
+                let playerGroups: ShowdownGroup[] = [];
+                const submittedMeld = gameState.submittedMelds?.[p.playerId];
+
+                if (won) {
+                  playerGroups = autoGroupShowdownCards(
+                    p.hand,
+                    gameState.cutJoker,
+                    true,
+                    gameState.winningGroups,
+                    isRummy21
+                  );
+                } else if (submittedMeld && submittedMeld.length > 0) {
+                  const mapped = submittedMeld.map((g) => {
+                    const groupType = evaluateCardGroup(g.cards, gameState.cutJoker);
+                    return {
+                      type: groupType,
+                      cards: sortGroupCardsForDisplay(g.cards, groupType, gameState.cutJoker),
+                      pts: 0,
+                    };
+                  });
+                  playerGroups = applyRummyGroupPenalties(mapped, gameState.cutJoker, false, isRummy21);
+                } else if (
+                  p.isMe &&
+                  myVisualGroups &&
+                  myVisualGroups.length > 0 &&
+                  myVisualGroups.some((g) => g.cards.length > 0)
+                ) {
+                  const mapped = myVisualGroups.map((g) => ({
+                    type: g.groupType,
+                    cards: sortGroupCardsForDisplay(g.cards, g.groupType, gameState.cutJoker),
+                    pts: 0,
+                  }));
+                  playerGroups = applyRummyGroupPenalties(mapped, gameState.cutJoker, false, isRummy21);
+                } else {
+                  playerGroups = autoGroupShowdownCards(
+                    p.hand,
+                    gameState.cutJoker,
+                    false,
+                    undefined,
+                    isRummy21
+                  );
+                }
+
+                const { pLoss, pRefund, netRs, totalCredit } = computePlayerSettlement(p);
+
+                const rowNetText = isScheduledTournament
+                  ? (isDeals ? (won ? 'Won Table' : `-${p.score} chips`) : won ? '0 pts' : `+${p.score} pts`)
+                  : isFreePrivateRoom
+                    ? (won ? 'Won' : 'Free')
+                    : splitPayouts?.[p.playerId] != null
+                      ? `+₹ ${formatAmount(Number(splitPayouts[p.playerId]))}`
+                      : won
+                        ? `+₹ ${formatAmount(Number(displayPrize))}`
+                        : pLoss > 0
+                          ? `-₹ ${formatAmount(pLoss)}`
+                          : '₹ 0';
+
+                const rowNetClass = isScheduledTournament
+                  ? (won ? 'his-tx-amount his-tx-amount--credit' : 'his-tx-amount his-tx-amount--debit')
+                  : isFreePrivateRoom || netRs === 0
+                    ? (won && isFreePrivateRoom ? 'his-badge his-badge--won' : 'his-row-score')
+                    : netRs > 0
+                      ? 'his-tx-amount his-tx-amount--credit'
+                      : 'his-tx-amount his-tx-amount--debit';
+
+                return (
+                  <div
+                    key={p.playerId}
+                    className={`his-row res-row${won ? ' res-row--winner' : ''}`}
+                  >
+                    <div className="res-row-top" onClick={() => togglePlayerExpanded(p.playerId)}>
+                      <div className="res-row-player">
+                        <span className={`res-rank-pill${won ? ' res-rank-pill--winner' : ''}`}>
+                          #{pRankIdx + 1}
+                        </span>
+
+                        <div className="his-row-main">
+                          <div className="his-row-title-line">
+                            <span className="his-row-variant">{p.name}</span>
+                            {p.isMe && <span className="his-row-tag">YOU</span>}
+                          </div>
+
+                          <div
+                            className={`his-badge res-status-inline ${won
+                              ? 'his-badge--won'
+                              : p.status === 'DROPPED' && !p.isEliminated
+                                ? 'his-badge--neutral'
+                                : 'his-badge--lost'
+                              }`}
+                          >
+                            {won ? (
+                              <>
+                                <CheckCircle2 size={11} />
+                                <span>
+                                  {isIntermediateDeal
+                                    ? 'Deal Winner'
+                                    : isPool
+                                      ? 'Pool Champion'
+                                      : isDeals
+                                        ? 'Deals Champion'
+                                        : 'Winner'}
+                                </span>
+                              </>
+                            ) : p.isEliminated ? (
+                              <>
+                                <AlertCircle size={11} />
+                                <span>Eliminated</span>
+                              </>
+                            ) : p.status === 'DROPPED' ? (
+                              <>
+                                <AlertCircle size={11} />
+                                <span>Dropped</span>
+                              </>
+                            ) : (
+                              <>
+                                <AlertCircle size={11} />
+                                <span>Lost</span>
+                              </>
                             )}
                           </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Hand Groups - Clean table-like card fans, seamlessly in the row */}
-                  {expanded && (
-                    <div className="result-row-cards-tray">
-                      {playerGroups && playerGroups.length > 0 ? (
-                        playerGroups.map((group, gIdx) => {
-                          const config = GROUP_CONFIG[group.type] ?? GROUP_CONFIG.INVALID;
-                          return (
-                            <div key={gIdx} className="result-card-group">
-                              <div className="result-group-header">
-                                <span
-                                  className="result-group-badge"
-                                  style={{ color: config.color, background: config.bg }}
-                                >
-                                  {config.label}
-                                </span>
-                                {group.pts > 0 && (
-                                  <span className="result-group-pts">{group.pts} pts</span>
-                                )}
-                              </div>
-
-                              <div className="result-group-fan">
-                                {group.cards.map((c, cIdx) => (
-                                  <div
-                                    key={c.instanceId || `${gIdx}-${cIdx}`}
-                                    className="result-card-slot"
-                                    style={{ zIndex: cIdx + 1 }}
-                                  >
-                                    <CardView card={c} wildJoker={gameState.cutJoker} />
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="result-cards-concealed">
-                          Cards concealed (Player dropped or sitting out)
                         </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
+                      </div>
 
-        {/* Action Bar below Scoreboard */}
-        <footer className="result-bottom-bar">
+                      <div className="his-row-meta">
+                        {isIntermediateDeal ? (
+                          <>
+                            <span
+                              className={`his-tx-amount ${won && !p.isEliminated ? 'his-tx-amount--credit' : 'his-tx-amount--debit'
+                                }`}
+                            >
+                              {isDeals
+                                ? (won ? 'Won Deal' : `-${p.score} chips`)
+                                : (p.isEliminated ? 'OUT' : won ? '0 pts' : `+${p.score} pts`)}
+                            </span>
+                            <span className="his-row-date">
+                              {isDeals ? (
+                                <span className="res-sub-gold">{p.chipBalance ?? 0} chips</span>
+                              ) : (
+                                <span className={p.isEliminated ? 'his-tx-amount--debit' : 'res-sub-gold'}>
+                                  {p.cumulativeScore}/{threshold}
+                                </span>
+                              )}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className={rowNetClass}>{rowNetText}</span>
+                            {(!isScheduledTournament || isDeals) && (
+                              <span className="his-row-date">
+                                {isDeals ? (
+                                  <span className="res-sub-gold">
+                                    {p.chipBalance ?? 0} chips · {p.score} pts
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span>{p.score} pts</span>
+                                    {isPool && (
+                                      <span className="res-sub-gold" style={{ marginLeft: '6px' }}>
+                                        (Total: {p.cumulativeScore})
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                                {!isScheduledTournament && !isFreePrivateRoom && pRefund !== undefined && pRefund > 0 && !isPool && !isDeals && (
+                                  <span className="res-sub-credit">
+                                    (+₹ {formatAmount(pRefund)} refund)
+                                  </span>
+                                )}
+                                {!isScheduledTournament && !isFreePrivateRoom && won && (
+                                  <span className="res-sub-credit">
+                                    (Total Credit: ₹ {formatAmount(totalCredit)})
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {expanded && (
+                      <div className="result-row-cards-tray">
+                        {playerGroups && playerGroups.length > 0 ? (
+                          playerGroups.map((group, gIdx) => {
+                            const config = GROUP_CONFIG[group.type] ?? GROUP_CONFIG.INVALID;
+                            return (
+                              <div key={gIdx} className="result-card-group">
+                                <div className="result-group-header">
+                                  <span
+                                    className="result-group-badge"
+                                    style={{ color: config.color, background: config.bg }}
+                                  >
+                                    {config.label}
+                                  </span>
+                                  {group.pts > 0 && (
+                                    <span className="result-group-pts">{group.pts} pts</span>
+                                  )}
+                                </div>
+
+                                <div className="result-group-fan">
+                                  {group.cards.map((c, cIdx) => (
+                                    <div
+                                      key={c.instanceId || `${gIdx}-${cIdx}`}
+                                      className="result-card-slot"
+                                      style={{ zIndex: cIdx + 1 }}
+                                    >
+                                      <CardView card={c} wildJoker={gameState.cutJoker} />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="result-cards-concealed">
+                            Cards concealed (Player dropped or sitting out)
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </main>
+
+        {/* Bottom Actions Bar */}
+        <footer className="res-actions-bar">
           <button
             type="button"
-            className="result-btn-leave"
+            className="res-btn-leave"
             onClick={handleLeave}
           >
-            <LogOut size={16} />
+            <LogOut size={15} />
             Leave Table
           </button>
 
-          {tableId?.startsWith('TBL_PRV_') && !isIntermediateDeal && (
+          {isPrivateRoom && !isIntermediateDeal && (
             <button
               type="button"
-              className="result-btn-next"
+              className="res-btn-secondary"
               onClick={() => {
                 try { sessionStorage.setItem('rummy_open_private_tab', '1'); } catch { /* ignore */ }
                 handleLeave();
@@ -1671,26 +1646,13 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
             <button
               type="button"
               id="btn-bottom-rejoin"
+              className="res-btn-rejoin"
               onClick={() => {
                 soundEngine.play('click');
                 socketClient.rejoinTable();
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 20px',
-                borderRadius: '12px',
-                border: '1.5px solid #6ee7b7',
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                color: '#fff',
-                fontWeight: 900,
-                fontSize: '13px',
-                cursor: 'pointer',
-                boxShadow: '0 0 18px rgba(16, 185, 129, 0.4)',
-              }}
             >
-              <Sparkles size={16} />
+              <Sparkles size={15} />
               Re-Join Table (₹{rejoinFee})
             </button>
           )}
@@ -1698,59 +1660,34 @@ export const GameResultModal: React.FC<GameResultModalProps> = ({ isOpen, onOpen
           {(isPool || isDeals) && onOpenScoreboard && (
             <button
               type="button"
+              className="res-btn-secondary"
               onClick={() => {
                 soundEngine.play('click');
                 onOpenScoreboard();
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '10px 18px',
-                borderRadius: '12px',
-                border: '1px solid rgba(251, 191, 36, 0.4)',
-                background: 'rgba(251, 191, 36, 0.15)',
-                color: '#fef08a',
-                fontWeight: 800,
-                fontSize: '13px',
-                cursor: 'pointer',
-              }}
             >
-              <Layers size={16} />
+              <Layers size={15} />
               View Full Scoreboard
             </button>
           )}
 
           {isIntermediateDeal ? (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 20px',
-                borderRadius: '12px',
-                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                color: '#111',
-                fontWeight: 900,
-                fontSize: '13px',
-                boxShadow: '0 0 15px rgba(245, 158, 11, 0.4)',
-              }}
-            >
-              <RotateCcw size={16} style={{ animation: 'spin 3s linear infinite' }} />
+            <div className="res-btn-waiting">
+              <RotateCcw size={15} className="his-spin" />
               Next Deal Starting ({dealCountdown}s)
             </div>
           ) : !isScheduledTournament ? (
             <button
               type="button"
-              className="result-btn-rematch"
+              className="stake-play-btn res-btn-primary"
               onClick={handleRematch}
             >
-              <RotateCcw size={17} />
+              <RotateCcw size={16} />
               Rematch Same Stake
             </button>
           ) : null}
         </footer>
-      </main>
+      </div>
     </div>
   );
 };

@@ -542,6 +542,12 @@ export const LobbyScreen: React.FC = () => {
             <span>₹ {(walletBalance ?? 0).toLocaleString()}</span>
           </div>
 
+          <FullscreenToggle
+            id="btn-lobby-fullscreen"
+            className="lobby-icon-btn"
+            strokeWidth={2.2}
+          />
+
           <button
             type="button"
             id="btn-lobby-menu"
