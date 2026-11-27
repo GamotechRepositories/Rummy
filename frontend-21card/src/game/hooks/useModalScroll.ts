@@ -9,7 +9,7 @@ import { useLandscapeGate } from '../components/LandscapeGate';
  */
 export function useModalScroll<T extends HTMLElement = HTMLDivElement>() {
   const { simulatedLandscape, isFlipped } = useLandscapeGate();
-  const touchStart = React.useRef({ x: 0, y: 0, isTracking: false });
+  const touchStart = React.useRef({ x: 0, y: 0, originX: 0, originY: 0, dragged: false, isTracking: false });
   const ref = React.useRef<T | null>(null);
 
   const handleScrollDelta = React.useCallback(
@@ -33,22 +33,36 @@ export function useModalScroll<T extends HTMLElement = HTMLDivElement>() {
     [simulatedLandscape, isFlipped]
   );
 
-  // JSX Synthetic Event Handlers (for backward compatibility)
+  // JSX Synthetic Event Handlers (fallback only when ref isn't attached and simulatedLandscape is active)
   const onTouchStart = React.useCallback((e: React.TouchEvent<HTMLElement>) => {
-    if (!e.touches[0]) return;
+    if (ref.current || !simulatedLandscape || !e.touches[0]) return;
+    const tx = e.touches[0].clientX;
+    const ty = e.touches[0].clientY;
     touchStart.current = {
-      x: e.touches[0].clientX,
-      y: e.touches[0].clientY,
+      x: tx,
+      y: ty,
+      originX: tx,
+      originY: ty,
+      dragged: false,
       isTracking: true,
     };
-  }, []);
+  }, [simulatedLandscape]);
 
   const onTouchMove = React.useCallback(
     (e: React.TouchEvent<HTMLElement>) => {
+      if (ref.current || !simulatedLandscape) return;
       if (!touchStart.current.isTracking || !e.touches[0]) return;
       const target = e.currentTarget;
       if (!target) return;
       const touch = e.touches[0];
+      if (!touchStart.current.dragged) {
+        const totalDist = Math.hypot(
+          touch.clientX - touchStart.current.originX,
+          touch.clientY - touchStart.current.originY
+        );
+        if (totalDist <= 6) return;
+        touchStart.current.dragged = true;
+      }
       const dx = touchStart.current.x - touch.clientX;
       const dy = touchStart.current.y - touch.clientY;
 
@@ -58,15 +72,17 @@ export function useModalScroll<T extends HTMLElement = HTMLDivElement>() {
         touchStart.current.y = touch.clientY;
       }
     },
-    [handleScrollDelta]
+    [handleScrollDelta, simulatedLandscape]
   );
 
   const onTouchEnd = React.useCallback(() => {
     touchStart.current.isTracking = false;
+    touchStart.current.dragged = false;
   }, []);
 
   const onWheel = React.useCallback(
     (e: React.WheelEvent<HTMLElement>) => {
+      if (ref.current) return;
       const target = e.currentTarget;
       if (!target) return;
       // In desktop browser or simulated landscape, determine dominant wheel delta
@@ -78,39 +94,41 @@ export function useModalScroll<T extends HTMLElement = HTMLDivElement>() {
     []
   );
 
-  // Active Native Listeners with passive: false to allow e.preventDefault() on iOS Safari
+  // Active Native Listeners with passive: false only when simulatedLandscape rotates coordinates
   React.useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || !simulatedLandscape) return;
 
+    let originX = 0;
+    let originY = 0;
     let startX = 0;
-    let startY = 0;
+    let dragged = false;
     let tracking = false;
 
     const nativeTouchStart = (e: TouchEvent) => {
       if (!e.touches[0]) return;
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
+      originX = e.touches[0].clientX;
+      originY = e.touches[0].clientY;
+      startX = originX;
+      dragged = false;
       tracking = true;
     };
 
     const nativeTouchMove = (e: TouchEvent) => {
       if (!tracking || !e.touches[0]) return;
       const touch = e.touches[0];
-      const dx = startX - touch.clientX;
-      const dy = startY - touch.clientY;
-
-      let delta = 0;
-      if (simulatedLandscape) {
-        delta = isFlipped ? -dx : dx;
-      } else {
-        delta = dy;
+      if (!dragged) {
+        if (Math.hypot(touch.clientX - originX, touch.clientY - originY) <= 6) {
+          return;
+        }
+        dragged = true;
       }
+      const dx = startX - touch.clientX;
+      const delta = isFlipped ? -dx : dx;
 
       if (delta !== 0 && el.scrollHeight > el.clientHeight) {
         el.scrollTop += delta;
         startX = touch.clientX;
-        startY = touch.clientY;
         if (e.cancelable) {
           e.preventDefault();
         }
@@ -119,6 +137,7 @@ export function useModalScroll<T extends HTMLElement = HTMLDivElement>() {
 
     const nativeTouchEnd = () => {
       tracking = false;
+      dragged = false;
     };
 
     const nativeWheel = (e: WheelEvent) => {

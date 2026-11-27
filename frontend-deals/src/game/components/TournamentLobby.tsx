@@ -80,7 +80,6 @@ export const TournamentLobby: React.FC<{
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState<string | null>(null);
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
-  const [trnSubTab, setTrnSubTab] = useState<'LIVE' | 'HISTORY'>('LIVE');
   const [confirmTarget, setConfirmTarget] = useState<PublicTournament | null>(null);
   const [confirmedModal, setConfirmedModal] = useState<{ title: string; registered: number; maxPlayers: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -263,10 +262,6 @@ export const TournamentLobby: React.FC<{
   };
 
   const liveTournaments = tournaments.filter((t) => ['REGISTERING', 'STARTING', 'RUNNING'].includes(t.status));
-  const historyTournaments = tournaments
-    .filter((t) => ['COMPLETED', 'CANCELLED'].includes(t.status) && t.isRegistered)
-    .sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime());
-  const visibleTournaments = trnSubTab === 'LIVE' ? liveTournaments : historyTournaments;
 
   const waitingTournament = activeWaitingId
     ? liveTournaments.find((t) => t.tournamentId === activeWaitingId && t.status === 'STARTING' && t.isCheckedIn)
@@ -357,27 +352,6 @@ export const TournamentLobby: React.FC<{
         </span>
       </div>
 
-      {/* Sub-tabs centered below heading */}
-      <div className="trn-subtabs-row">
-        <button
-          type="button"
-          className={`trn-subtab-btn ${trnSubTab === 'LIVE' ? 'active' : ''}`}
-          onClick={() => setTrnSubTab('LIVE')}
-        >
-          Upcoming / Live ({liveTournaments.length})
-        </button>
-        <button
-          type="button"
-          className={`trn-subtab-btn ${trnSubTab === 'HISTORY' ? 'active' : ''}`}
-          onClick={() => setTrnSubTab('HISTORY')}
-        >
-          My History ({historyTournaments.length})
-        </button>
-        <button className="trn-refresh-btn" onClick={() => fetchTournaments(false)} title="Refresh">
-          <RefreshCw size={14} />
-        </button>
-      </div>
-
       {/* Error Toast */}
       {error && (
         <div className="trn-toast trn-toast-error">
@@ -394,7 +368,7 @@ export const TournamentLobby: React.FC<{
       )}
 
       {/* Empty */}
-      {!loading && visibleTournaments.length === 0 && (
+      {!loading && liveTournaments.length === 0 && (
         <div className="trn-empty">
           <Trophy size={36} className="trn-empty-icon" />
           <p>No upcoming tournaments right now.</p>
@@ -403,9 +377,9 @@ export const TournamentLobby: React.FC<{
       )}
 
       {/* Tournament Cards */}
-      {!loading && visibleTournaments.length > 0 && (
-        <div className={visibleTournaments.length === 1 ? 'trn-cards-grid trn-cards-grid--single' : 'trn-cards-grid'}>
-          {visibleTournaments.map((t) => {
+      {!loading && liveTournaments.length > 0 && (
+        <div className={liveTournaments.length === 1 ? 'trn-cards-grid trn-cards-grid--single' : 'trn-cards-grid'}>
+          {liveTournaments.map((t) => {
         const fillPct = Math.min(100, Math.round((t.registered / t.maxPlayers) * 100));
         const meetsMin = t.registered >= t.minPlayers;
         const isFull = t.registered >= t.maxPlayers;

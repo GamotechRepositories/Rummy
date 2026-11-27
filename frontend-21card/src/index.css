@@ -6289,13 +6289,14 @@ h1, h2, h3, h4, .font-display {
   display: flex;
   flex-direction: column;
   background-color: #0a0406;
+  background-image:
+    radial-gradient(ellipse 75% 60% at 50% 42%, rgba(45, 10, 12, 0.42) 0%, rgba(8, 3, 4, 0.96) 100%);
   color: #f8fafc;
   overflow-y: auto !important;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  touch-action: manipulation;
+  touch-action: pan-y;
   overscroll-behavior: contain;
-  animation: fadeIn 0.22s ease-out;
   scrollbar-width: thin;
   scrollbar-color: rgba(212, 175, 55, 0.35) rgba(10, 4, 6, 0.85);
 }
@@ -6322,6 +6323,13 @@ h1, h2, h3, h4, .font-display {
   z-index: 0;
   background:
     radial-gradient(ellipse 75% 60% at 50% 42%, rgba(45, 10, 12, 0.42) 0%, rgba(8, 3, 4, 0.9) 100%);
+}
+
+@media (max-width: 1024px), (max-height: 600px), (hover: none) {
+  .result-page-screen::before,
+  .result-page-screen::after {
+    display: none !important;
+  }
 }
 
 .result-page-screen > * {
@@ -6617,6 +6625,9 @@ h1, h2, h3, h4, .font-display {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  touch-action: manipulation;
+  position: relative;
+  z-index: 2;
 }
 
 .res-table-subhead {
@@ -6688,6 +6699,8 @@ h1, h2, h3, h4, .font-display {
   box-sizing: border-box;
   gap: 8px;
   padding: 12px 4px;
+  overflow: visible;
+  flex-shrink: 0;
 }
 
 .his-row.res-row.res-row--winner {
@@ -6701,6 +6714,7 @@ h1, h2, h3, h4, .font-display {
   justify-content: space-between;
   gap: 12px;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .res-row-player {
@@ -6802,17 +6816,21 @@ h1, h2, h3, h4, .font-display {
 .result-card-slot {
   position: relative;
   flex-shrink: 0;
-  isolation: isolate;
-  transition: transform 0.15s ease;
 }
 
 .result-card-slot:not(:first-child) {
   margin-left: var(--result-card-overlap);
 }
 
-.result-card-slot:hover {
-  transform: translateY(-4px);
-  z-index: 35 !important;
+@media (hover: hover) {
+  .result-card-slot {
+    transition: transform 0.15s ease;
+  }
+
+  .result-card-slot:hover {
+    transform: translateY(-4px);
+    z-index: 35 !important;
+  }
 }
 
 .result-group-fan .result-card-slot:not(:last-child) .card-corner--br {
@@ -6827,14 +6845,15 @@ h1, h2, h3, h4, .font-display {
   border-radius: calc(var(--result-card-w) * 0.12);
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   border: 1px solid rgba(0, 0, 0, 0.18);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.32);
+  transition: none;
   flex-shrink: 0;
   cursor: default;
 }
 
 .result-row-cards-tray .rummy-card:hover {
   transform: none;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.32);
 }
 
 .result-row-cards-tray .card-corner-rank {
@@ -6978,6 +6997,11 @@ h1, h2, h3, h4, .font-display {
   }
   .stake-card.res-card {
     padding: 16px 14px 12px !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    flex: 0 0 auto !important;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 214, 120, 0.22) !important;
   }
   .his-summary-strip.res-summary-strip--three {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -7778,10 +7802,21 @@ body.mobile-landscape-play .result-page-screen {
   overflow-y: auto !important;
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch !important;
-  touch-action: manipulation !important;
+  touch-action: pan-y !important;
   overscroll-behavior: contain !important;
   display: flex !important;
   flex-direction: column !important;
+}
+
+body.simulated-landscape .result-page-screen {
+  touch-action: manipulation !important;
+}
+
+body.simulated-landscape .result-page-screen::before,
+body.simulated-landscape .result-page-screen::after,
+body.mobile-landscape-play .result-page-screen::before,
+body.mobile-landscape-play .result-page-screen::after {
+  display: none !important;
 }
 
 body.simulated-landscape .res-panel,
@@ -7816,12 +7851,15 @@ body.simulated-landscape .result-page-screen .res-card,
 body.mobile-landscape-play .result-page-screen .res-card {
   width: 100% !important;
   max-width: 100% !important;
+  height: auto !important;
   max-height: none !important;
   overflow: visible !important;
+  flex: 0 0 auto !important;
   margin: 0 !important;
   padding: 10px 14px 10px !important;
   border-radius: 14px !important;
   gap: 0 !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 214, 120, 0.22) !important;
 }
 
 body.simulated-landscape .result-page-screen .stake-ribbon p,
@@ -7947,7 +7985,8 @@ body.mobile-landscape-play .result-row-cards-tray .rummy-card {
   height: var(--result-card-h) !important;
   font-size: calc(var(--result-card-w) * 0.22) !important;
   border-radius: calc(var(--result-card-w) * 0.12) !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.34) !important;
+  transition: none !important;
 }
 
 body.simulated-landscape .result-card-group,
@@ -8245,7 +8284,7 @@ body.mobile-landscape-play .dealer-puck {
     overflow-y: auto !important;
     overflow-x: hidden !important;
     -webkit-overflow-scrolling: touch !important;
-    touch-action: manipulation !important;
+    touch-action: pan-y !important;
     overscroll-behavior: contain !important;
     display: flex !important;
     flex-direction: column !important;
@@ -8277,10 +8316,13 @@ body.mobile-landscape-play .dealer-puck {
   .result-page-screen .res-card {
     width: 100% !important;
     max-width: 100% !important;
+    height: auto !important;
     max-height: none !important;
     overflow: visible !important;
+    flex: 0 0 auto !important;
     padding: 10px 14px 10px !important;
     border-radius: 14px !important;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 214, 120, 0.22) !important;
   }
 
   .result-page-screen .stake-ribbon p {
@@ -8384,7 +8426,8 @@ body.mobile-landscape-play .dealer-puck {
     height: var(--result-card-h) !important;
     font-size: calc(var(--result-card-w) * 0.22) !important;
     border-radius: calc(var(--result-card-w) * 0.12) !important;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.34) !important;
+    transition: none !important;
   }
 
   .result-card-group {
@@ -10984,7 +11027,7 @@ body.mobile-landscape-play .prv-waiting-card {
     max-height: calc(100dvh - 58px);
     gap: 6px;
   }
-  .his-card {
+  .his-card:not(.res-card) {
     padding: 18px 16px 10px !important;
   }
   .his-tab-btn {

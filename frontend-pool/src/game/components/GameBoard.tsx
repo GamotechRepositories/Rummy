@@ -365,7 +365,10 @@ export const GameBoard: React.FC = () => {
         </div>
       )}
 
-      <main className={`casino-table${dealPlaying ? ' deal-in-progress' : ''}`}>
+      <main
+        className={`casino-table${dealPlaying ? ' deal-in-progress' : ''}`}
+        style={gameState?.gameStatus === 'COMPLETED' ? { visibility: 'hidden', pointerEvents: 'none' } : undefined}
+      >
         <div className="casino-table-stage" id="game-felt-table">
           {eliminationNotice && (
             <div className="board-elimination-toast" role="status">
