@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowLeft, Copy, Check, DoorOpen, Plus, KeyRound, X } from 'lucide-react';
+import { ArrowLeft, Copy, Check, DoorOpen, Minus, Plus, KeyRound, X } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
 import { authFetch } from '../utils/authClient';
 import { getApiBaseUrl } from '../utils/apiConfig';
@@ -488,6 +488,10 @@ export const PrivateRoomLobby: React.FC<{
   }
 
   // ── CREATE / JOIN HUB ─────────────────────────────────────────────────────
+  const rawStakeIdx = activeVariant.stakes.indexOf(stakeTier as never);
+  const stakeIndex = rawStakeIdx >= 0 ? rawStakeIdx : 0;
+  const maxBuyIn = activeVariant.stakes[activeVariant.stakes.length - 1] ?? 0;
+
   return (
     <div className="prv-wrap">
       <div className="lobby-choose-heading">
@@ -498,6 +502,10 @@ export const PrivateRoomLobby: React.FC<{
       </div>
 
       <div className="prv-card">
+        <span className="stake-suit stake-suit-tl" aria-hidden>♠</span>
+        <span className="stake-suit stake-suit-tr" aria-hidden>♦</span>
+        <span className="stake-suit stake-suit-bl" aria-hidden>♠</span>
+        <span className="stake-suit stake-suit-br" aria-hidden>♥</span>
         <div className="prv-mode-switch">
           <button
             type="button"
@@ -519,56 +527,181 @@ export const PrivateRoomLobby: React.FC<{
 
         {mode === 'CREATE' ? (
           <div className="prv-form">
-            <div className="prv-field">
-              <label>Game Variant</label>
-              <div className="prv-pill-grid">
-                {VARIANTS.map((v) => (
-                  <button
-                    key={v.id}
-                    type="button"
-                    className={`prv-pill ${rulesetId === v.id ? 'active' : ''}`}
-                    onClick={() => handleSelectVariant(v.id)}
-                  >
-                    {v.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="prv-field-row">
+            {VARIANTS.length > 1 && (
               <div className="prv-field">
-                <label>Max Players {isTwoPlayerOnly ? '(Fixed 2P)' : ''}</label>
-                <div className="prv-pill-row">
-                  {[2, 3, 4, 5, 6].map((n) => (
+                <label>Game Variant</label>
+                <div className="prv-pill-grid">
+                  {VARIANTS.map((v) => (
                     <button
-                      key={n}
+                      key={v.id}
                       type="button"
-                      disabled={isTwoPlayerOnly && n !== 2}
-                      className={`prv-pill ${(isTwoPlayerOnly ? 2 : maxPlayers) === n ? 'active' : ''}`}
-                      onClick={() => setMaxPlayers(n)}
+                      className={`prv-pill ${rulesetId === v.id ? 'active' : ''}`}
+                      onClick={() => handleSelectVariant(v.id)}
                     >
-                      {n}P
+                      {v.label}
                     </button>
                   ))}
                 </div>
               </div>
+            )}
 
-              <div className="prv-field">
-                <label>{rulesetId === 'POINTS_13' ? 'Buy-in / Max Loss' : 'Entry Fee'}</label>
-                <div className="prv-pill-row">
-                  {activeVariant.stakes.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      className={`prv-pill ${stakeTier === s ? 'active' : ''}`}
-                      onClick={() => setStakeTier(s)}
-                    >
-                      {s === 0 ? 'Free' : `₹${s}`}
-                    </button>
-                  ))}
+            {rulesetId === 'POINTS_13' ? (
+              <>
+                <div className="prv-field">
+                  <label>Max Players</label>
+                  <div className="prv-pill-row">
+                    {[2, 3, 4, 5, 6].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        className={`prv-pill ${maxPlayers === n ? 'active' : ''}`}
+                        onClick={() => setMaxPlayers(n)}
+                      >
+                        {n}P
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="prv-field prv-points-field">
+                  <div className="prv-values">
+                    <div className="prv-metric">
+                      <div className="stake-metric-head">
+                        <div className="stake-metric-title">Point Value</div>
+                        <div className="stake-metric-sub">
+                          {stakeTier === 0 ? 'Practice room' : 'Points per game'}
+                        </div>
+                      </div>
+                      <div className="stake-stepper">
+                        <button
+                          type="button"
+                          className="prv-step-btn"
+                          aria-label="Decrease point value"
+                          disabled={stakeIndex <= 0}
+                          onClick={() => setStakeTier(activeVariant.stakes[Math.max(0, stakeIndex - 1)])}
+                        >
+                          <Minus size={15} strokeWidth={3.5} />
+                        </button>
+                        <div className="stake-step-value prv-step-value">
+                          {stakeTier === 0
+                            ? 'Free'
+                            : `₹ ${stakeTier / 80 >= 1 ? (stakeTier / 80).toFixed(1) : (stakeTier / 80).toFixed(2)}`}
+                        </div>
+                        <button
+                          type="button"
+                          className="prv-step-btn"
+                          aria-label="Increase point value"
+                          disabled={stakeIndex >= activeVariant.stakes.length - 1}
+                          onClick={() =>
+                            setStakeTier(
+                              activeVariant.stakes[Math.min(activeVariant.stakes.length - 1, stakeIndex + 1)]
+                            )
+                          }
+                        >
+                          <Plus size={15} strokeWidth={3.5} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="prv-metric">
+                      <div className="stake-metric-head">
+                        <div className="stake-metric-title">Buy-in / Max Loss</div>
+                        <div className="stake-metric-sub">
+                          {stakeTier === 0 ? 'No wallet stake' : 'Max buy-in liability'}
+                        </div>
+                      </div>
+                      <div className="stake-stepper">
+                        <button
+                          type="button"
+                          className="prv-step-btn"
+                          aria-label="Decrease buy-in"
+                          disabled={stakeIndex <= 0}
+                          onClick={() => setStakeTier(activeVariant.stakes[Math.max(0, stakeIndex - 1)])}
+                        >
+                          <Minus size={15} strokeWidth={3.5} />
+                        </button>
+                        <div className="stake-step-value prv-step-value">
+                          {stakeTier === 0 ? 'Free' : `₹ ${stakeTier}`}
+                        </div>
+                        <button
+                          type="button"
+                          className="prv-step-btn"
+                          aria-label="Increase buy-in"
+                          disabled={stakeIndex >= activeVariant.stakes.length - 1}
+                          onClick={() =>
+                            setStakeTier(
+                              activeVariant.stakes[Math.min(activeVariant.stakes.length - 1, stakeIndex + 1)]
+                            )
+                          }
+                        >
+                          <Plus size={15} strokeWidth={3.5} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="stake-slider-wrap prv-slider-wrap">
+                    <input
+                      type="range"
+                      min={0}
+                      max={activeVariant.stakes.length - 1}
+                      step={1}
+                      value={stakeIndex}
+                      aria-label="Select Buy-in / Max Loss"
+                      onChange={(e) => {
+                        const idx = parseInt(e.target.value, 10);
+                        setStakeTier(activeVariant.stakes[idx] ?? 0);
+                      }}
+                      className="rummy-slider"
+                      style={
+                        {
+                          '--fill': `${(stakeIndex / Math.max(1, activeVariant.stakes.length - 1)) * 100}%`,
+                        } as React.CSSProperties
+                      }
+                    />
+                    <div className="stake-range">
+                      <span>Free</span>
+                      <span>₹{(maxBuyIn / 80).toFixed(1)} (₹{maxBuyIn} Fee)</span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="prv-field-row">
+                <div className="prv-field">
+                  <label>Max Players {isTwoPlayerOnly ? '(Fixed 2P)' : ''}</label>
+                  <div className="prv-pill-row">
+                    {[2, 3, 4, 5, 6].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        disabled={isTwoPlayerOnly && n !== 2}
+                        className={`prv-pill ${(isTwoPlayerOnly ? 2 : maxPlayers) === n ? 'active' : ''}`}
+                        onClick={() => setMaxPlayers(n)}
+                      >
+                        {n}P
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="prv-field">
+                  <label>Entry Fee</label>
+                  <div className="prv-pill-row">
+                    {activeVariant.stakes.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className={`prv-pill ${stakeTier === s ? 'active' : ''}`}
+                        onClick={() => setStakeTier(s)}
+                      >
+                        {s === 0 ? 'Free' : `₹${s}`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             <button type="button" className="prv-primary-btn" disabled={busy} onClick={handleCreate}>
               <DoorOpen size={16} /> {busy ? 'Creating Room…' : stakeTier > 0 ? `Create Room · ₹${stakeTier}` : 'Create Free Room'}

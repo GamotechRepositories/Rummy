@@ -874,9 +874,7 @@ export const LobbyScreen: React.FC = () => {
                           style={{
                             padding: '8px 20px',
                             border: 'none',
-                            background: active
-                              ? 'linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%)'
-                              : 'transparent',
+                            background: active ? '#f1f5f9' : 'transparent',
                             color: active ? '#0f172a' : '#f87171',
                             fontSize: 14,
                             fontWeight: 800,
@@ -905,15 +903,12 @@ export const LobbyScreen: React.FC = () => {
                           style={{
                             padding: '9px 18px',
                             borderRadius: 10,
-                            border: isSelected ? '2px solid #d4af37' : '1px solid rgba(255,255,255,0.15)',
-                            background: isSelected
-                              ? 'linear-gradient(135deg, #fbbf24 0%, #b45309 100%)'
-                              : 'rgba(0, 0, 0, 0.6)',
+                            border: isSelected ? '2px solid #f5d061' : '1px solid rgba(255,255,255,0.15)',
+                            background: isSelected ? '#f0be2e' : 'rgba(0, 0, 0, 0.6)',
                             color: isSelected ? '#0f172a' : '#f8fafc',
                             fontSize: 16,
                             fontWeight: 900,
                             cursor: 'pointer',
-                            boxShadow: isSelected ? '0 4px 14px rgba(251, 191, 36, 0.4)' : 'none',
                             transition: 'all 0.15s ease',
                           }}
                         >
@@ -968,9 +963,7 @@ export const LobbyScreen: React.FC = () => {
                           style={{
                             padding: '8px 20px',
                             border: 'none',
-                            background: active
-                              ? 'linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%)'
-                              : 'transparent',
+                            background: active ? '#f1f5f9' : 'transparent',
                             color: active ? '#0f172a' : '#f87171',
                             fontSize: 14,
                             fontWeight: 800,
@@ -1003,14 +996,11 @@ export const LobbyScreen: React.FC = () => {
                             padding: '9px 18px',
                             borderRadius: 10,
                             border: isSelected ? '2px solid #d4af37' : '1px solid rgba(255,255,255,0.15)',
-                            background: isSelected
-                              ? 'linear-gradient(135deg, #10b981 0%, #047857 100%)'
-                              : 'rgba(0, 0, 0, 0.6)',
+                            background: isSelected ? '#059669' : 'rgba(0, 0, 0, 0.6)',
                             color: isSelected ? '#ffffff' : '#f8fafc',
                             fontSize: 16,
                             fontWeight: 900,
                             cursor: 'pointer',
-                            boxShadow: isSelected ? '0 4px 14px rgba(16, 185, 129, 0.4)' : 'none',
                             transition: 'all 0.15s ease',
                           }}
                         >
@@ -1055,14 +1045,11 @@ export const LobbyScreen: React.FC = () => {
                             padding: '9px 18px',
                             borderRadius: 10,
                             border: isSelected ? '2px solid #d4af37' : '1px solid rgba(255,255,255,0.15)',
-                            background: isSelected
-                              ? 'linear-gradient(135deg, #ec4899 0%, #be185d 100%)'
-                              : 'rgba(0, 0, 0, 0.6)',
+                            background: isSelected ? '#be185d' : 'rgba(0, 0, 0, 0.6)',
                             color: '#ffffff',
                             fontSize: 16,
                             fontWeight: 900,
                             cursor: 'pointer',
-                            boxShadow: isSelected ? '0 4px 14px rgba(236, 72, 153, 0.4)' : 'none',
                             transition: 'all 0.15s ease',
                           }}
                         >
